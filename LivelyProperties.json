@@ -1,0 +1,55 @@
+{
+  "hudPosition": {
+    "type": "dropdown",
+    "value": 0,
+    "text": "HUD Position",
+    "items": ["Top Right", "Top Left", "Bottom Right", "Bottom Left"]
+  },
+  "glassBlur": {
+    "type": "slider",
+    "value": 14,
+    "min": 0,
+    "max": 40,
+    "step": 2,
+    "text": "Glass Blur (px)"
+  },
+  "particleDensity": {
+    "type": "slider",
+    "value": 1.0,
+    "min": 0.2,
+    "max": 2.0,
+    "step": 0.1,
+    "text": "Particle Density Multiplier"
+  },
+  "tempUnit": {
+    "type": "dropdown",
+    "value": 0,
+    "text": "Temperature Unit",
+    "items": ["Celsius (°C)", "Fahrenheit (°F)"]
+  },
+  "refreshInterval": {
+    "type": "slider",
+    "value": 15,
+    "min": 5,
+    "max": 30,
+    "step": 1,
+    "text": "Data & Wallpaper Refresh Interval (Minutes)"
+  },
+  "unsplashApiKey": {
+    "type": "textbox",
+    "value": "",
+    "text": "Unsplash Access Key (Optional)"
+  },
+  "weatherSimulation": {
+    "type": "dropdown",
+    "value": 0,
+    "text": "Simulate Weather (Debug)",
+    "items": ["Live Weather (Auto)", "Clear Day", "Rain & Storm", "Snow", "Starry Night"]
+  },
+  "contrastMode": {
+    "type": "dropdown",
+    "value": 0,
+    "text": "Glass Contrast Theme",
+    "items": ["Auto (Wallpaper-Adaptive)", "Dark Glass (White Text)", "Light Glass (Dark Text)"]
+  }
+}

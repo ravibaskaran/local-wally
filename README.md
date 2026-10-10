@@ -1,0 +1,179 @@
+# Local Wally HUD
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/Platform-Windows%2011%20%7C%20Lively%20Wallpaper-0078d4.svg)](#)
+[![Performance](https://img.shields.io/badge/Performance-60%20FPS%20%7C%200%25%20Idle%20CPU-success.svg)](#)
+[![Zero API Keys](https://img.shields.io/badge/API%20Keys-Zero%20Config%20Required-brightgreen.svg)](#)
+
+> **Hardware-Accelerated Ambient Weather Wallpaper & Live Bento HUD for Windows 11 & Lively Wallpaper**
+
+Local Wally HUD is a production-grade, hyper-optimized ambient desktop wallpaper built for the Windows 11 Chromium WebView2 runtime inside [Lively Wallpaper](https://rocksdanister.github.io/lively/). It combines real-time celestial ephemeris calculations, atmospheric telemetry (WMO weather and European Air Quality Index), contextual resolution-matched photography, live system hardware monitoring, regional news dispatches, and a zero-allocation procedural precipitation particle simulation into a unified, desktop-friendly interface.
+
+---
+
+## 🌟 Why Local Wally Was Created
+
+Traditional live wallpapers are notorious resource hogs: heavy video playback loops, unconstrained WebViews, and unthrottled JavaScript timers that chew 5–15% CPU, trigger laptop battery drain, and cause micro-stutter during gaming.
+
+**Local Wally was engineered from the silicon up to solve this:**
+1. **Zero Garbage Collection (GC) Pressure**: The 60 FPS animation loop achieves zero per-frame heap allocations through contiguous TypedArrays structured as a **Struct-of-Arrays (SoA)** and ring-buffer recycling.
+2. **True 0.0% Host Lifecycle Parking**: Seamless integration with Lively Wallpaper's native IPC drops CPU and GPU utilization to absolute 0.0% whenever occluded, minimized, or when running full-screen games.
+3. **Desktop-Friendly Side-by-Side Bento Grid**: The HUD is positioned on the right half of widescreen displays (1080p, 1440p, 1600p, 4K), keeping traditional Windows desktop icons on the left 100% unobstructed with zero vertical scrolling.
+4. **Zero-Key Zero-Config Out-of-the-Box**: Works instantaneously without requiring developer API keys or accounts.
+
+---
+
+## 🚀 Key Features
+
+### 🪟 Wallpaper-Adaptive Glassmorphism Contrast Engine
+Incoming wallpapers vary dramatically in tonal range—from dark starry nights to high-key midday skies or snowy horizons.
+- **Geometric Bounding-Box Sampling**: Samples the exact region of the wallpaper positioned behind the HUD using an offscreen downscaled $24 \times 16$ canvas.
+- **ITU-R BT.709 Perceived Luminance**: Computes perceived luminance ($Y = 0.2126R + 0.7152G + 0.0722B$).
+- **Dynamic Contrast Switching**: When $Y > 0.52$ (bright backgrounds), the HUD smoothly transitions to **Light Glass Theme** with high-contrast deep slate typography (`#0f172a`), maintaining complete legibility. On dark backgrounds ($Y \le 0.52$), it defaults to dark acrylic with crisp white typography.
+- **Zero Animation Overhead**: Sampling executes only once per wallpaper swap (every 15 minutes) or on repositioning—never in the render loop.
+
+### ⚡ Universal Hardware Strategy (iGPU vs. dGPU)
+- **Automatic GPU Introspection**: Queries `WEBGL_debug_renderer_info` at startup.
+- **iGPU / UMA Protection**: On integrated GPUs (AMD Radeon 800M/700M/600M, Intel Iris Xe/Arc, Qualcomm Adreno), clamps Device Pixel Ratio (DPR) to `1.0` to conserve shared LPDDR5X memory bandwidth and fill rate.
+- **dGPU Supersampling**: On discrete GPUs (NVIDIA GeForce/RTX, AMD Radeon RX), dynamically scales up to `1.5` DPR for high-fidelity supersampling on dedicated VRAM.
+
+### 📐 Dynamic 1:1 Pixel Native Resolution Matching
+Automatically derives the display's native physical resolution (`screen.width * dpr`, `screen.height * dpr`) and requests resolution-tailored wallpaper imagery (`&w=${width}&h=${height}&fit=crop&q=85`), eliminating texture scaling blur and unnecessary GPU memory consumption.
+
+### 🌦️ Comprehensive Atmospheric & Ephemeris Telemetry
+- **Zero-Config Geolocation**: HTML5 GPS with a 4s timeout $\to$ silent IP geolocation fallback $\to$ offline astronomical default.
+- **Open-Meteo Weather Forecast**: Current temperature, apparent "feels like", daily high/low, WMO weather interpretation, relative humidity, wind speed, and precipitation.
+- **European Air Quality Index (AQI)**: Continuous AQI level rating, chromatic status badge, gradient progress bar, and PM2.5 / PM10 density readouts.
+- **SunCalc Ephemeris**: Real-time solar altitudes (Sunrise, Solar Noon, Sunset) and lunar phase calculation with moon glyphs (🌑 to 🌘) and exact illumination percentages.
+
+### 💻 Host Hardware Telemetry HUD
+- Integrates Lively's native `--system-information` IPC stream.
+- Renders live CPU, GPU 3D, RAM (used/total & %), and storage usage with lightweight Unicode text-track sparklines (` ▂▃▄▅▆▇█`).
+- Includes an automatic 10-second fallback ticker when previewing outside Lively.
+
+### 📰 Proximity-Targeted Regional News Feed
+- Ingests regional Google News RSS feeds via native browser XML `DOMParser()` and timeout-guarded CORS gateways.
+- Extracts top 5 clean headlines, cached inside the 15-minute firewall, smoothly rotated every 7 seconds with CSS opacity transitions.
+
+---
+
+## 📦 Installation & Setup
+
+### Method 1: Using Lively Wallpaper (Recommended)
+
+1. **Download**: Clone or download this repository:
+   ```bash
+   git clone https://github.com/ravibaskaran/local-wally.git
+   ```
+2. **Open Lively Wallpaper**:
+   - Click the **Add Wallpaper** (`+`) button in the top bar.
+   - Click **Browse** and select the folder where `local-wally` was downloaded, or drag and drop the folder directly into the Lively window.
+   - Lively will automatically detect `LivelyInfo.json` and add **Local Wally HUD** to your library.
+3. **Set as Active Wallpaper**:
+   - Click the wallpaper card in your library to activate it.
+4. **Customize via Lively Settings**:
+   - Right-click the wallpaper in Lively and choose **Customise Wallpaper**:
+     - **HUD Position**: Top Right (default), Top Left, Bottom Right, Bottom Left.
+     - **Glass Blur**: 0px to 40px (default: 14px).
+     - **Particle Density Multiplier**: 0.2x to 2.0x.
+     - **Temperature Unit**: Celsius (°C) or Fahrenheit (°F).
+     - **Data Refresh Interval**: 5 to 30 minutes (default: 15 minutes).
+     - **Glass Contrast Theme**: Auto (Wallpaper-Adaptive), Dark Glass, Light Glass.
+     - **Simulate Weather**: Debug preset triggers (Clear Day, Rain & Storm, Snow, Starry Night).
+     - **Unsplash API Key**: Optional personal key for custom photo search queries.
+
+---
+
+### Method 2: Standalone Browser Preview
+
+You can preview and test Local Wally in any modern Chromium browser (Microsoft Edge, Google Chrome, Brave):
+
+1. Open a terminal in the project directory:
+   ```bash
+   node serve.js
+   ```
+2. Open your browser to:
+   ```
+   http://localhost:8080/
+   ```
+
+---
+
+## ⌨️ Keyboard Shortcuts
+
+| Key | Action |
+|:---:|---|
+| <kbd>D</kbd> | Toggle real-time Diagnostics Overlay (GPU tier, FPS, frametime, particle count, cache TTL, contrast mode). |
+| <kbd>C</kbd> | Cycle Glass Contrast Mode (`Auto (Adaptive)` $\to$ `Dark` $\to$ `Light`). |
+| <kbd>R</kbd> | Force immediate atmosphere & wallpaper synchronization (bypasses 15-minute cache). |
+| <kbd>T</kbd> | Toggle temperature units between Celsius (°C) and Fahrenheit (°F). |
+
+---
+
+## ⚙️ External Configuration (`config.js`)
+
+For advanced users or portable deployments without Lively, all key parameters are exposed in `config.js` with human-readable comments on every line:
+
+```javascript
+window.LOCAL_WALLY_CONFIG = {
+  refreshIntervalMinutes: 15,          // 5 to 30 minutes
+  hudPosition: 'top-right',             // 'top-right', 'top-left', 'bottom-right', 'bottom-left'
+  glassBlurPx: 14,                      // 0 to 40 px
+  glassSaturationPct: 190,              // 100% to 250%
+  tempUnit: 'C',                        // 'C' or 'F'
+  newsRotateIntervalSeconds: 7,         // 3 to 60 seconds
+  hwUpdateIntervalSeconds: 10,          // 1 to 60 seconds
+  unsplashApiKey: '',                   // Optional user API key
+  maxPrecipitationParticles: 1800,      // 200 to 3500 particles
+  contrastMode: 'auto',                 // 'auto', 'dark', 'light'
+  defaultLocation: {                    // Offline fallback coordinates
+    city: 'Tokyo',
+    country: 'Japan',
+    latitude: 35.6762,
+    longitude: 139.6503
+  }
+};
+```
+
+---
+
+## 📁 Project Architecture
+
+```
+local-wally/
+├── config.js              # External human-readable configuration parameters
+├── index.html             # Decoupled 5-layer DOM hierarchy & 2-column Bento Grid
+├── LivelyInfo.json        # Lively Wallpaper manifest (--system-information enabled)
+├── LivelyProperties.json  # Lively host customization schema
+├── LICENSE                # MIT License
+├── README.md              # Documentation & user guide
+├── serve.js               # Lightweight local development HTTP preview server
+├── thumbnail.jpg          # High-resolution Lively library preview thumbnail
+├── css/
+│   └── style.css          # Windows 11 Acrylic styling, adaptive contrast CSS tokens
+└── js/
+    ├── api.js             # Geolocation, Open-Meteo, Unsplash, Google News RSS ingestion
+    ├── app.js             # Central orchestrator, 60 FPS loop, contrast engine, sparklines
+    ├── cache.js           # 15-minute LocalStorage caching firewall & offline mock data
+    ├── lively.js          # Host IPC bridge (playback parking, property listeners)
+    ├── particles.js       # Zero-allocation Struct-of-Arrays (SoA) particle simulation
+    ├── sky.js             # Dynamic celestial gradient & Sun/Moon placement
+    └── suncalc.js         # Offline solar/lunar ephemeris math library
+```
+
+---
+
+## 🛠️ System Requirements
+
+- **Operating System**: Windows 10 (Build 19041+) or Windows 11 (64-bit).
+- **Host Application**: [Lively Wallpaper](https://rocksdanister.github.io/lively/) v2.0 or higher.
+- **Hardware Target**: Modern CPUs with Integrated GPUs (AMD Radeon 800M/700M/600M, Intel Iris Xe/Arc) or Discrete GPUs (NVIDIA GeForce/RTX, AMD Radeon RX).
+- **RAM**: Minimal footprint (< 60 MB browser process).
+
+---
+
+## 📄 License
+
+This project is open-source software licensed under the [MIT License](LICENSE).
+
+Copyright (c) 2026 [Ravi Baskaran](https://github.com/ravibaskaran).

@@ -1,0 +1,1158 @@
+/**
+ * Local Wally HUD - Hardware-Accelerated Presentation Stylesheet
+ * Target: Windows 11 Chromium WebView2 (AMD Ryzen AI 7 350 + Radeon 860M)
+ * 
+ * Features:
+ *  - 2-Column Side-by-Side Bento Grid Layout (~570px wide, ~365-385px tall, zero vertical scrolling)
+ *  - Windows 11 Native Typography ("Segoe UI Variable Display/Text/Small") with subpixel hints
+ *  - Crisp 1.5px geometric line iconography (Lucide / Apple SF style) with soft translucent stroke glows
+ *  - Specular rim light + rich vibrancy backdrop glassmorphism
+ *  - GPU layer promotion, translate3d compositing, zero layout invalidation
+ */
+
+:root {
+  --glass-blur: 14px;
+  --glass-saturation: 190%;
+  --glass-bg: rgba(15, 23, 42, 0.62);
+  --glass-border: rgba(255, 255, 255, 0.16);
+  --glass-inner-glow: rgba(255, 255, 255, 0.38);
+  --glass-shadow: inset 0 1px 1px 0 rgba(255, 255, 255, 0.38), inset 0 -1px 1px 0 rgba(0, 0, 0, 0.25), 0 20px 40px -10px rgba(0, 0, 0, 0.52);
+  
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.78);
+  --text-muted: rgba(255, 255, 255, 0.48);
+  --text-dim: rgba(255, 255, 255, 0.34);
+
+  --accent-cyan: #38bdf8;
+  --accent-amber: #fbbf24;
+  --accent-emerald: #10b981;
+  --accent-rose: #f43f5e;
+  --accent-blue: #60a5fa;
+  --accent-indigo: #818cf8;
+  --accent-purple: #a78bfa;
+
+  --card-bg: rgba(255, 255, 255, 0.035);
+  --card-border: rgba(255, 255, 255, 0.06);
+  --card-hover-bg: rgba(255, 255, 255, 0.06);
+  --card-hover-border: rgba(255, 255, 255, 0.1);
+  --divider-color: rgba(255, 255, 255, 0.07);
+  --track-bg: rgba(255, 255, 255, 0.08);
+  --tag-bg: rgba(255, 255, 255, 0.1);
+  --badge-bg: rgba(255, 255, 255, 0.08);
+  --badge-border: rgba(255, 255, 255, 0.12);
+  --text-shadow-clock: 0 2px 10px rgba(0, 0, 0, 0.35);
+  --temp-high-color: #fca5a5;
+  --temp-low-color: #93c5fd;
+  
+  --font-stack: "Segoe UI Variable Display", "Segoe UI Variable Text", "Segoe UI Variable Small", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* Wallpaper-Adaptive Light Glass Theme for High-Luminance / Bright Backgrounds */
+#hud.theme-light {
+  --glass-bg: rgba(255, 255, 255, 0.74);
+  --glass-border: rgba(0, 0, 0, 0.14);
+  --glass-inner-glow: rgba(255, 255, 255, 0.95);
+  --glass-shadow: inset 0 1px 1px 0 rgba(255, 255, 255, 0.95), inset 0 -1px 1px 0 rgba(0, 0, 0, 0.08), 0 20px 40px -10px rgba(0, 0, 0, 0.22);
+  
+  --text-primary: #0f172a;
+  --text-secondary: rgba(15, 23, 42, 0.82);
+  --text-muted: rgba(15, 23, 42, 0.58);
+  --text-dim: rgba(15, 23, 42, 0.42);
+
+  --accent-cyan: #0284c7;
+  --accent-amber: #d97706;
+  --accent-emerald: #059669;
+  --accent-rose: #e11d48;
+  --accent-blue: #2563eb;
+  --accent-indigo: #4f46e5;
+  --accent-purple: #7c3aed;
+
+  --card-bg: rgba(0, 0, 0, 0.04);
+  --card-border: rgba(0, 0, 0, 0.08);
+  --card-hover-bg: rgba(0, 0, 0, 0.07);
+  --card-hover-border: rgba(0, 0, 0, 0.14);
+  --divider-color: rgba(0, 0, 0, 0.09);
+  --track-bg: rgba(0, 0, 0, 0.09);
+  --tag-bg: rgba(0, 0, 0, 0.08);
+  --badge-bg: rgba(0, 0, 0, 0.05);
+  --badge-border: rgba(0, 0, 0, 0.1);
+  --text-shadow-clock: 0 1px 4px rgba(255, 255, 255, 0.8);
+  --temp-high-color: #dc2626;
+  --temp-low-color: #2563eb;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background-color: #030712;
+  font-family: var(--font-stack);
+  color: var(--text-primary);
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "cv01", "cv02", "tnum" 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ==========================================================================
+   Decoupled Layer Architecture
+   ========================================================================== */
+
+#viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Layer 0: Sky Celestial Gradient & Sun/Moon */
+#sky-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  contain: layout paint style;
+  transform: translate3d(0, 0, 0);
+  transition: background 1.5s ease;
+  will-change: background;
+}
+
+#celestial-container {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.celestial-sun {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 80px;
+  height: 80px;
+  pointer-events: none;
+  transition: transform 1.2s ease-out, opacity 1.2s ease;
+  will-change: transform, opacity;
+}
+
+.celestial-sun.is-active {
+  opacity: 1;
+  visibility: visible;
+}
+
+.celestial-sun.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.sun-core {
+  position: absolute;
+  inset: 15px;
+  background: radial-gradient(circle, #fffbeb 20%, #fef08a 60%, #f59e0b 100%);
+  border-radius: 50%;
+  box-shadow: 0 0 35px #fde047, 0 0 70px #f59e0b;
+}
+
+.sun-corona {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle, rgba(254, 240, 138, 0.4) 0%, rgba(245, 158, 11, 0.15) 50%, rgba(245, 158, 11, 0) 75%);
+  border-radius: 50%;
+}
+
+.celestial-moon {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 60px;
+  height: 60px;
+  pointer-events: none;
+  transition: transform 1.2s ease-out, opacity 1.2s ease;
+  will-change: transform, opacity;
+}
+
+.celestial-moon.is-active {
+  opacity: 1;
+  visibility: visible;
+}
+
+.celestial-moon.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.moon-disc {
+  position: absolute;
+  inset: 10px;
+  background: radial-gradient(circle, #f8fafc 40%, #e2e8f0 85%, #cbd5e1 100%);
+  border-radius: 50%;
+  box-shadow: 0 0 25px rgba(226, 232, 240, 0.65), 0 0 50px rgba(148, 163, 184, 0.3);
+  overflow: hidden;
+}
+
+.moon-aura {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle, rgba(248, 250, 252, 0.25) 0%, rgba(203, 213, 225, 0.08) 50%, transparent 70%);
+  border-radius: 50%;
+}
+
+.moon-crater {
+  position: absolute;
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 50%;
+}
+.moon-crater.c1 { width: 10px; height: 10px; top: 8px; left: 12px; }
+.moon-crater.c2 { width: 6px; height: 6px; bottom: 9px; right: 11px; }
+
+/* Layer 1: Double-Buffered Landscape Cross-Fade */
+#bg-stack {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  contain: layout paint style;
+  transform: translate3d(0, 0, 0);
+  pointer-events: none;
+}
+
+.bg-layer {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center center;
+  background-repeat: no-repeat;
+  transition: opacity 1.2s cubic-bezier(0.4, 0.0, 0.2, 1);
+  will-change: opacity, transform;
+  transform: translate3d(0, 0, 0);
+}
+
+.bg-layer.is-active {
+  opacity: 1;
+}
+
+.bg-layer.is-hidden {
+  opacity: 0;
+}
+
+.bg-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, transparent 40%, rgba(2, 6, 23, 0.45) 100%),
+              linear-gradient(180deg, rgba(2, 6, 23, 0.2) 0%, transparent 40%, rgba(2, 6, 23, 0.5) 100%);
+  pointer-events: none;
+}
+
+/* Layer 2: Particle Canvas */
+#canvas-container {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  contain: layout paint style;
+  transform: translate3d(0, 0, 0);
+  pointer-events: none;
+}
+
+#particle-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* ==========================================================================
+   Layer 3: 2-Column Bento Grid Frosted Glass HUD (Windows 11 Acrylic)
+   ========================================================================== */
+
+#hud {
+  position: absolute;
+  z-index: 10;
+  width: 580px;
+  min-height: 395px;
+  height: auto;
+  max-height: calc(100vh - 48px);
+  overflow: hidden;
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation)) contrast(105%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation)) contrast(105%);
+  border: 1px solid var(--glass-border);
+  border-radius: 20px;
+  box-shadow: var(--glass-shadow);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: row;
+  gap: 16px;
+  contain: layout paint style;
+  will-change: transform, opacity;
+  transform: translate3d(0, 0, 0);
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.3s ease, background 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease, color 0.4s ease;
+  pointer-events: auto;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "cv01", "cv02", "tnum" 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* HUD Corner Position Classes (Default Right Position preserves left desktop icons) */
+#hud.top-right {
+  top: 32px;
+  right: 40px;
+}
+#hud.top-left {
+  top: 32px;
+  left: 40px;
+}
+#hud.bottom-right {
+  bottom: 32px;
+  right: 40px;
+}
+#hud.bottom-left {
+  bottom: 32px;
+  left: 40px;
+}
+
+/* Bento Column System */
+.bento-col {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.bento-col-primary {
+  flex: 1.15;
+  gap: 6px;
+  border-right: 1px solid var(--divider-color);
+  padding-right: 14px;
+}
+
+.bento-col-secondary {
+  flex: 1;
+  gap: 8px;
+}
+
+/* ==========================================================================
+   Modern 1.5px Geometric Line Iconography (Lucide / Apple SF Style)
+   ========================================================================== */
+
+.bento-icon {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+  flex-shrink: 0;
+}
+
+.hud-location-badge .bento-icon {
+  width: 12px;
+  height: 12px;
+  stroke: var(--accent-cyan);
+  filter: drop-shadow(0 0 5px rgba(56, 189, 248, 0.5));
+}
+
+.metric-card .metric-icon {
+  width: 15px;
+  height: 15px;
+  margin-bottom: 2px;
+  stroke: var(--accent-cyan);
+  filter: drop-shadow(0 0 4px rgba(56, 189, 248, 0.4));
+}
+
+.metric-card:nth-child(1) .metric-icon {
+  stroke: #38bdf8;
+  filter: drop-shadow(0 0 4px rgba(56, 189, 248, 0.4));
+}
+
+.metric-card:nth-child(2) .metric-icon {
+  stroke: #818cf8;
+  filter: drop-shadow(0 0 4px rgba(129, 140, 248, 0.4));
+}
+
+.metric-card:nth-child(3) .metric-icon {
+  stroke: #60a5fa;
+  filter: drop-shadow(0 0 4px rgba(96, 165, 250, 0.4));
+}
+
+.ephemeris-item .sun-icon {
+  width: 15px;
+  height: 15px;
+  stroke: var(--accent-amber);
+  filter: drop-shadow(0 0 5px rgba(251, 191, 36, 0.5));
+}
+
+.ephemeris-item .noon-icon {
+  width: 15px;
+  height: 15px;
+  stroke: #fde047;
+  filter: drop-shadow(0 0 5px rgba(253, 224, 71, 0.5));
+}
+
+.ephemeris-item .sunset-icon {
+  width: 15px;
+  height: 15px;
+  stroke: #fb923c;
+  filter: drop-shadow(0 0 5px rgba(251, 146, 60, 0.5));
+}
+
+.hw-icon {
+  width: 13px;
+  height: 13px;
+  stroke: var(--accent-cyan);
+  filter: drop-shadow(0 0 4px rgba(56, 189, 248, 0.45));
+}
+
+.news-icon {
+  width: 13px;
+  height: 13px;
+  stroke: var(--accent-amber);
+  filter: drop-shadow(0 0 4px rgba(251, 191, 36, 0.45));
+}
+
+.aqi-icon {
+  width: 13px;
+  height: 13px;
+  stroke: var(--accent-emerald);
+  filter: drop-shadow(0 0 4px rgba(16, 185, 129, 0.45));
+}
+
+.refresh-icon {
+  width: 13px;
+  height: 13px;
+  stroke: currentColor;
+  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.3));
+}
+
+/* ==========================================================================
+   Column 1: Primary Weather Components
+   ========================================================================== */
+
+/* HUD Header: Clock & Location */
+.hud-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.hud-clock-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.hud-time {
+  font-family: var(--font-stack);
+  font-size: 1.9rem;
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -0.035em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  text-shadow: var(--text-shadow-clock);
+}
+
+.hud-date {
+  font-size: 0.775rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  letter-spacing: 0.01em;
+}
+
+.hud-location-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--badge-bg);
+  border: 1px solid var(--badge-border);
+  padding: 4px 8px;
+  border-radius: 14px;
+  font-size: 0.725rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  max-width: 135px;
+  backdrop-filter: blur(4px);
+}
+
+.hud-location-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Main Temperature & Condition Summary */
+.hud-temp-block {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 2px 0 5px;
+  border-bottom: 1px solid var(--divider-color);
+}
+
+.hud-temp-main {
+  display: flex;
+  align-items: flex-start;
+}
+
+.hud-temp-val {
+  font-size: 2.95rem;
+  font-weight: 200;
+  line-height: 0.95;
+  letter-spacing: -0.05em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.hud-temp-unit {
+  font-size: 1.35rem;
+  font-weight: 300;
+  color: var(--accent-cyan);
+  margin-top: 3px;
+  margin-left: 2px;
+}
+
+.hud-condition-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+}
+
+.hud-condition-text {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.hud-feels-like {
+  font-size: 0.725rem;
+  font-weight: 400;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.hud-high-low {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 0.725rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.hud-high { color: var(--temp-high-color); }
+.hud-low { color: var(--temp-low-color); }
+
+/* Environmental Metrics 3-Card Row */
+.hud-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--divider-color);
+}
+
+.metric-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 4px 3px;
+  text-align: center;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.metric-card:hover {
+  background: var(--card-hover-bg);
+  border-color: var(--card-hover-border);
+}
+
+.metric-val {
+  font-size: 0.775rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-label {
+  font-size: 0.6rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 1px;
+}
+
+/* Solar & Lunar Ephemeris Block */
+.hud-celestial-block {
+  padding: 3px 0;
+  border-bottom: 1px solid var(--divider-color);
+}
+
+.hud-ephemeris-sun {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.ephemeris-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 4px 2px;
+  text-align: center;
+  transition: background 0.2s ease;
+}
+
+.ephemeris-item:hover {
+  background: var(--card-hover-bg);
+}
+
+.ephemeris-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.ephemeris-label {
+  font-size: 0.58rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 1px;
+}
+
+.ephemeris-val {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.hud-ephemeris-moon {
+  margin-top: 4px;
+}
+
+.moon-badge {
+  display: flex;
+  align-items: center;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 3px 8px;
+  transition: background 0.2s ease;
+}
+
+.moon-badge:hover {
+  background: var(--card-hover-bg);
+}
+
+.moon-glyph {
+  font-size: 1.15rem;
+  line-height: 1;
+  margin-right: 8px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.35));
+}
+
+.moon-text-group {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-grow: 1;
+}
+
+.moon-phase-name {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.01em;
+}
+
+.moon-illumination {
+  font-size: 0.68rem;
+  font-weight: 400;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.moon-illumination strong {
+  font-weight: 600;
+  color: var(--accent-cyan);
+}
+
+/* Air Quality Index (AQI) Block */
+.hud-aqi-block {
+  padding: 2px 0 0;
+}
+
+.hud-aqi-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.hud-aqi-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.hud-aqi-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #ffffff;
+  background: var(--accent-emerald);
+}
+
+.hud-aqi-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #ffffff;
+}
+
+.hud-aqi-bar {
+  position: relative;
+  width: 100%;
+  height: 5px;
+  background: var(--track-bg);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.hud-aqi-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 25%;
+  background: linear-gradient(90deg, #10b981 0%, #3b82f6 50%, #f59e0b 80%, #ef4444 100%);
+  border-radius: 3px;
+  transition: width 0.8s ease;
+}
+
+.hud-aqi-subtext {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 3px;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-aqi-subtext strong {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+/* ==========================================================================
+   Column 2: Secondary Hardware, News & Footer Telemetry
+   ========================================================================== */
+
+/* Hardware Telemetry Monitor Block */
+.hud-hw-block {
+  padding: 0 0 5px;
+  border-bottom: 1px solid var(--divider-color);
+}
+
+.hud-hw-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 5px;
+}
+
+.hud-hw-title-group {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.hud-hw-title {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.hud-hw-badge {
+  font-size: 0.6rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--badge-bg);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  transition: all 0.3s ease;
+}
+
+.hud-hw-badge.is-live {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.hud-hw-badge.is-standby {
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.hw-metrics-container {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hw-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 6px;
+  padding: 3px 6px;
+}
+
+.hw-row-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.hw-label-col {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  max-width: 58%;
+}
+
+.hw-tag {
+  font-size: 0.58rem;
+  font-weight: 700;
+  padding: 1px 3px;
+  border-radius: 3px;
+  background: var(--tag-bg);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.hw-device-name {
+  font-size: 0.65rem;
+  font-weight: 400;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hw-stats-col {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.hw-sparkline {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.68rem;
+  letter-spacing: -0.05em;
+  color: var(--accent-cyan);
+  text-shadow: 0 0 6px rgba(56, 189, 248, 0.4);
+  line-height: 1;
+  display: inline-block;
+  user-select: none;
+}
+
+.hw-pct-val {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  min-width: 28px;
+  text-align: right;
+}
+
+.hw-bar-track {
+  width: 100%;
+  height: 3px;
+  background: var(--track-bg);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.hw-bar-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 2px;
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hw-cpu-fill {
+  background: linear-gradient(90deg, #38bdf8, #60a5fa);
+  box-shadow: 0 0 5px rgba(56, 189, 248, 0.5);
+}
+
+.hw-gpu-fill {
+  background: linear-gradient(90deg, #34d399, #10b981);
+  box-shadow: 0 0 5px rgba(52, 211, 153, 0.5);
+}
+
+.hw-ram-fill {
+  background: linear-gradient(90deg, #a78bfa, #818cf8);
+  box-shadow: 0 0 5px rgba(167, 139, 250, 0.5);
+}
+
+.hw-disk-fill {
+  background: linear-gradient(90deg, #fbbf24, #f59e0b);
+  box-shadow: 0 0 5px rgba(251, 191, 36, 0.5);
+}
+
+/* Regional News Dispatch Block */
+.hud-news-block {
+  padding: 4px 0 2px;
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--divider-color);
+}
+
+.hud-news-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.hud-news-title-group {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.hud-news-title {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.hud-news-source {
+  font-size: 0.6rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  max-width: 105px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hud-news-body {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  flex-grow: 1;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.hud-news-body:hover {
+  background: var(--card-hover-bg);
+  border-color: var(--card-hover-border);
+}
+
+.hud-news-link {
+  text-decoration: none;
+  color: inherit;
+  display: block;
+  transition: opacity 0.3s ease;
+  cursor: pointer;
+}
+
+.hud-news-link.is-fading {
+  opacity: 0;
+}
+
+.hud-news-headline {
+  font-size: 0.71rem;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--text-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 27px;
+}
+
+.hud-news-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 3px;
+  padding-top: 3px;
+  border-top: 1px solid var(--divider-color);
+}
+
+.hud-news-indicator-label {
+  font-size: 0.58rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.hud-news-dots {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.news-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--card-border);
+  transition: all 0.3s ease;
+}
+
+.news-dot.is-active {
+  background: var(--accent-cyan);
+  box-shadow: 0 0 5px var(--accent-cyan);
+  width: 7px;
+  border-radius: 2px;
+}
+
+/* Footer & Telemetry Sync Status */
+.hud-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 2px;
+  padding-top: 4px;
+  font-size: 0.68rem;
+  color: var(--text-dim);
+}
+
+.hud-sync-indicator {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.sync-pulse {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent-emerald);
+  box-shadow: 0 0 6px var(--accent-emerald);
+}
+
+.hud-refresh-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  padding: 3px;
+  border-radius: 4px;
+  transition: color 0.2s, transform 0.3s;
+}
+
+.hud-refresh-btn:hover {
+  color: var(--text-primary);
+  transform: rotate(90deg);
+}
+
+@keyframes spin-refresh {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.hud-refresh-btn.is-spinning {
+  pointer-events: none;
+  opacity: 0.8;
+}
+
+.hud-refresh-btn.is-spinning svg {
+  animation: spin-refresh 0.8s linear infinite;
+}
+
+/* Diagnostic / FPS Overlay */
+#diagnostic-panel {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  background: rgba(0, 0, 0, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  color: #38bdf8;
+  z-index: 100;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+#diagnostic-panel.is-active {
+  opacity: 1;
+}
+
+/* Unsplash Attribution Pill */
+.unsplash-attribution {
+  position: absolute;
+  bottom: 12px;
+  right: 18px;
+  z-index: 4;
+  font-size: 0.675rem;
+  color: rgba(255, 255, 255, 0.4);
+  text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+  pointer-events: auto;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.unsplash-attribution:hover {
+  color: rgba(255, 255, 255, 0.85);
+}

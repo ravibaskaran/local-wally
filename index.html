@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Local Wally HUD</title>
+  <!-- External Human-Readable Parameter Configuration -->
+  <script src="config.js"></script>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="viewport">
+    <!-- Layer 0: Celestial Sky Gradient & Sun/Moon -->
+    <div id="sky-backdrop">
+      <div id="celestial-container">
+        <div id="celestial-sun" class="celestial-sun is-hidden">
+          <div class="sun-corona"></div>
+          <div class="sun-core"></div>
+        </div>
+        <div id="celestial-moon" class="celestial-moon is-hidden">
+          <div class="moon-aura"></div>
+          <div class="moon-disc">
+            <div class="moon-crater c1"></div>
+            <div class="moon-crater c2"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Layer 1: Double-Buffered Landscape Cross-Fade -->
+    <div id="bg-stack">
+      <div id="bg-a" class="bg-layer is-active"></div>
+      <div id="bg-b" class="bg-layer is-hidden"></div>
+      <div class="bg-vignette"></div>
+    </div>
+
+    <!-- Layer 2: Zero-Allocation Procedural Canvas -->
+    <div id="canvas-container">
+      <canvas id="particle-canvas"></canvas>
+    </div>
+
+    <!-- Layer 3: 2-Column Bento Grid Frosted Glass HUD (Windows 11 Acrylic) -->
+    <aside id="hud" class="hud top-right" aria-label="Weather Telemetry HUD">
+      <!-- Column 1: Primary Weather & Ephemeris Telemetry -->
+      <div class="bento-col bento-col-primary">
+        <!-- HUD Header: Clock & Location -->
+        <header class="hud-header">
+          <div class="hud-clock-group">
+            <time id="hud-clock" class="hud-time">10:42</time>
+            <div id="hud-date" class="hud-date">Saturday, Oct 10</div>
+          </div>
+          <div id="hud-location" class="hud-location-badge" title="Detected Geographic Location">
+            <svg class="bento-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+            <span id="hud-location-text" class="hud-location-text">Locating...</span>
+          </div>
+        </header>
+
+        <!-- Main Temperature & Condition Summary -->
+        <section class="hud-temp-block">
+          <div class="hud-temp-main">
+            <span id="hud-temp-val" class="hud-temp-val">--</span>
+            <span id="hud-temp-unit" class="hud-temp-unit">°C</span>
+          </div>
+          <div class="hud-condition-meta">
+            <span id="hud-condition" class="hud-condition-text">Loading...</span>
+            <span id="hud-feels-like" class="hud-feels-like">Feels like --°</span>
+            <div class="hud-high-low">
+              <span class="hud-high">H: <span id="hud-temp-high">--°</span></span>
+              <span class="hud-low">L: <span id="hud-temp-low">--°</span></span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Environmental Metrics 3-Column Grid -->
+        <section class="hud-metrics-grid">
+          <div class="metric-card" title="Relative Humidity">
+            <svg class="bento-icon metric-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-6-1.5-1.6-3.2-3.8-4-6-.8 2.2-2.5 4.4-4 6-2 2.1-3 4-3 6a7 7 0 0 0 7 7Z"/></svg>
+            <span id="metric-humidity" class="metric-val">--%</span>
+            <span class="metric-label">Humidity</span>
+          </div>
+          <div class="metric-card" title="Surface Wind Speed">
+            <svg class="bento-icon metric-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.7 7.7A2.5 2.5 0 1 1 20 10H2"/><path d="M19.7 14.7A2.5 2.5 0 1 1 22 17H2"/><path d="M9.7 18.7A2.5 2.5 0 1 1 12 21H2"/></svg>
+            <span id="metric-wind" class="metric-val">-- km/h</span>
+            <span class="metric-label">Wind</span>
+          </div>
+          <div class="metric-card" title="Precipitation">
+            <svg class="bento-icon metric-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M16 14v6"/><path d="M8 14v6"/><path d="M12 16v6"/></svg>
+            <span id="metric-precip" class="metric-val">0.0 mm</span>
+            <span class="metric-label">Precip</span>
+          </div>
+        </section>
+
+        <!-- Solar & Lunar Ephemeris Block -->
+        <section class="hud-celestial-block" aria-label="Solar and Lunar Ephemeris">
+          <div class="hud-ephemeris-sun">
+            <div class="ephemeris-item" title="Sunrise">
+              <svg class="bento-icon ephemeris-icon sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6"/><path d="m4.93 10.93 4.24-4.24"/><path d="m19.07 10.93-4.24-4.24"/><path d="M2 18h20"/><path d="M20 22H4"/><path d="m16 6-4-4-4 4"/></svg>
+              <div class="ephemeris-meta">
+                <span class="ephemeris-label">Sunrise</span>
+                <span id="ephemeris-sunrise" class="ephemeris-val">--:--</span>
+              </div>
+            </div>
+            <div class="ephemeris-item" title="Solar Noon">
+              <svg class="bento-icon ephemeris-icon noon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+              <div class="ephemeris-meta">
+                <span class="ephemeris-label">Noon</span>
+                <span id="ephemeris-noon" class="ephemeris-val">--:--</span>
+              </div>
+            </div>
+            <div class="ephemeris-item" title="Sunset">
+              <svg class="bento-icon ephemeris-icon sunset-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 10V2"/><path d="m4.93 10.93 4.24-4.24"/><path d="m19.07 10.93-4.24-4.24"/><path d="M2 18h20"/><path d="M20 22H4"/><path d="m16 14-4 4-4-4"/></svg>
+              <div class="ephemeris-meta">
+                <span class="ephemeris-label">Sunset</span>
+                <span id="ephemeris-sunset" class="ephemeris-val">--:--</span>
+              </div>
+            </div>
+          </div>
+          <div class="hud-ephemeris-moon">
+            <div class="moon-badge">
+              <span id="ephemeris-moon-glyph" class="moon-glyph" aria-hidden="true">🌕</span>
+              <div class="moon-text-group">
+                <span id="ephemeris-moon-phase" class="moon-phase-name">Full Moon</span>
+                <span class="moon-illumination">Illumination <strong id="ephemeris-moon-illum">--%</strong></span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Air Quality Index (AQI) Block -->
+        <section class="hud-aqi-block" aria-label="Air Quality Index Telemetry">
+          <div class="hud-aqi-row">
+            <div class="hud-aqi-title">
+              <svg class="bento-icon aqi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 12h12"/><path d="M4 16h10a2 2 0 1 0-2-2"/><path d="M2 8h14a3 3 0 1 1-3 3"/></svg>
+              <span>Air Quality</span>
+            </div>
+            <div id="hud-aqi-badge" class="hud-aqi-badge">
+              <span class="hud-aqi-dot"></span>
+              <span id="hud-aqi-category">Good (22)</span>
+            </div>
+          </div>
+          <div class="hud-aqi-bar">
+            <div id="hud-aqi-fill" class="hud-aqi-fill"></div>
+          </div>
+          <div class="hud-aqi-subtext">
+            <span>PM2.5: <strong id="hud-pm25">--</strong></span>
+            <span>PM10: <strong id="hud-pm10">--</strong></span>
+          </div>
+        </section>
+      </div>
+
+      <!-- Column 2: Hardware Telemetry, Regional News & System Status -->
+      <div class="bento-col bento-col-secondary">
+        <!-- Hardware Telemetry Monitor Block -->
+        <section class="hud-hw-block" aria-label="Hardware System Telemetry">
+          <div class="hud-hw-header">
+            <div class="hud-hw-title-group">
+              <svg class="bento-icon hw-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/></svg>
+              <span class="hud-hw-title">Hardware Telemetry</span>
+            </div>
+            <span id="hud-hw-badge" class="hud-hw-badge is-standby">Standby</span>
+          </div>
+
+          <div class="hw-metrics-container">
+            <!-- CPU Row -->
+            <div class="hw-row" title="CPU Utilization & Sparkline Track">
+              <div class="hw-row-info">
+                <div class="hw-label-col">
+                  <span class="hw-tag">CPU</span>
+                  <span id="hw-cpu-name" class="hw-device-name">Processor</span>
+                </div>
+                <div class="hw-stats-col">
+                  <span id="hw-cpu-spark" class="hw-sparkline">        </span>
+                  <span id="hw-cpu-val" class="hw-pct-val">--%</span>
+                </div>
+              </div>
+              <div class="hw-bar-track">
+                <div id="hw-cpu-bar" class="hw-bar-fill hw-cpu-fill" style="width: 0%"></div>
+              </div>
+            </div>
+
+            <!-- GPU 3D Row -->
+            <div class="hw-row" title="GPU 3D Engine Utilization">
+              <div class="hw-row-info">
+                <div class="hw-label-col">
+                  <span class="hw-tag">GPU</span>
+                  <span id="hw-gpu-name" class="hw-device-name">Graphics 3D</span>
+                </div>
+                <div class="hw-stats-col">
+                  <span id="hw-gpu-spark" class="hw-sparkline">        </span>
+                  <span id="hw-gpu-val" class="hw-pct-val">--%</span>
+                </div>
+              </div>
+              <div class="hw-bar-track">
+                <div id="hw-gpu-bar" class="hw-bar-fill hw-gpu-fill" style="width: 0%"></div>
+              </div>
+            </div>
+
+            <!-- RAM Memory Row -->
+            <div class="hw-row" title="Physical Memory Usage">
+              <div class="hw-row-info">
+                <div class="hw-label-col">
+                  <span class="hw-tag">RAM</span>
+                  <span id="hw-ram-detail" class="hw-device-name">-- / -- GB</span>
+                </div>
+                <div class="hw-stats-col">
+                  <span id="hw-ram-spark" class="hw-sparkline">        </span>
+                  <span id="hw-ram-val" class="hw-pct-val">--%</span>
+                </div>
+              </div>
+              <div class="hw-bar-track">
+                <div id="hw-ram-bar" class="hw-bar-fill hw-ram-fill" style="width: 0%"></div>
+              </div>
+            </div>
+
+            <!-- Disk / Storage Row -->
+            <div class="hw-row" title="Disk Storage Activity & Capacity">
+              <div class="hw-row-info">
+                <div class="hw-label-col">
+                  <span class="hw-tag">DSK</span>
+                  <span id="hw-disk-detail" class="hw-device-name">Storage</span>
+                </div>
+                <div class="hw-stats-col">
+                  <span id="hw-disk-spark" class="hw-sparkline">        </span>
+                  <span id="hw-disk-val" class="hw-pct-val">--%</span>
+                </div>
+              </div>
+              <div class="hw-bar-track">
+                <div id="hw-disk-bar" class="hw-bar-fill hw-disk-fill" style="width: 0%"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Regional News Dispatch Block -->
+        <section class="hud-news-block" aria-label="Regional News Dispatch">
+          <div class="hud-news-header">
+            <div class="hud-news-title-group">
+              <svg class="bento-icon news-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8"/><path d="M15 18h-5"/><path d="M10 6h8v4h-8V6Z"/></svg>
+              <span class="hud-news-title">Regional Dispatch</span>
+            </div>
+            <span id="hud-news-source" class="hud-news-source">Google News</span>
+          </div>
+          <div class="hud-news-body">
+            <a id="hud-news-link" class="hud-news-link" href="https://news.google.com" target="_blank" rel="noopener noreferrer" title="Open Article">
+              <p id="hud-news-headline" class="hud-news-headline">Fetching regional telemetry headlines...</p>
+            </a>
+            <div class="hud-news-footer">
+              <span class="hud-news-indicator-label">Live Dispatch</span>
+              <div id="hud-news-dots" class="hud-news-dots" aria-hidden="true">
+                <span class="news-dot is-active"></span>
+                <span class="news-dot"></span>
+                <span class="news-dot"></span>
+                <span class="news-dot"></span>
+                <span class="news-dot"></span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- HUD Footer: Cache & Synchronization Status -->
+        <footer class="hud-footer">
+          <div class="hud-sync-indicator">
+            <div id="sync-dot" class="sync-pulse"></div>
+            <span id="sync-status">Initializing...</span>
+          </div>
+          <button id="btn-refresh" class="hud-refresh-btn" title="Refresh Weather & Atmosphere (Bypasses Cache)" aria-label="Refresh">
+            <svg class="bento-icon refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+          </button>
+        </footer>
+      </div>
+    </aside>
+
+    <!-- Optional Diagnostics Panel (Press 'D' to toggle) -->
+    <div id="diagnostic-panel">
+      <div>GPU: <span id="diag-gpu">Detecting...</span></div>
+      <div>Theme: <span id="diag-theme">Auto (Dark)</span></div>
+      <div>FPS: <span id="diag-fps">60</span></div>
+      <div>Frame Time: <span id="diag-frametime">16.6ms</span></div>
+      <div>Particles: <span id="diag-particles">0</span></div>
+      <div>Cache TTL: <span id="diag-cache-ttl">15m 00s</span></div>
+    </div>
+
+    <!-- Background Photo Attribution -->
+    <a id="unsplash-credit" class="unsplash-attribution" href="https://unsplash.com" target="_blank" rel="noopener">Photo via Unsplash</a>
+  </div>
+
+  <!-- Scripts: Ordered for Dependency Resolution -->
+  <script src="js/suncalc.js"></script>
+  <script src="js/cache.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/particles.js"></script>
+  <script src="js/sky.js"></script>
+  <script src="js/lively.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
