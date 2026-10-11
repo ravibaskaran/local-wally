@@ -15,6 +15,13 @@ const MIME_TYPES = {
 };
 
 const server = http.createServer((req, res) => {
+  const host = (req.headers.host || '').split(':')[0].toLowerCase();
+  if (host !== 'localhost' && host !== '127.0.0.1') {
+    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('403 Forbidden: Invalid Host');
+    return;
+  }
+
   let reqPath = '/';
   try {
     reqPath = decodeURIComponent(req.url.split('?')[0]);
@@ -23,6 +30,14 @@ const server = http.createServer((req, res) => {
     res.end('400 Bad Request');
     return;
   }
+
+  const segments = reqPath.split(/[/\\]+/);
+  if (segments.some(seg => seg.startsWith('.') && seg !== '.' && seg !== '..')) {
+    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('403 Forbidden: Hidden path access denied');
+    return;
+  }
+
   if (reqPath === '/' || reqPath === '') reqPath = '/index.html';
 
   const safePath = path.resolve(__dirname, '.' + path.sep + reqPath.replace(/^[/\\]+/, ''));

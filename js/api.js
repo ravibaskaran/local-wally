@@ -243,7 +243,8 @@
               var defLon = typeof defaultLoc.longitude === 'number' ? defaultLoc.longitude : 139.6503;
               var defCity = defaultLoc.city || 'Tokyo';
               var defCountry = defaultLoc.country || 'Japan';
-              cb(formatLocation(defLat, defLon, defCity, 'Local Region', defCountry, 'US', 'default'));
+              var defCountryCode = defaultLoc.countryCode || (defCity === 'Tokyo' ? 'JP' : 'US');
+              cb(formatLocation(defLat, defLon, defCity, 'Local Region', defCountry, defCountryCode, 'default'));
             });
         }
       });
@@ -292,8 +293,21 @@
         var timedOut = false;
         var headersResolved = false;
 
+        var onCallerAbort = function() {
+          if (controller) {
+            try { controller.abort(); } catch (e) {}
+          }
+        };
+
+        var cleanupSignal = function() {
+          if (options.signal && typeof options.signal.removeEventListener === 'function') {
+            options.signal.removeEventListener('abort', onCallerAbort);
+          }
+        };
+
         var timer = setTimeout(function() {
           timedOut = true;
+          cleanupSignal();
           if (controller) {
             try { controller.abort(); } catch (e) {}
           }
@@ -315,9 +329,7 @@
             if (options.signal.aborted) {
               try { controller.abort(); } catch (e) {}
             } else if (typeof options.signal.addEventListener === 'function') {
-              options.signal.addEventListener('abort', function() {
-                try { controller.abort(); } catch (e) {}
-              });
+              options.signal.addEventListener('abort', onCallerAbort);
             }
           }
         }
@@ -327,6 +339,7 @@
             headersResolved = true;
             if (timedOut) {
               clearTimeout(timer);
+              cleanupSignal();
               reject(new Error('Network request timed out: ' + url));
               return;
             }
@@ -338,15 +351,18 @@
                 res[methodName] = function() {
                   if (timedOut) {
                     clearTimeout(timer);
+                    cleanupSignal();
                     return Promise.reject(new Error('Network request timed out: ' + url));
                   }
                   return origMethod()
                     .then(function(data) {
                       clearTimeout(timer);
+                      cleanupSignal();
                       return data;
                     })
                     .catch(function(err) {
                       clearTimeout(timer);
+                      cleanupSignal();
                       if (timedOut) {
                         throw new Error('Network request timed out: ' + url);
                       }
@@ -365,6 +381,7 @@
           })
           .catch(function(err) {
             clearTimeout(timer);
+            cleanupSignal();
             if (timedOut) {
               reject(new Error('Network request timed out: ' + url));
             } else {
@@ -526,7 +543,35 @@
         pt.humidity = Math.max(0, Math.min(100, Math.round(safeNum(pt.humidity, baseHum))));
 
         // Bind & sanitize AQI
-        var ptAqiVal = (hourlyAqi && hourlyAqi[pt.hour] != null) ? hourlyAqi[pt.hour] : baseAqi;
+        var ptAqiVal = baseAqi;
+        if (hourlyAqi) {
+          if (Array.isArray(hourlyAqi)) {
+            if (hourlyAqi.length >= points.length) {
+              var aqiStep = Math.floor(hourlyAqi.length / points.length);
+              var aqiIdx = Math.min(i * aqiStep, hourlyAqi.length - 1);
+              if (hourlyAqi[aqiIdx] != null) ptAqiVal = hourlyAqi[aqiIdx];
+            } else if (hourlyAqi[i] != null) {
+              ptAqiVal = hourlyAqi[i];
+            }
+          } else if (hourlyAqi.values && Array.isArray(hourlyAqi.values)) {
+            var valArr = hourlyAqi.values;
+            var matched = false;
+            if (hourlyAqi.times && Array.isArray(hourlyAqi.times) && pt.isoTime) {
+              for (var t = 0; t < hourlyAqi.times.length; t++) {
+                if (hourlyAqi.times[t] === pt.isoTime || (hourlyAqi.times[t] && pt.isoTime && hourlyAqi.times[t].indexOf(pt.isoTime.substring(0, 13)) === 0)) {
+                  ptAqiVal = valArr[t];
+                  matched = true;
+                  break;
+                }
+              }
+            }
+            if (!matched) {
+              var aqiStep2 = Math.floor(valArr.length / points.length);
+              var aqiIdx2 = Math.min(i * aqiStep2, valArr.length - 1);
+              if (valArr[aqiIdx2] != null) ptAqiVal = valArr[aqiIdx2];
+            }
+          }
+        }
         var safeAqi = Math.max(0, safeNum(ptAqiVal, baseAqi));
         var meta = this.interpretEuropeanAqi(safeAqi);
         pt.aqi = meta.value;
@@ -581,8 +626,8 @@
           var idx = Math.min(i * step, count - 1);
           if (idx >= 0 && timeArr[idx]) {
             var tStr = timeArr[idx];
-            var m = tStr.match(/T(\d\d):/);
-            var h = m ? parseInt(m[1], 10) : ((new Date().getHours() + i * 3) % 24);
+            var ptDate = new Date(tStr);
+            var h = !isNaN(ptDate.getTime()) ? ptDate.getHours() : ((new Date().getHours() + i * 3) % 24);
             var lbl = (i === 0) ? 'Now' : ((h % 12 || 12) + (h >= 12 ? ' PM' : ' AM'));
             var ptTempC = (hourly.temperature_2m && hourly.temperature_2m[idx] != null) ? hourly.temperature_2m[idx] : tempC;
             var ptAppC = (hourly.apparent_temperature && hourly.apparent_temperature[idx] != null) ? hourly.apparent_temperature[idx] : ptTempC;
@@ -594,6 +639,7 @@
 
             hourlyForecast.push({
               time: (h < 10 ? '0' : '') + h + ':00',
+              isoTime: tStr,
               label: lbl,
               hour: h,
               tempC: Math.round(ptTempC * 10) / 10,
@@ -681,8 +727,8 @@
             var ptSym = (ptNext.summary && ptNext.summary.symbol_code) || sym;
             var ptWmo = ApiService.metSymbolToWmo(ptSym);
             var tStr = pt.time || '';
-            var m = tStr.match(/T(\d\d):/);
-            var h = m ? parseInt(m[1], 10) : ((new Date().getHours() + p * 3) % 24);
+            var ptDate = new Date(tStr);
+            var h = !isNaN(ptDate.getTime()) ? ptDate.getHours() : ((new Date().getHours() + p * 3) % 24);
             var lbl = (p === 0) ? 'Now' : ((h % 12 || 12) + (h >= 12 ? ' PM' : ' AM'));
             var ptT = ptDetails.air_temperature != null ? ptDetails.air_temperature : tempC;
             var ptWind = ptDetails.wind_speed != null ? Math.round(ptDetails.wind_speed * 3.6 * 10) / 10 : windSpeedKm;
@@ -692,6 +738,7 @@
 
             hourlyForecast.push({
               time: (h < 10 ? '0' : '') + h + ':00',
+              isoTime: tStr,
               label: lbl,
               hour: h,
               tempC: Math.round(ptT * 10) / 10,
@@ -835,7 +882,8 @@
         var hourlyForecast = [];
         var list = data.hourly || data.list || [];
         var count = Math.min(24, list.length);
-        var step = count >= 8 ? Math.floor(count / 8) : 1;
+        var isThreeHourly = !data.hourly && Array.isArray(data.list);
+        var step = isThreeHourly ? 1 : (count >= 8 ? Math.floor(count / 8) : 1);
         for (var i = 0; i < 8 && i < count; i++) {
           var idx = Math.min(i * step, count - 1);
           var item = list[idx];
@@ -860,6 +908,7 @@
 
             hourlyForecast.push({
               time: (h < 10 ? '0' : '') + h + ':00',
+              isoTime: item.dt ? new Date(item.dt * 1000).toISOString() : null,
               label: lbl,
               hour: h,
               tempC: Math.round(ptT * 10) / 10,
@@ -938,16 +987,24 @@
         var eq = cur.european_aqi != null ? cur.european_aqi : 20;
         var meta = ApiService.interpretEuropeanAqi(eq);
         var aqi = {
+          available: true,
+          pollutantUnit: 'µg/m³',
           europeanAqi: meta.value,
           aqi: meta.value,
           category: meta.category,
           color: meta.color,
           badgeColor: meta.color,
-          pm2_5: cur.pm2_5 != null ? Math.round(cur.pm2_5 * 10) / 10 : 8.0,
-          pm25: cur.pm2_5 != null ? Math.round(cur.pm2_5 * 10) / 10 : 8.0,
-          pm10: cur.pm10 != null ? Math.round(cur.pm10 * 10) / 10 : 14.0
+          pm2_5: cur.pm2_5 != null ? Math.round(cur.pm2_5 * 10) / 10 : null,
+          pm25: cur.pm2_5 != null ? Math.round(cur.pm2_5 * 10) / 10 : null,
+          pm10: cur.pm10 != null ? Math.round(cur.pm10 * 10) / 10 : null
         };
-        var hourlyAqi = (data.hourly && data.hourly.european_aqi) || null;
+        var hourlyAqi = null;
+        if (data.hourly && data.hourly.european_aqi) {
+          hourlyAqi = {
+            times: data.hourly.time || [],
+            values: data.hourly.european_aqi || []
+          };
+        }
         return Object.assign({}, aqi, {
           aqi: aqi,
           hourlyAqi: hourlyAqi
@@ -966,18 +1023,20 @@
           else eqVal = Math.min(100, 80 + Math.round((rawAqi - 200) * 0.2));
 
           var meta = ApiService.interpretEuropeanAqi(eqVal);
-          var pm25 = (d.iaqi && d.iaqi.pm25 && d.iaqi.pm25.v != null) ? d.iaqi.pm25.v : 8.0;
-          var pm10 = (d.iaqi && d.iaqi.pm10 && d.iaqi.pm10.v != null) ? d.iaqi.pm10.v : 14.0;
+          var pm25 = (d.iaqi && d.iaqi.pm25 && d.iaqi.pm25.v != null) ? d.iaqi.pm25.v : null;
+          var pm10 = (d.iaqi && d.iaqi.pm10 && d.iaqi.pm10.v != null) ? d.iaqi.pm10.v : null;
 
           var aqi = {
+            available: true,
+            pollutantUnit: 'AQI',
             europeanAqi: meta.value,
             aqi: meta.value,
             category: meta.category,
             color: meta.color,
             badgeColor: meta.color,
-            pm2_5: Math.round(pm25 * 10) / 10,
-            pm25: Math.round(pm25 * 10) / 10,
-            pm10: Math.round(pm10 * 10) / 10
+            pm2_5: pm25 != null ? Math.round(pm25 * 10) / 10 : null,
+            pm25: pm25 != null ? Math.round(pm25 * 10) / 10 : null,
+            pm10: pm10 != null ? Math.round(pm10 * 10) / 10 : null
           };
           return Object.assign({}, aqi, {
             aqi: aqi,
@@ -996,18 +1055,20 @@
           else eqVal2 = Math.min(100, 80 + Math.round((rawAqi2 - 200) * 0.2));
 
           var meta2 = ApiService.interpretEuropeanAqi(eqVal2);
-          var pm25_2 = (d2.iaqi && d2.iaqi.pm25 && d2.iaqi.pm25.v != null) ? d2.iaqi.pm25.v : 8.0;
-          var pm10_2 = (d2.iaqi && d2.iaqi.pm10 && d2.iaqi.pm10.v != null) ? d2.iaqi.pm10.v : 14.0;
+          var pm25_2 = (d2.iaqi && d2.iaqi.pm25 && d2.iaqi.pm25.v != null) ? d2.iaqi.pm25.v : null;
+          var pm10_2 = (d2.iaqi && d2.iaqi.pm10 && d2.iaqi.pm10.v != null) ? d2.iaqi.pm10.v : null;
 
           var aqi2 = {
+            available: true,
+            pollutantUnit: 'AQI',
             europeanAqi: meta2.value,
             aqi: meta2.value,
             category: meta2.category,
             color: meta2.color,
             badgeColor: meta2.color,
-            pm2_5: Math.round(pm25_2 * 10) / 10,
-            pm25: Math.round(pm25_2 * 10) / 10,
-            pm10: Math.round(pm10_2 * 10) / 10
+            pm2_5: pm25_2 != null ? Math.round(pm25_2 * 10) / 10 : null,
+            pm25: pm25_2 != null ? Math.round(pm25_2 * 10) / 10 : null,
+            pm10: pm10_2 != null ? Math.round(pm10_2 * 10) / 10 : null
           };
           return Object.assign({}, aqi2, {
             aqi: aqi2,
@@ -1034,21 +1095,26 @@
             return ApiService.AqiAdapter.normalizeOpenMeteo(data);
           })
           .catch(function(err) {
-            console.warn('[ApiService] AQI fetch error, using fallback:', err.message);
-            var fallbackAqi = {
-              europeanAqi: 22,
-              aqi: 22,
-              category: 'Good',
-              color: '#10b981',
-              badgeColor: '#10b981',
-              pm2_5: 7.5,
-              pm25: 7.5,
-              pm10: 12.0
+            console.warn('[ApiService] AQI fetch error, reporting unavailable:', err.message);
+            var unavailableAqi = {
+              available: false,
+              europeanAqi: null,
+              aqi: null,
+              category: 'Unavailable',
+              color: '#64748b',
+              badgeColor: '#64748b',
+              pm2_5: null,
+              pm25: null,
+              pm10: null,
+              pollutantUnit: 'µg/m³'
             };
-            return Object.assign({}, fallbackAqi, {
-              aqi: fallbackAqi,
-              hourlyAqi: null
-            });
+            return {
+              available: false,
+              europeanAqi: null,
+              aqi: unavailableAqi,
+              hourlyAqi: null,
+              category: 'Unavailable'
+            };
           });
       },
 
@@ -1319,9 +1385,12 @@
      */
     fetchAtmosphere: function(forceRefresh) {
       var self = this;
+      var wProv = self.weatherProvider || 'open-meteo';
+      var aProv = self.aqiProvider || 'open-meteo';
+      var providerContext = { weatherProvider: wProv, aqiProvider: aProv };
 
       if (!forceRefresh && global.CacheManager) {
-        var cached = global.CacheManager.get();
+        var cached = global.CacheManager.get(providerContext);
         if (cached) {
           cached.fromCache = true;
           if (!cached.hourlyForecast && cached.weather) {
@@ -1335,17 +1404,19 @@
       }
 
       return self.getLocation().then(function(loc) {
-        var wProv = self.weatherProvider || 'open-meteo';
-        var aProv = self.aqiProvider || 'open-meteo';
+        // Fetch news asynchronously in the background so it never blocks ready weather updates
+        var newsPromise = self.fetchRegionalNews(loc.city, loc.countryCode || loc.country)
+          .catch(function(err) {
+            console.warn('[ApiService] Regional news fetch error (non-fatal):', err.message);
+            return [];
+          });
 
         return Promise.all([
           self.fetchWeather(loc.latitude, loc.longitude, wProv),
-          self.fetchAqi(loc.latitude, loc.longitude, aProv),
-          self.fetchRegionalNews(loc.city, loc.countryCode || loc.country)
+          self.fetchAqi(loc.latitude, loc.longitude, aProv)
         ]).then(function(results) {
           var weatherResult = results[0] || {};
           var aqiResult = results[1] || {};
-          var news = results[2] || [];
 
           var weather = weatherResult.weather || weatherResult;
           var rawHourly = weatherResult.hourlyForecast || [];
@@ -1359,18 +1430,33 @@
             .then(function(bg) {
               var payload = {
                 timestamp: Date.now(),
+                weatherProvider: wProv,
+                aqiProvider: aProv,
                 location: loc,
                 weather: weather,
                 aqi: aqi,
                 hourlyForecast: hourlyForecast,
-                news: news,
+                news: [],
                 background: bg,
                 fromCache: false
               };
 
               if (global.CacheManager) {
-                global.CacheManager.set(payload);
+                global.CacheManager.set(payload, providerContext);
               }
+
+              // When background news settles, attach to payload, persist, and update UI
+              newsPromise.then(function(newsArticles) {
+                if (newsArticles && newsArticles.length) {
+                  payload.news = newsArticles;
+                  if (global.CacheManager) {
+                    global.CacheManager.set(payload, providerContext);
+                  }
+                  if (global.app && typeof global.app.renderNews === 'function') {
+                    global.app.renderNews(newsArticles);
+                  }
+                }
+              });
 
               return payload;
             });

@@ -247,6 +247,9 @@
   };
 
   ParticleEngine.prototype.setWeather = function(category, windSpeedKm, isDay, sunAltitude) {
+    var oldMode = this.mode;
+    var oldWind = this.windSpeed;
+
     this.mode = category || 'CLEAR';
     this.windSpeed = windSpeedKm != null ? windSpeedKm : 10;
     // Calculate normalized horizontal wind drift
@@ -275,6 +278,38 @@
     var targetCount = Math.floor(baseCount * this.densityMultiplier);
     if (targetCount > MAX_PRECIP) targetCount = MAX_PRECIP;
     this.activePrecipCount = targetCount;
+
+    // Reconfigure active particle velocities and physics on mode/wind transition
+    var modeChanged = (this.mode !== oldMode);
+    var windChanged = Math.abs(this.windSpeed - oldWind) > 1.5;
+
+    if (modeChanged || windChanged) {
+      var isHeavy = (this.mode === 'THUNDERSTORM' || this.mode === 'RAIN');
+      var speedMultiplier = isHeavy ? 1.0 : 0.6;
+      for (var i = 0; i < this.activePrecipCount; i++) {
+        if (modeChanged) {
+          if (this.mode === 'SNOW') {
+            this.pVx[i] = (random() - 0.5) * 0.6 + (this.windFactor * 0.4);
+            this.pVy[i] = 0.8 + random() * 1.6;
+            this.pSize[i] = 1.2 + random() * 2.8;
+            this.pAlpha[i] = 0.4 + random() * 0.55;
+            this.pAux[i] = random() * TWO_PI;
+          } else {
+            this.pVx[i] = (this.windFactor * 3.5) + (random() - 0.5) * 0.5;
+            this.pVy[i] = (16.0 + random() * 12.0) * speedMultiplier;
+            this.pSize[i] = 8.0 + random() * 14.0;
+            this.pAlpha[i] = 0.25 + random() * 0.4;
+            this.pAux[i] = 0.0;
+          }
+        } else if (windChanged) {
+          if (this.mode === 'SNOW') {
+            this.pVx[i] = (random() - 0.5) * 0.6 + (this.windFactor * 0.4);
+          } else {
+            this.pVx[i] = (this.windFactor * 3.5) + (random() - 0.5) * 0.5;
+          }
+        }
+      }
+    }
   };
 
   ParticleEngine.prototype.update = function(dt) {

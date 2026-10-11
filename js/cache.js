@@ -67,9 +67,10 @@
 
     /**
      * Retrieves valid cached snapshot if available and unexpired.
+     * @param {Object} [context] Optional provider/location context to enforce identity match
      * @returns {Object|null} Cached data payload or null on miss/expired
      */
-    get: function() {
+    get: function(context) {
       try {
         var raw = localStorage.getItem(CACHE_KEY);
         if (!raw) return null;
@@ -81,12 +82,27 @@
         }
 
         var age = Date.now() - envelope.timestamp;
-        if (age < this.TTL_MS) {
-          return envelope.data;
+        // Strict boundary: negative age indicates backward clock skew; expire immediately
+        if (age < 0 || age >= this.TTL_MS) {
+          return null;
         }
 
-        // Cache expired
-        return null;
+        // Validate provider identity context if specified
+        if (context) {
+          var expectedWeather = context.weatherProvider;
+          var expectedAqi = context.aqiProvider;
+          var cachedWeather = envelope.weatherProvider || (envelope.data && envelope.data.weatherProvider);
+          var cachedAqi = envelope.aqiProvider || (envelope.data && envelope.data.aqiProvider);
+
+          if (expectedWeather && cachedWeather && expectedWeather !== cachedWeather) {
+            return null;
+          }
+          if (expectedAqi && cachedAqi && expectedAqi !== cachedAqi) {
+            return null;
+          }
+        }
+
+        return envelope.data;
       } catch (err) {
         console.warn('[CacheManager] Error reading cache snapshot:', err);
         this.clear();
@@ -110,14 +126,19 @@
     },
 
     /**
-     * Atomically saves data payload with current timestamp
+     * Atomically saves data payload with current timestamp and provider identity context
      * @param {Object} data
+     * @param {Object} [context] Optional provider context
      * @returns {boolean} Success status
      */
-    set: function(data) {
+    set: function(data, context) {
       try {
+        var wProv = (context && context.weatherProvider) || (data && data.weatherProvider) || null;
+        var aProv = (context && context.aqiProvider) || (data && data.aqiProvider) || null;
         var envelope = {
           timestamp: Date.now(),
+          weatherProvider: wProv,
+          aqiProvider: aProv,
           data: data
         };
         localStorage.setItem(CACHE_KEY, JSON.stringify(envelope));
@@ -138,7 +159,8 @@
         if (!raw) return true;
         var envelope = JSON.parse(raw);
         if (!envelope || typeof envelope.timestamp !== 'number') return true;
-        return (Date.now() - envelope.timestamp) >= this.TTL_MS;
+        var age = Date.now() - envelope.timestamp;
+        return age < 0 || age >= this.TTL_MS;
       } catch (e) {
         return true;
       }
@@ -153,7 +175,9 @@
         var raw = localStorage.getItem(CACHE_KEY);
         if (!raw) return Infinity;
         var envelope = JSON.parse(raw);
-        return envelope && envelope.timestamp ? (Date.now() - envelope.timestamp) : Infinity;
+        if (!envelope || typeof envelope.timestamp !== 'number') return Infinity;
+        var age = Date.now() - envelope.timestamp;
+        return (age >= 0) ? age : Infinity;
       } catch (e) {
         return Infinity;
       }

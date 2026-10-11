@@ -68,6 +68,8 @@
     this.initGradient();
   }
 
+  MediaVisualizerEngine.BAR_RADII = Object.freeze([2, 2, 0, 0]);
+
   MediaVisualizerEngine.prototype.initGradient = function() {
     if (!this.ctx || !this.dom.canvas) return;
     var h = this.dom.canvas.height;
@@ -184,12 +186,21 @@ MediaVisualizerEngine.prototype.render = function(dt) {
     var x = startX + j * step;
     var y = h - barH;
     if (typeof this.ctx.roundRect === 'function') {
-      this.ctx.roundRect(x, y, barWidth, barH, [2, 2, 0, 0]);
+      this.ctx.roundRect(x, y, barWidth, barH, MediaVisualizerEngine.BAR_RADII);
     } else {
       this.ctx.rect(x, y, barWidth, barH);
     }
   }
   this.ctx.fill();
+};
+
+MediaVisualizerEngine.prototype.setEnabled = function(enabled) {
+  this.enabled = !!enabled;
+  if (!this.enabled) {
+    this.sleep();
+  } else {
+    this.wake();
+  }
 };
 
 MediaVisualizerEngine.prototype.sleep = function() {
@@ -585,13 +596,28 @@ MediaVisualizerEngine.prototype.wake = function() {
     this.enabled = options.enabled !== false;
     this.lastAltitude = null;
     this.lastAzimuth = null;
+    this.isReset = false;
   }
+
+  SolarLightingEngine.prototype.setEnabled = function(enabled) {
+    this.enabled = !!enabled;
+    if (!this.enabled) {
+      if (!this.isReset) {
+        this.resetStyles();
+      }
+    } else {
+      this.isReset = false;
+    }
+  };
 
   SolarLightingEngine.prototype.update = function(now, lat, lng) {
     if (!this.enabled || !global.SunCalc) {
-      this.resetStyles();
+      if (!this.isReset) {
+        this.resetStyles();
+      }
       return;
     }
+    this.isReset = false;
 
     try {
       now = now || new Date();
@@ -727,6 +753,7 @@ MediaVisualizerEngine.prototype.wake = function() {
   };
 
   SolarLightingEngine.prototype.resetStyles = function() {
+    this.isReset = true;
     var style = document.documentElement.style;
     style.setProperty('--dynamic-wallpaper-filter', 'none');
     style.setProperty('--dynamic-card-shadow', '0 20px 40px -10px rgba(0, 0, 0, 0.52)');
@@ -940,12 +967,44 @@ MediaVisualizerEngine.prototype.wake = function() {
     var self = this;
     if (this.dom.tabs && this.dom.tabs.length) {
       for (var i = 0; i < this.dom.tabs.length; i++) {
-        (function(btn) {
-          btn.addEventListener('click', function() {
-            var tab = btn.getAttribute('data-tab') || 'temp';
-            self.setTab(tab);
+        var btn = this.dom.tabs[i];
+        var tab = btn.getAttribute('data-tab') || 'temp';
+        var isActive = (tab === this.activeTab);
+        btn.setAttribute('tabindex', isActive ? '0' : '-1');
+        btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+
+        (function(index, tabBtn) {
+          tabBtn.addEventListener('click', function() {
+            var targetTab = tabBtn.getAttribute('data-tab') || 'temp';
+            self.setTab(targetTab);
           });
-        })(this.dom.tabs[i]);
+
+          tabBtn.addEventListener('keydown', function(e) {
+            var count = self.dom.tabs.length;
+            var newIndex = -1;
+            if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+              if (e.preventDefault) e.preventDefault();
+              newIndex = (index + 1) % count;
+            } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+              if (e.preventDefault) e.preventDefault();
+              newIndex = (index - 1 + count) % count;
+            } else if (e.key === 'Home') {
+              if (e.preventDefault) e.preventDefault();
+              newIndex = 0;
+            } else if (e.key === 'End') {
+              if (e.preventDefault) e.preventDefault();
+              newIndex = count - 1;
+            }
+            if (newIndex >= 0 && newIndex !== index) {
+              var nextBtn = self.dom.tabs[newIndex];
+              var targetTab = nextBtn.getAttribute('data-tab') || 'temp';
+              self.setTab(targetTab);
+              if (typeof nextBtn.focus === 'function') {
+                nextBtn.focus();
+              }
+            }
+          });
+        })(i, btn);
       }
     }
   };
@@ -960,9 +1019,11 @@ MediaVisualizerEngine.prototype.wake = function() {
         if (isThis) {
           btn.classList.add('is-active');
           btn.setAttribute('aria-selected', 'true');
+          btn.setAttribute('tabindex', '0');
         } else {
           btn.classList.remove('is-active');
           btn.setAttribute('aria-selected', 'false');
+          btn.setAttribute('tabindex', '-1');
         }
       }
     }
@@ -1241,6 +1302,9 @@ MediaVisualizerEngine.prototype.wake = function() {
     lastCelestialUpdate: 0,
     isPlaybackPaused: false,
     isSyncing: false,
+    pendingSnapshot: null,
+    syncPending: false,
+    syncPendingForce: false,
 
     // Text-Track Unicode Sparkline Characters (8 levels - fallback legacy)
     SPARK_BLOCKS: [' ', '▂', '▃', '▄', '▅', '▆', '▇', '█'],
@@ -1671,8 +1735,13 @@ MediaVisualizerEngine.prototype.wake = function() {
           if (self.mediaVisualizer) self.mediaVisualizer.sleep();
         } else {
           self.startLoop();
-          if (self.pomodoro) self.pomodoro.resumeTicker();
-          if (self.mediaVisualizer && self.mediaVisualizer.demoMode > 0) {
+          if (self.pendingSnapshot) {
+            var snap = self.pendingSnapshot;
+            self.pendingSnapshot = null;
+            self.renderAll(snap);
+          }
+          if (self.pomodoro && self.showPomodoro) self.pomodoro.resumeTicker();
+          if (self.mediaVisualizer && (self.mediaVisualizer.demoMode > 0 || self.showMediaPlayer)) {
             self.mediaVisualizer.wake();
           }
         }
@@ -1776,11 +1845,11 @@ MediaVisualizerEngine.prototype.wake = function() {
             if (self.pomodoro) self.pomodoro.setDurations(null, typeof val === 'number' ? val : parseInt(val, 10), null);
             break;
           case 'enableAudioVisualizer':
-            if (self.mediaVisualizer) self.mediaVisualizer.enabled = !!val;
+            if (self.mediaVisualizer) self.mediaVisualizer.setEnabled(!!val);
             break;
           case 'enableDynamicSolarLighting':
             if (self.solarLighting) {
-              self.solarLighting.enabled = !!val;
+              self.solarLighting.setEnabled(!!val);
               self.updateClock();
             }
             break;
@@ -1794,6 +1863,7 @@ MediaVisualizerEngine.prototype.wake = function() {
 
       // Windows SMTC Current Track telemetry
       global.LivelyBridge.onCurrentTrack(function(track) {
+        if (self.isPlaybackPaused) return;
         if (self.mediaVisualizer) {
           self.mediaVisualizer.handleTrackUpdate(track);
         }
@@ -1801,6 +1871,7 @@ MediaVisualizerEngine.prototype.wake = function() {
 
       // Real-time Audio Spectrum telemetry (128 normalized float bins)
       global.LivelyBridge.onAudioData(function(audioArray) {
+        if (self.isPlaybackPaused) return;
         if (self.mediaVisualizer) {
           self.mediaVisualizer.processAudioData(audioArray);
         }
@@ -2020,6 +2091,17 @@ MediaVisualizerEngine.prototype.wake = function() {
 
     setShowMediaFocusDock: function(show) {
       this.showMediaFocusDock = !!show;
+      if (!this.showMediaFocusDock) {
+        if (this.mediaVisualizer) this.mediaVisualizer.sleep();
+        if (this.pomodoro) this.pomodoro.sleepTicker();
+      } else {
+        if (this.mediaVisualizer && this.showMediaPlayer && !this.isPlaybackPaused) {
+          this.mediaVisualizer.wake();
+        }
+        if (this.pomodoro && this.showPomodoro && this.pomodoro.isRunning && !this.isPlaybackPaused) {
+          this.pomodoro.resumeTicker();
+        }
+      }
       this.updateLayoutAutoResize();
     },
 
@@ -2089,8 +2171,14 @@ MediaVisualizerEngine.prototype.wake = function() {
         // Dynamically compute companion dock vertical positioning offset
         if (this.dom.hud) {
           var hudHeight = this.dom.hud.offsetHeight || 395;
+          var dockHeight = (this.dom.dockMediaFocus && this.dom.dockMediaFocus.offsetHeight) || 124;
           var offsetGap = 14;
-          var topOffset = (32 + hudHeight + offsetGap) + 'px';
+          var vh = (typeof window !== 'undefined' && window.innerHeight) ? window.innerHeight : 1080;
+          var topOffsetNum = 32 + hudHeight + offsetGap;
+          if (topOffsetNum + dockHeight > vh - 10) {
+            topOffsetNum = Math.max(16, vh - 10 - dockHeight);
+          }
+          var topOffset = topOffsetNum + 'px';
           var bottomOffset = (32 + hudHeight + offsetGap) + 'px';
           document.documentElement.style.setProperty('--dock-top', topOffset);
           document.documentElement.style.setProperty('--dock-bottom', bottomOffset);
@@ -2402,24 +2490,22 @@ MediaVisualizerEngine.prototype.wake = function() {
         }
       }
 
-      // Continuously refresh celestial ephemeris and sky gradient (every 15s)
+      // Continuously refresh celestial ephemeris, sky gradient, and dynamic solar lighting (every 15s)
       var elapsedCelestial = now.getTime() - this.lastCelestialUpdate;
       if (elapsedCelestial >= 15000 || !this.lastCelestialUpdate) {
         this.renderCelestial();
         this.updateSky();
-        this.lastCelestialUpdate = now.getTime();
-      }
-
-      // Dynamic macOS-Style Solar Lighting & Directional Shadows
-      if (this.solarLighting) {
-        var defaultLoc = (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.defaultLocation) || {};
-        var lat = typeof defaultLoc.latitude === 'number' ? defaultLoc.latitude : 35.6762;
-        var lng = typeof defaultLoc.longitude === 'number' ? defaultLoc.longitude : 139.6503;
-        if (this.state && this.state.location) {
-          if (typeof this.state.location.latitude === 'number') lat = this.state.location.latitude;
-          if (typeof this.state.location.longitude === 'number') lng = this.state.location.longitude;
+        if (this.solarLighting) {
+          var defaultLoc = (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.defaultLocation) || {};
+          var lat = typeof defaultLoc.latitude === 'number' ? defaultLoc.latitude : 35.6762;
+          var lng = typeof defaultLoc.longitude === 'number' ? defaultLoc.longitude : 139.6503;
+          if (this.state && this.state.location) {
+            if (typeof this.state.location.latitude === 'number') lat = this.state.location.latitude;
+            if (typeof this.state.location.longitude === 'number') lng = this.state.location.longitude;
+          }
+          this.solarLighting.update(now, lat, lng);
         }
-        this.solarLighting.update(now, lat, lng);
+        this.lastCelestialUpdate = now.getTime();
       }
     },
 
@@ -2510,9 +2596,11 @@ MediaVisualizerEngine.prototype.wake = function() {
       if (this.isPlaybackPaused && !forceRefresh) return;
       if (this.simulationMode > 0 && !forceRefresh) return;
 
-      // Prevent concurrent race condition and thrashing
+      // Prevent concurrent race condition and thrashing by queuing pending sync
       if (this.isSyncing) {
-        console.log('[App] Atmosphere sync already in progress, ignoring duplicate request.');
+        this.syncPending = true;
+        if (forceRefresh) this.syncPendingForce = true;
+        console.log('[App] Atmosphere sync already in progress, queued pending sync.');
         return;
       }
       this.isSyncing = true;
@@ -2525,6 +2613,12 @@ MediaVisualizerEngine.prototype.wake = function() {
         self.isSyncing = false;
         if (self.dom.btnRefresh) {
           self.dom.btnRefresh.classList.remove('is-spinning');
+        }
+        if (self.syncPending) {
+          var pendingForce = !!self.syncPendingForce;
+          self.syncPending = false;
+          self.syncPendingForce = false;
+          self.loadAtmosphere(pendingForce);
         }
       };
 
@@ -2540,7 +2634,11 @@ MediaVisualizerEngine.prototype.wake = function() {
       global.ApiService.fetchAtmosphere(forceRefresh)
         .then(function(snapshot) {
           self.state = snapshot;
-          self.renderAll(snapshot);
+          if (self.isPlaybackPaused) {
+            self.pendingSnapshot = snapshot;
+          } else {
+            self.renderAll(snapshot);
+          }
           if (self.dom.syncDot) self.dom.syncDot.style.background = '#10b981'; // Green on success
           finishSync();
         })
@@ -2551,7 +2649,11 @@ MediaVisualizerEngine.prototype.wake = function() {
           // Fallback to mock data if no state exists
           if (!self.state && global.CacheManager) {
             self.state = global.CacheManager.getMockData();
-            self.renderAll(self.state);
+            if (self.isPlaybackPaused) {
+              self.pendingSnapshot = self.state;
+            } else {
+              self.renderAll(self.state);
+            }
           }
           finishSync();
         });
@@ -2592,45 +2694,68 @@ MediaVisualizerEngine.prototype.wake = function() {
       if (!w) return;
 
       var isF = (this.tempUnit === 'F');
-      var temp = isF ? Math.round(w.tempF) : Math.round(w.tempC);
-      var apparent = isF ? Math.round(w.apparentF) : Math.round(w.apparentC);
-      var high = isF ? Math.round(w.tempMaxF) : Math.round(w.tempMaxC);
-      var low = isF ? Math.round(w.tempMinF) : Math.round(w.tempMinC);
+      var temp = isF
+        ? (Number.isFinite(w.tempF) ? Math.round(w.tempF) : '--')
+        : (Number.isFinite(w.tempC) ? Math.round(w.tempC) : '--');
+      var apparent = isF
+        ? (Number.isFinite(w.apparentF) ? Math.round(w.apparentF) : '--')
+        : (Number.isFinite(w.apparentC) ? Math.round(w.apparentC) : '--');
+      var high = isF
+        ? (Number.isFinite(w.tempMaxF) ? Math.round(w.tempMaxF) : '--')
+        : (Number.isFinite(w.tempMaxC) ? Math.round(w.tempMaxC) : '--');
+      var low = isF
+        ? (Number.isFinite(w.tempMinF) ? Math.round(w.tempMinF) : '--')
+        : (Number.isFinite(w.tempMinC) ? Math.round(w.tempMinC) : '--');
 
       if (this.dom.hudTempVal) this.dom.hudTempVal.textContent = temp;
       if (this.dom.hudTempUnit) this.dom.hudTempUnit.textContent = isF ? '°F' : '°C';
       if (this.dom.hudCondition) this.dom.hudCondition.textContent = w.conditionText || 'Fair';
-      if (this.dom.hudFeelsLike) this.dom.hudFeelsLike.textContent = 'Feels like ' + apparent + '°';
-      if (this.dom.hudTempHigh) this.dom.hudTempHigh.textContent = high + '°';
-      if (this.dom.hudTempLow) this.dom.hudTempLow.textContent = low + '°';
+      if (this.dom.hudFeelsLike) this.dom.hudFeelsLike.textContent = (apparent !== '--') ? ('Feels like ' + apparent + '°') : 'Feels like --';
+      if (this.dom.hudTempHigh) this.dom.hudTempHigh.textContent = (high !== '--') ? (high + '°') : '--';
+      if (this.dom.hudTempLow) this.dom.hudTempLow.textContent = (low !== '--') ? (low + '°') : '--';
 
-      if (this.dom.metricHumidity) this.dom.metricHumidity.textContent = Math.round(w.humidity) + '%';
+      if (this.dom.metricHumidity) {
+        this.dom.metricHumidity.textContent = Number.isFinite(w.humidity) ? (Math.round(w.humidity) + '%') : '--';
+      }
       if (this.dom.metricWind) {
-        this.dom.metricWind.textContent = isF
-          ? (w.windSpeedMph + ' mph')
-          : (w.windSpeedKm + ' km/h');
+        if (isF) {
+          this.dom.metricWind.textContent = Number.isFinite(w.windSpeedMph) ? (w.windSpeedMph + ' mph') : '--';
+        } else {
+          this.dom.metricWind.textContent = Number.isFinite(w.windSpeedKm) ? (w.windSpeedKm + ' km/h') : '--';
+        }
       }
       if (this.dom.metricPrecip) {
-        this.dom.metricPrecip.textContent = (w.precipitationMm || 0.0).toFixed(1) + ' mm';
+        this.dom.metricPrecip.textContent = Number.isFinite(w.precipitationMm) ? ((w.precipitationMm || 0.0).toFixed(1) + ' mm') : '--';
       }
     },
 
     renderAqi: function(aqi) {
       if (!aqi) return;
 
+      var isAvailable = aqi.available !== false && aqi.europeanAqi != null && Number.isFinite(aqi.europeanAqi);
+      var unit = aqi.pollutantUnit || 'µg/m³';
+
       if (this.dom.hudAqiBadge) {
-        this.dom.hudAqiBadge.style.background = aqi.color || '#10b981';
+        this.dom.hudAqiBadge.style.background = isAvailable ? (aqi.color || '#10b981') : '#64748b';
       }
       if (this.dom.hudAqiCategory) {
-        this.dom.hudAqiCategory.textContent = (aqi.category || 'Good') + ' (' + aqi.europeanAqi + ')';
+        this.dom.hudAqiCategory.textContent = isAvailable
+          ? ((aqi.category || 'Good') + ' (' + aqi.europeanAqi + ')')
+          : (aqi.category || 'Unavailable');
       }
       if (this.dom.hudAqiFill) {
         // European AQI 0 to 100 mapped to %
-        var pct = Math.min(100, Math.max(5, (aqi.europeanAqi / 80) * 100));
+        var pct = isAvailable ? Math.min(100, Math.max(5, (aqi.europeanAqi / 80) * 100)) : 0;
         this.dom.hudAqiFill.style.width = pct + '%';
       }
-      if (this.dom.hudPm25) this.dom.hudPm25.textContent = aqi.pm2_5 != null ? aqi.pm2_5 + ' µg/m³' : '--';
-      if (this.dom.hudPm10) this.dom.hudPm10.textContent = aqi.pm10 != null ? aqi.pm10 + ' µg/m³' : '--';
+      if (this.dom.hudPm25) {
+        var pm25Val = aqi.pm2_5 != null ? aqi.pm2_5 : aqi.pm25;
+        this.dom.hudPm25.textContent = (pm25Val != null && Number.isFinite(pm25Val)) ? (pm25Val + ' ' + unit) : '--';
+      }
+      if (this.dom.hudPm10) {
+        var pm10Val = aqi.pm10;
+        this.dom.hudPm10.textContent = (pm10Val != null && Number.isFinite(pm10Val)) ? (pm10Val + ' ' + unit) : '--';
+      }
     },
 
     formatNetworkBandwidth: function(valKbps) {
@@ -2798,7 +2923,7 @@ MediaVisualizerEngine.prototype.wake = function() {
       this.lastHwUpdate = Date.now();
 
       // CPU load and name
-      var cpuVal = typeof data.CurrentCpu === 'number' ? Math.round(data.CurrentCpu) : 0;
+      var cpuVal = (typeof data.CurrentCpu === 'number' && Number.isFinite(data.CurrentCpu)) ? Math.round(data.CurrentCpu) : 0;
       cpuVal = Math.max(0, Math.min(100, cpuVal));
       var cpuName = data.NameCpu || 'Processor';
       this.pushHwHistory(this.hwCpuHistory, cpuVal);
@@ -2812,7 +2937,7 @@ MediaVisualizerEngine.prototype.wake = function() {
       if (this.dom.hwCpuName) this.dom.hwCpuName.textContent = cpuName;
 
       // GPU 3D load and name
-      var gpuVal = typeof data.CurrentGpu3D === 'number' ? Math.round(data.CurrentGpu3D) : 0;
+      var gpuVal = (typeof data.CurrentGpu3D === 'number' && Number.isFinite(data.CurrentGpu3D)) ? Math.round(data.CurrentGpu3D) : 0;
       gpuVal = Math.max(0, Math.min(100, gpuVal));
       var gpuName = data.NameGpu || 'Graphics 3D';
       this.pushHwHistory(this.hwGpuHistory, gpuVal);
@@ -2826,11 +2951,11 @@ MediaVisualizerEngine.prototype.wake = function() {
       if (this.dom.hwGpuName) this.dom.hwGpuName.textContent = gpuName;
 
       // RAM usage
-      var totalRamMb = typeof data.TotalRam === 'number' ? data.TotalRam : 0;
-      var freeRamMb = typeof data.CurrentRamAvail === 'number' ? data.CurrentRamAvail : 0;
+      var totalRamMb = (typeof data.TotalRam === 'number' && Number.isFinite(data.TotalRam) && data.TotalRam > 0) ? data.TotalRam : 0;
+      var freeRamMb = (typeof data.CurrentRamAvail === 'number' && Number.isFinite(data.CurrentRamAvail) && data.CurrentRamAvail >= 0) ? data.CurrentRamAvail : 0;
       var usedRamMb = totalRamMb > freeRamMb ? (totalRamMb - freeRamMb) : 0;
       var ramPct = totalRamMb > 0 ? Math.round((usedRamMb / totalRamMb) * 100) : 0;
-      ramPct = Math.max(0, Math.min(100, ramPct));
+      ramPct = Number.isFinite(ramPct) ? Math.max(0, Math.min(100, ramPct)) : 0;
       var usedGb = (usedRamMb / 1024).toFixed(1);
       var totalGb = (totalRamMb / 1024).toFixed(1);
 
@@ -2846,8 +2971,8 @@ MediaVisualizerEngine.prototype.wake = function() {
       }
 
       // Disk / Storage
-      var diskVal = typeof data.CurrentDisk === 'number' ? Math.round(data.CurrentDisk) : null;
-      if (diskVal === null && typeof data.DiskUsage === 'number') {
+      var diskVal = (typeof data.CurrentDisk === 'number' && Number.isFinite(data.CurrentDisk)) ? Math.round(data.CurrentDisk) : null;
+      if (diskVal === null && typeof data.DiskUsage === 'number' && Number.isFinite(data.DiskUsage)) {
         diskVal = Math.round(data.DiskUsage);
       }
       if (diskVal !== null) {
@@ -2865,15 +2990,15 @@ MediaVisualizerEngine.prototype.wake = function() {
       }
 
       // Network Down & Network Up Telemetry
-      var rawDown = typeof data.CurrentNetDown === 'number' ? data.CurrentNetDown :
-                    (typeof data.NetDown === 'number' ? data.NetDown :
-                    (typeof data.NetworkDown === 'number' ? data.NetworkDown :
-                    (typeof data.CurrentNetworkDown === 'number' ? data.CurrentNetworkDown : null)));
+      var rawDown = (typeof data.CurrentNetDown === 'number' && Number.isFinite(data.CurrentNetDown)) ? data.CurrentNetDown :
+                    ((typeof data.NetDown === 'number' && Number.isFinite(data.NetDown)) ? data.NetDown :
+                    ((typeof data.NetworkDown === 'number' && Number.isFinite(data.NetworkDown)) ? data.NetworkDown :
+                    ((typeof data.CurrentNetworkDown === 'number' && Number.isFinite(data.CurrentNetworkDown)) ? data.CurrentNetworkDown : null)));
 
-      var rawUp = typeof data.CurrentNetUp === 'number' ? data.CurrentNetUp :
-                  (typeof data.NetUp === 'number' ? data.NetUp :
-                  (typeof data.NetworkUp === 'number' ? data.NetworkUp :
-                  (typeof data.CurrentNetworkUp === 'number' ? data.CurrentNetworkUp : null)));
+      var rawUp = (typeof data.CurrentNetUp === 'number' && Number.isFinite(data.CurrentNetUp)) ? data.CurrentNetUp :
+                  ((typeof data.NetUp === 'number' && Number.isFinite(data.NetUp)) ? data.NetUp :
+                  ((typeof data.NetworkUp === 'number' && Number.isFinite(data.NetworkUp)) ? data.NetworkUp :
+                  ((typeof data.CurrentNetworkUp === 'number' && Number.isFinite(data.CurrentNetworkUp)) ? data.CurrentNetworkUp : null)));
 
       if (rawDown !== null) {
         var downKbps = (data.NameNetCard || rawDown > 1000000) ? Math.round((rawDown * 8) / 1000) : rawDown;
@@ -3256,6 +3381,11 @@ MediaVisualizerEngine.prototype.wake = function() {
       }
       if (this.pomodoro && this.showPomodoro) {
         this.pomodoro.resumeTicker();
+      }
+      if (this.pendingSnapshot) {
+        var snap = this.pendingSnapshot;
+        this.pendingSnapshot = null;
+        this.renderAll(snap);
       }
 
       this.loop(this.lastFrameTime);

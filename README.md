@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2011%20%7C%20Lively%20Wallpaper-0078d4.svg)](#)
-[![Performance](https://img.shields.io/badge/Performance-60%20FPS%20%7C%200%25%20Idle%20CPU-success.svg)](#)
+[![Performance](https://img.shields.io/badge/Performance-60%20FPS%20%7C%20Quiescent%20Parked%20Lifecycle-success.svg)](#)
 [![Zero API Keys](https://img.shields.io/badge/API%20Keys-Zero%20Config%20Required-brightgreen.svg)](#)
 
 > **Hardware-Accelerated Ambient Weather Wallpaper & Live Bento HUD for Windows 11 & Lively Wallpaper**
@@ -16,8 +16,8 @@ Local Wally HUD is a production-grade, hyper-optimized ambient desktop wallpaper
 Traditional live wallpapers are notorious resource hogs: heavy video playback loops, unconstrained WebViews, and unthrottled JavaScript timers that chew 5–15% CPU, trigger laptop battery drain, and cause micro-stutter during gaming.
 
 **Local Wally was engineered from the silicon up to solve this:**
-1. **Zero Garbage Collection (GC) Pressure**: The 60 FPS animation loop achieves zero per-frame heap allocations through contiguous TypedArrays structured as a **Struct-of-Arrays (SoA)** and ring-buffer recycling.
-2. **True 0.0% Host Lifecycle Parking**: Seamless integration with Lively Wallpaper's native IPC drops CPU and GPU utilization to absolute 0.0% whenever occluded, minimized, or when running full-screen games.
+1. **Zero Garbage Collection (GC) Pressure**: The 60 FPS animation loop achieves zero per-frame heap allocations during particle physics simulation and audio spectrum rendering through contiguous TypedArrays structured as a **Struct-of-Arrays (SoA)**, frozen geometry constants, and ring-buffer recycling.
+2. **Quiescent Host Lifecycle Parking**: Seamless integration with Lively Wallpaper's native IPC halts the animation loop (`cancelAnimationFrame`), suspends background tickers, and sleeps the visualizer/Pomodoro canvas whenever occluded, minimized, or when running full-screen games (~0% CPU).
 3. **Desktop-Friendly Side-by-Side Bento Grid**: The HUD is positioned on the right half of widescreen displays (1080p, 1440p, 1600p, 4K), keeping traditional Windows desktop icons on the left 100% unobstructed with zero vertical scrolling.
 4. **Zero-Key Zero-Config Out-of-the-Box**: Works instantaneously without requiring developer API keys or accounts.
 
@@ -74,6 +74,8 @@ Automatically derives the display's native physical resolution (`screen.width * 
 
 ### 📊 Google-Style Space-Efficient Multi-Tab SVG Forecast Chart HUD
 - **Zero-Reflow Layout Containment**: Strict `contain: layout paint;` containment guarantees that forecast updates and tab toggling never trigger layout reflows across the Bento grid.
+- **8-Sample Chronological Projection Across 24h Horizon**: Atmospheric timeseries (24 hours) are normalized and chronologically downsampled into 8 discrete forecast points (+0h to +21h at 3-hour increments) to fit the compact SVG viewBox without label collision.
+- **Keyboard Navigation & Roving Tabindex**: Tabs implement full keyboard accessibility (<kbd>←</kbd> / <kbd>→</kbd> / <kbd>Home</kbd> / <kbd>End</kbd>) with roving `tabindex="0"` on the active tab and `:focus-visible` styling.
 - **6 Switchable Telemetry Tabs**:
   - 🌡️ **Temperature (`temp`)**: Amber gradient curve with high/low bounds padding.
   - 🔥 **Feels Like (`feels_like`)**: Warm coral gradient curve tracking apparent temperature telemetry.
@@ -82,7 +84,7 @@ Automatically derives the display's native physical resolution (`screen.width * 
   - 💧 **Humidity (`humidity`)**: Purple relative humidity curve (0–100%).
   - 🍃 **Air Quality (`aqi`)**: Color-coded categorical risk points (Good, Fair, Moderate, Poor, Very Poor).
 - **Catmull-Rom Cubic Bezier Splines & Defensive Normalization**: Smooth vector paths rendered in an inline `<svg viewBox="0 0 520 120">` with pre-render finite value sanitization (enforcing safe numbers while preserving valid zero and negative values) and clamped control points preventing clipping.
-- **Zero-GC Pre-Allocated Element Pool & Typed Buffers**: Dots, labels, and axes are pre-allocated in SVG object pools, while coordinates reuse contiguous `Float32Array` buffers on `SvgForecastChartEngine`, guaranteeing **0.0 bytes GC allocation** per render.
+- **Pre-Allocated Element Pool & Typed Buffers**: Dots, labels, and axes are pre-allocated in SVG object pools, while coordinates reuse contiguous `Float32Array` buffers on `SvgForecastChartEngine`, eliminating per-render DOM rebuilds.
 
 ### 💻 Host Hardware Telemetry & High-Fidelity SVG Sparklines
 - **Minimalist Hardware-Accelerated SVG Sparklines**: Replaces unicode text-track sparklines with crisp 1.5px anti-aliased inline vector paths (`<svg viewBox="0 0 80 20">`) featuring smooth cubic Bezier / Catmull-Rom interpolation across a 40-point ring buffer (`Float32Array(40)`) and subtle vertical gradient area fills. Operates at **0.0% noticeable CPU overhead** with zero memory allocations during rendering.
@@ -246,6 +248,25 @@ local-wally/
     ├── sky.js             # Dynamic celestial gradient & Sun/Moon placement
     └── suncalc.js         # Offline solar/lunar ephemeris math library
 ```
+
+---
+
+## 🛡️ v0.6.2 Production Audit Hardening
+
+Local Wally v0.6.2 incorporates comprehensive lifecycle, data correctness, and tooling fixes validated across a 22-test automated regression suite:
+- **Disentangled Lifecycle**: Host pause and document visibility state are decoupled; visibility changes cannot prematurely wake playback when paused by Lively.
+- **Suppressed Paused Telemetry**: SMTC and audio callbacks ignore events during pause; late-arriving atmosphere updates are deferred in `pendingSnapshot` and rendered upon resume.
+- **Deep Engine Sleep**: Canvas contexts are cleared when disabled or sleeping to prevent frozen frames; Pomodoro tickers pause when hidden.
+- **Eliminated Visualizer Heap Allocation**: Visualizer bar corners reuse a frozen class constant (`MediaVisualizerEngine.BAR_RADII`).
+- **Smooth Particle Transitions**: Weather category and wind changes smoothly reconfigure existing particle velocities and phases without pop-in.
+- **Throttled Solar Cadence**: Solar lighting updates are throttled to 15s with state guards preventing redundant style updates when disabled.
+- **Timestamp-Joined AQI Forecast**: AQI forecast samples are chronologically matched across midnight rather than indexing by clock hour.
+- **Accurate OWM Timeseries**: 3-hour forecast chunks from OpenWeatherMap 2.5 sample with `step = 1` (+21h horizon).
+- **Honest Outages & Accurate Units**: Air quality outages report `Unavailable` without fabricating data; WAQI station indices retain their `AQI` unit.
+- **Strict Number Validation**: System telemetry and weather metrics reject `NaN`, `Infinity`, and `-Infinity`.
+- **Responsive Layout**: Clamped `--dock-top` offset and media query adaptations prevent vertical clipping at 720p/768p viewports.
+- **Keyboard Accessible Tabs**: Forecast tabs feature roving `tabindex`, arrow key navigation, and focus outlines.
+- **Hardened Preview Server & Packaging**: Host header checks, private file blocking, credential masking in logs, and atomic release packaging.
 
 ---
 

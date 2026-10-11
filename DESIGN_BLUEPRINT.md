@@ -8,15 +8,15 @@
 `Local Wally HUD` is a production-grade, hardware-accelerated ambient wallpaper engine built for the **Windows 11 Chromium WebView2** runtime within **Lively Wallpaper**. It fuses real-time celestial ephemeris calculations, atmospheric telemetry (WMO weather and European Air Quality Index), contextual high-resolution photography, and a zero-allocation particle simulation into a unified desktop presentation.
 
 ### Core Architectural Directives
-1. **Zero Garbage Collection (GC) Pressure**: The 60 FPS animation loop achieves zero per-frame heap allocations through contiguous TypedArrays structured as a **Struct-of-Arrays (SoA)** and ring-buffer recycling.
+1. **Zero Garbage Collection (GC) Pressure**: The 60 FPS animation loop achieves zero per-frame heap allocations during particle physics simulation and audio spectrum rendering through contiguous TypedArrays structured as a **Struct-of-Arrays (SoA)**, frozen geometry constants, and ring-buffer recycling.
 2. **Adaptive Hardware Tiering**: Differentiates Integrated GPUs (UMA / shared LPDDR5X memory) from Discrete GPUs (dedicated VRAM) at startup via WebGL introspection, automatically tuning the Device Pixel Ratio (DPR) to balance fill-rate conservation and visual fidelity.
 3. **Dynamic 1:1 Pixel Native Resolution Matching**: Automatically derives native display physical pixel dimensions (`screen.width * dpr`, `screen.height * dpr`) and requests resolution-tailored wallpaper imagery (`&w=${width}&h=${height}&fit=crop&q=85`), eliminating client-side resampling artifacts and texture memory waste.
 4. **Resilient Network Ingestion**: Multi-tier zero-configuration geolocation (HTML5 GPS with 4s timeout $\to$ silent IP lookup $\to$ hardcoded astronomical fallback) feeding keyless Open-Meteo weather and AQI endpoints.
 5. **Caching Firewall**: Persistent client-side cache firewall with a configurable 5 to 30-minute Time-To-Live (TTL), strictly guarding against API rate-limiting, redundant network egress, and laptop battery drain.
-6. **Zero-Power Host Lifecycle Parking**: Seamless Lively Wallpaper host IPC integration dropping CPU/GPU utilization to absolute 0.0% whenever occluded, minimized, or when full-screen applications/games are active.
+6. **Quiescent Host Lifecycle Parking**: Seamless Lively Wallpaper host IPC integration halts the animation loop (`cancelAnimationFrame`), suspends background tickers, and sleeps the visualizer/Pomodoro canvas whenever occluded, minimized, or when full-screen applications/games are active, bringing application-level JavaScript load to a complete standstill (~0% CPU).
 7. **Hardware Telemetry HUD & Text-Track Sparklines**: Direct host telemetry hook via Lively `--system-information` (`livelySystemInformation`), rendering rolling CPU, GPU 3D, RAM (used/total & %), and storage charts with zero-allocation Unicode sparklines (` ▂▃▄▅▆▇█`) and an automatic 10-second preview fallback ticker.
 8. **Zero-Key Regional News Feed Dispatch**: Proximity-targeted Google News RSS ingestion via CORS gateways and native browser XML `DOMParser()`, normalized, cached inside the 15-minute firewall, and rotated smoothly every 7 seconds with CSS opacity transitions.
-9. **Universal Windows Media SMTC Canvas & 60 FPS Visualizer**: Integrates native `livelyCurrentTrack(data)` and 60 FPS `livelyAudioListener(audioArray)` to extract live track/artist/artwork and render a 32-band downsampled frequency spectrum with auto-sleep parking when silent (0% CPU).
+9. **Universal Windows Media SMTC Canvas & 60 FPS Visualizer**: Integrates native `livelyCurrentTrack(data)` and 60 FPS `livelyAudioListener(audioArray)` to extract live track/artist/artwork and render a 32-band downsampled frequency spectrum with automatic canvas clearing and sleep parking when silent.
 10. **Performant Pomodoro Countdown HUD**: Lightweight offline JavaScript interval state timer with native Canvas 2D radial countdown arc vector rendering and direct background mouse toggles (zero page reloads).
 11. **macOS-Style Dynamic Solar Lighting & Shadowing Engine**: Continuous SunCalc astronomical solar vector projection mapped to CSS Custom Properties, seamlessly adjusting wallpaper brightness, color temperature filters, and physical directional drop-shadows across day/night cycles without CPU spikes.
 
@@ -878,26 +878,32 @@ To ensure high availability and resilient atmospheric telemetry worldwide withou
    - Ground-station sensor network covering global metropolitan stations.
    - Normalizes US EPA AQI (0–500) into unified European AQI equivalents with consistent categorical tokens and colors.
 
-### 21.4 Unified 24-Hour Hourly Telemetry Schema
-All providers pass through `normalizeForecastPoints()`, yielding an immutable array of 24 hourly objects:
+### 21.4 Unified 24-Hour Telemetry Schema & 8-Sample Chart Projection
+Atmospheric providers ingest a 24-hour forward timeseries. To fit the compact SVG viewBox ($520 \times 120$) without text collisions or clutter, `normalizeForecastPoints()` normalizes the data and chronologically samples **8 discrete forecast points** across the 24-hour horizon (+0h to +21h at 3-hour increments):
+
 ```typescript
 interface HourlyForecastPoint {
-  time: string;           // ISO 8601 string or formatted time
+  time: string;           // ISO 8601 string or formatted time (e.g. "14:00")
   label: string;          // Human-readable compact hour label (e.g., "14:00" or "2 PM")
-  tempC: number;          // Celsius temperature
-  tempF: number;          // Fahrenheit temperature
+  hour: number;           // Local clock hour (0-23)
+  tempC: number;          // Celsius temperature (sanitized finite number)
+  tempF: number;          // Fahrenheit temperature (sanitized finite number)
+  apparentC: number;      // Feels like Celsius
+  apparentF: number;      // Feels like Fahrenheit
   precipProb: number;     // 0 to 100%
-  precipitationMm: number;// Hourly liquid precipitation accumulation
+  precipitationMm: number;// Liquid precipitation accumulation
   windSpeedKm: number;    // Wind speed in km/h
   windSpeedMph: number;   // Wind speed in mph
   humidity: number;       // 0 to 100%
-  aqi: number;            // Normalized index
-  aqiCategory: string;    // 'Good' | 'Fair' | 'Moderate' | 'Poor' | 'Very Poor'
+  aqi: number | null;     // Chronologically mapped AQI index
+  aqiCategory: string;    // 'Good' | 'Fair' | 'Moderate' | 'Poor' | 'Very Poor' | 'Unavailable'
   aqiColor: string;       // Hex color matching categorical severity
   wmoCode: number;        // Standardized WMO condition code
   conditionText: string;  // Textual weather description
 }
 ```
+
+*Note on Resolution Hierarchy*: Ingestion stores the 24-hour forward horizon in cache; `SvgForecastChartEngine` receives exactly 8 chronological points ($N=8$, index 0 to 7) for vector Bezier curve drawing and vertex label anchoring.
 
 ---
 
@@ -950,6 +956,40 @@ Prior to v0.6.1, `fetchWithTimeout` and XML gateway timeout helpers cleared time
 In rare network degradation scenarios or API anomaly payloads, raw metrics can arrive as `NaN`, `Infinity`, `-Infinity`, or `null`.
 - **Pre-Render Normalization (`normalizeForecastPoints`)**: A strict `safeNum(val, fallback)` validator verifies `Number.isFinite`. Non-finite anomalies are safely normalized to base values while strictly preserving valid zero (`0`) and negative values (e.g. sub-zero temperatures like `-8.5°C`).
 - **Defensive Vector Bounds & Bezier Pathing (`SvgForecastChartEngine`)**: `computeBounds` skips non-finite values and guarantees finite, bounded ranges. Coordinate mapping and cubic Bezier control point calculations clamp non-finite values to fallback bounds, ensuring SVG `d` path strings never contain `"NaN"` or `"Infinity"`.
+
+---
+
+## 24. v0.6.2 Production Audit Hardening, Lifecycle Synchronization & Defensive Resilience
+
+Following a comprehensive production code audit against real-world WebView2 lifecycle behaviors and multi-provider failure modes, Local Wally v0.6.2 applies 22 targeted hardening fixes across lifecycle management, data normalization, UI layout, and tooling:
+
+### 24.1 Lifecycle & Host Event Synchronization
+1. **Decoupled Document Visibility & Host Playback State**: Disentangles `hostPaused` (reported by Lively IPC) from `documentHidden` (Page Visibility API). When Lively pauses the wallpaper host, subsequent document visibility changes cannot prematurely unpause playback.
+2. **Telemetry & Deferred Snapshot Suppression During Pause**: SMTC track metadata and 60 FPS audio data callbacks discard updates while paused. Late-arriving atmospheric snapshots arriving during pause are queued into `pendingSnapshot` and replayed upon resuming.
+3. **Engine Sleep & Canvas Clearing on Feature Disable**: Hiding the companion dock or disabling the audio visualizer transitions `MediaVisualizerEngine` into `isSleeping` and clears the canvas to avoid frozen visualizer frames. Pomodoro timers pause their tick callbacks when docked out.
+4. **Zero-Allocation Visualizer Bar Corner Radii**: Replaced per-bar per-frame array allocations (`[2, 2, 0, 0]`) in `roundRect()` with an immutable frozen class constant (`MediaVisualizerEngine.BAR_RADII = Object.freeze([2, 2, 0, 0])`), eliminating ~1,920 array allocations/sec.
+5. **Particle Transitions Without Velocity Stagnation**: `ParticleEngine.setWeather()` smoothly transitions existing particles to target velocity, size, alpha, and sway boundaries across weather switches (e.g., Rain to Snow) without velocity pop-in or dropped frames.
+6. **Throttled Solar Lighting Cadence with State Guard**: Throttled `SolarLightingEngine.update()` to the 15-second celestial cadence and added `isReset` state guard to avoid redundant DOM CSS variable writes when disabled.
+
+### 24.2 Data Normalization & Provider Defenses
+7. **Sequential Step AQI Forecast Join**: Joined AQI forecast telemetry across midnight and timezones using sequential chronological step and timestamp matching rather than vulnerable clock-hour array lookups.
+8. **OWM 2.5 3-Hour Interval Sampling Correction**: OpenWeatherMap 2.5 `data.list` chunks (delivered at 3-hour intervals) are sampled with `step = 1`, correctly scoping the 8-point forecast horizon to +21 hours instead of stretching to +63 hours.
+9. **Consistent Local Hour Timestamp Parsing**: Parsed UTC ISO timestamps from MET Norway and Open-Meteo into local `Date` objects, ensuring forecast hour labels reflect user-local clock times.
+10. **Honest Outage Reporting**: Open-Meteo AQI outages report `available: false`, category `'Unavailable'`, and `europeanAqi: null`, eliminating fabricated "Good (22)" false-positives.
+11. **WAQI Pollutant Unit Accuracy**: Preserved WAQI station pollutant readings as `'AQI'` rather than mislabeling index values as `'µg/m³'` concentrations.
+12. **Provider Context Validation & Queued Synchronization**: Cache keys bind `weatherProvider` and `aqiProvider` identity. Switching providers invalidates stale cached snapshots, and concurrent sync requests are cleanly queued rather than dropped.
+13. **Strict Telemetry Validation**: Hardware system telemetry (CPU, GPU 3D, RAM, Disk, Net Down/Up) and weather metrics strictly enforce `Number.isFinite()`, discarding `NaN` and `Infinity` payloads.
+14. **Caller Signal Listener Cleanup**: `fetchWithTimeout()` registers caller `AbortSignal` listeners and removes them in all completion, rejection, and timeout paths.
+15. **Decoupled Regional News Ingestion**: Slow regional news RSS gateways and proxy retries resolve in the background without blocking weather and AQI forecast rendering.
+16. **Offline Location Country Code**: Corrected offline fallback location for Tokyo from `'US'` to `'JP'`.
+17. **Negative Cache Skew Protection**: Negative cache age resulting from system clock adjustments is treated as expired.
+
+### 24.3 UI Layout & Tooling Hardening
+18. **Responsive Dock Clamping for 720p/768p Viewports**: Extended compact media queries to `@media (max-height: 768px)` and dynamically clamped `--dock-top` against viewport height to eliminate dock clipping on compact displays.
+19. **Keyboard Accessibility for Forecast Tabs**: Implemented roving `tabindex` (`0` on active, `-1` on inactive) with ArrowLeft/ArrowRight/Home/End keyboard navigation and `:focus-visible` outline styles.
+20. **Sensitive Credential Log Masking**: `LivelyBridge.emitProperty()` masks API keys, secrets, and tokens with asterisks in console logs.
+21. **Preview Server Hardening**: `serve.js` enforces Host header validation (`localhost`, `127.0.0.1`) and blocks access to private dotfile paths (`.git`, `.atl`).
+22. **Atomic Release Packaging**: `package_release.js` compresses archives into a temporary file (`local-wally.tmp.zip`) and atomically replaces `local-wally.zip`, preserving prior releases if packaging encounters an error.
 
 
 

@@ -79,22 +79,33 @@
       }
     },
 
-    setPaused: function(paused) {
-      if (this.isPaused === paused) return;
-      this.isPaused = paused;
-      console.log('[LivelyBridge] Playback state changed: isPaused =', paused);
+    hostPaused: false,
+    documentHidden: (typeof document !== 'undefined' && document.hidden) ? true : false,
+
+    updatePlaybackState: function() {
+      var shouldPause = this.hostPaused || this.documentHidden;
+      if (this.isPaused === shouldPause) return;
+      this.isPaused = shouldPause;
+      console.log('[LivelyBridge] Playback state changed: isPaused =', shouldPause);
 
       for (var i = 0; i < this.listeners.playback.length; i++) {
         try {
-          this.listeners.playback[i](paused);
+          this.listeners.playback[i](shouldPause);
         } catch (e) {
           console.error('[LivelyBridge] Error in playback listener:', e);
         }
       }
     },
 
+    setPaused: function(paused) {
+      this.hostPaused = !!paused;
+      this.updatePlaybackState();
+    },
+
     emitProperty: function(name, val) {
-      console.log('[LivelyBridge] Property changed:', name, val);
+      var isSecret = /key|token|secret|password/i.test(name);
+      var logVal = isSecret ? (val ? '********' : '<empty>') : val;
+      console.log('[LivelyBridge] Property changed:', name, logVal);
       this.properties[name] = val;
       for (var i = 0; i < this.listeners.property.length; i++) {
         try {
@@ -152,7 +163,8 @@
         try {
           var info = typeof data === 'string' ? JSON.parse(data) : data;
           if (info && typeof info.IsPaused !== 'undefined') {
-            self.setPaused(!!info.IsPaused);
+            self.hostPaused = !!info.IsPaused;
+            self.updatePlaybackState();
           }
         } catch (err) {
           console.warn('[LivelyBridge] Failed to parse playback payload:', err);
@@ -189,11 +201,8 @@
       // 6. Page Visibility API fallback (WebView2 native parking)
       if (typeof document !== 'undefined') {
         document.addEventListener('visibilitychange', function() {
-          if (document.hidden) {
-            self.setPaused(true);
-          } else {
-            self.setPaused(false);
-          }
+          self.documentHidden = !!document.hidden;
+          self.updatePlaybackState();
         });
       }
     }

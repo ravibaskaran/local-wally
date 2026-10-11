@@ -1239,6 +1239,11 @@ html, body {
   background: rgba(255, 255, 255, 0.06);
 }
 
+.forecast-tab:focus-visible {
+  outline: 2px solid var(--accent-color, #38bdf8);
+  outline-offset: 1px;
+}
+
 .forecast-tab.is-active {
   background: var(--tag-bg, rgba(255, 255, 255, 0.14));
   color: var(--text-primary);
@@ -2001,7 +2006,7 @@ html, body {
 /* ==========================================================================
    Responsive Adaptations for Compact Screens & Preview Windows
    ========================================================================== */
-@media (max-height: 640px) {
+@media (max-height: 768px) {
   #hud {
     min-height: auto;
     max-height: calc(100vh - 16px);
