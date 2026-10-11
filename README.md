@@ -261,6 +261,12 @@ local-wally/
 
 ## 🛡️ Recent Updates & Quality Improvements
 
+### Version 0.6.6 — Night Wallpaper Illumination & Clean Presentation
+- **Night Wallpaper Illumination**: Re-engineered the deep night solar lighting profile to keep background wallpaper photography bright, clear, and visible after dark. Replaced shadow-crushing `multiply` blending with non-destructive `soft-light` (opacity `0.40`), raised night wallpaper baseline brightness to `0.86`, normalized contrast to `1.02`, and eliminated unnatural 185° color hue distortion.
+- **Moonlit Celestial Bloom**: Added a soft silvery-blue celestial bloom (`rgba(219, 234, 254, 0.22)` at opacity `0.18`) delivering gentle natural night luminescence across the sky and scene.
+- **Synthetic Starfield Elimination**: Completely removed artificial twinkling star canvas dots from the wallpaper UI, saving CPU and GPU canvas draw calls on every 60 FPS animation frame while keeping weather precipitation (rain, snow, splashes) fully active.
+- **Nocturnal Vignette Tuning**: Widened the clear central aperture to 55% and reduced edge vignette darkening from `0.48` to `0.22` during nocturnal hours to maintain center and midtone illumination.
+
 ### Version 0.6.4 — GDELT News, Moon Ephemeris & Contextual HUD Details
 - **Location-Based Regional News (GDELT DOC 2.0)**: Direct, keyless, and proxy-free regional news ingestion using the GDELT DOC 2.0 API. Formulates location queries with city alias matching, cleans and deduplicates stories, and opens direct publisher articles instead of aggregator redirects, with graceful fallback to Google News RSS.
 - **Astronomy & Offline Moon Ephemeris**: Replaced static nighttime displays with an active Day/Night celestial ephemeris row. Daytime showcases Sunrise, Solar Noon, and Sunset; Nighttime dynamically displays Moonrise, Moon Phase, and Moonset computed entirely offline via bundled `SunCalc.getMoonTimes`. Includes lunar cycle age, illumination percentage, traditional Western full moon names (Harvest Moon, Wolf Moon), cultural Vedic Purnima names, and active meteor shower trackers.
