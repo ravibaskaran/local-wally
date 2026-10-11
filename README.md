@@ -251,21 +251,21 @@ local-wally/
 
 ---
 
-## 🛡️ v0.6.2 Production Audit Hardening
+## 🛡️ v0.6.2 Production Audit Hardening & Defect Verification
 
-Local Wally v0.6.2 incorporates comprehensive lifecycle, data correctness, and tooling fixes validated across a 22-test automated regression suite:
-- **Disentangled Lifecycle**: Host pause and document visibility state are decoupled; visibility changes cannot prematurely wake playback when paused by Lively.
-- **Suppressed Paused Telemetry**: SMTC and audio callbacks ignore events during pause; late-arriving atmosphere updates are deferred in `pendingSnapshot` and rendered upon resume.
-- **Deep Engine Sleep**: Canvas contexts are cleared when disabled or sleeping to prevent frozen frames; Pomodoro tickers pause when hidden.
-- **Eliminated Visualizer Heap Allocation**: Visualizer bar corners reuse a frozen class constant (`MediaVisualizerEngine.BAR_RADII`).
+Local Wally v0.6.2 incorporates comprehensive lifecycle, data correctness, UI layout, and tooling fixes validated across a 22-test audit regression suite (`scratch/test_audit_hardening.js`) and a 6-test post-audit verification suite (`scratch/test_post_audit_verification.js`):
+- **Disentangled Lifecycle**: Host pause and document visibility state are decoupled; visibility changes cannot prematurely wake playback when paused by Lively. Added an idempotency guard on `LivelyBridge.init()`.
+- **Suppressed Paused Telemetry & Recovery**: SMTC and audio callbacks ignore events during pause; late-arriving atmosphere updates are deferred in `pendingSnapshot`, settled background news is buffered in `pendingNews`, and SMTC track updates are buffered in `pendingTrack` for clean resumption upon unpause.
+- **Deep Engine Sleep**: Canvas contexts are cleared when disabled or sleeping to prevent frozen frames; Pomodoro tickers pause when hidden; audio visualizer zeroes its 32-band spectrum on sleep to eliminate wake flashes.
+- **Eliminated Visualizer Heap Allocation**: Visualizer bar corners reuse a frozen class constant (`MediaVisualizerEngine.BAR_RADII`), eliminating ~1,920 allocations/sec.
 - **Smooth Particle Transitions**: Weather category and wind changes smoothly reconfigure existing particle velocities and phases without pop-in.
 - **Throttled Solar Cadence**: Solar lighting updates are throttled to 15s with state guards preventing redundant style updates when disabled.
 - **Timestamp-Joined AQI Forecast**: AQI forecast samples are chronologically matched across midnight rather than indexing by clock hour.
 - **Accurate OWM Timeseries**: 3-hour forecast chunks from OpenWeatherMap 2.5 sample with `step = 1` (+21h horizon).
 - **Honest Outages & Accurate Units**: Air quality outages report `Unavailable` without fabricating data; WAQI station indices retain their `AQI` unit.
 - **Strict Number Validation**: System telemetry and weather metrics reject `NaN`, `Infinity`, and `-Infinity`.
-- **Responsive Layout**: Clamped `--dock-top` offset and media query adaptations prevent vertical clipping at 720p/768p viewports.
-- **Keyboard Accessible Tabs**: Forecast tabs feature roving `tabindex`, arrow key navigation, and focus outlines.
+- **Symmetric Responsive Layout**: Dynamically clamps both `--dock-top` and `--dock-bottom` offsets with media query adaptations to eliminate vertical clipping at 720p/768p viewports regardless of HUD anchor position.
+- **Keyboard Accessible Tabs & Path Reset**: Forecast tabs feature roving `tabindex`, arrow key navigation, and focus outlines; empty forecasts reset SVG paths and pool visibility.
 - **Hardened Preview Server & Packaging**: Host header checks, private file blocking, credential masking in logs, and atomic release packaging.
 
 ---

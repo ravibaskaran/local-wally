@@ -991,6 +991,16 @@ Following a comprehensive production code audit against real-world WebView2 life
 21. **Preview Server Hardening**: `serve.js` enforces Host header validation (`localhost`, `127.0.0.1`) and blocks access to private dotfile paths (`.git`, `.atl`).
 22. **Atomic Release Packaging**: `package_release.js` compresses archives into a temporary file (`local-wally.tmp.zip`) and atomically replaces `local-wally.zip`, preserving prior releases if packaging encounters an error.
 
+### 24.4 Post-Audit Defect Verification & Runtime Resilience Fixes
+Following independent regression testing across simulated and live WebView2 environments, six residual correctness and lifecycle defects were identified, reproduced with failing test cases in `scratch/test_post_audit_verification.js`, and patched:
+1. **Background Regional News UI Dispatch**: Resolved a regression where `ApiService.fetchAtmosphere` attempted to dispatch settled background news via `global.app` instead of `global.App`. Switched to `global.App || global.app` and added pause-state buffering (`pendingNews`) to ensure news updates never drop and never manipulate the DOM while parked.
+2. **LivelyBridge Idempotency Guard**: Added a boolean `initialized` guard in `LivelyBridge.init()` to ensure duplicate calls do not attach duplicate `visibilitychange` listeners to `document`.
+3. **Symmetric Viewport Clamping for Bottom Dock Offset**: Extended viewport height clamping from `--dock-top` to `--dock-bottom`. When HUD is configured in `bottom-right` or `bottom-left` modes on short viewports (1280×720), the companion dock's bottom offset is clamped to `Math.max(16, vh - 10 - dockHeight)` so it never clips off the top edge of the screen.
+4. **Clean SVG Forecast Path & Pool Reset on Empty Data**: Hardened `SvgForecastChartEngine.prototype.render()` to reset SVG path `d=""` attributes and call `ensureElementPool(0)` when `points = []`, preventing ghost vector lines from persisting across forecast clearances.
+5. **Visualizer Spectrum Zeroing on Sleep**: Updated `MediaVisualizerEngine.prototype.sleep()` to zero out all 32 bands in `rawSpectrum` and `dampedSpectrum` Float32Arrays, eliminating residual bar height flashes when the visualizer wakes up.
+6. **Paused SMTC Media Track Metadata Recovery**: Buffered Windows SMTC `livelyCurrentTrack` payloads received during host pause into `pendingTrack`. Upon unpausing, the buffered track is dispatched to `MediaVisualizerEngine.handleTrackUpdate()`, ensuring media cards never remain out-of-sync after returning from a maximized application.
+7. **Canonical Cache Snapshot Regression Testing**: Corrected `test_audit_hardening.js` to assert against the active `LIVELY_HUD_SNAPSHOT` localStorage key rather than obsolete historical key strings.
+
 
 
 

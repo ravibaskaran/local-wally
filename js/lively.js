@@ -155,7 +155,11 @@
       }
     },
 
+    initialized: false,
+
     init: function() {
+      if (this.initialized) return;
+      this.initialized = true;
       var self = this;
 
       // 1. Lively Host Native Playback Listener

@@ -1452,8 +1452,17 @@
                   if (global.CacheManager) {
                     global.CacheManager.set(payload, providerContext);
                   }
-                  if (global.app && typeof global.app.renderNews === 'function') {
-                    global.app.renderNews(newsArticles);
+                  var appInstance = global.App || global.app;
+                  if (appInstance) {
+                    if (appInstance.isPlaybackPaused) {
+                      if (appInstance.pendingSnapshot) {
+                        appInstance.pendingSnapshot.news = newsArticles;
+                      } else {
+                        appInstance.pendingNews = newsArticles;
+                      }
+                    } else if (typeof appInstance.renderNews === 'function') {
+                      appInstance.renderNews(newsArticles);
+                    }
                   }
                 }
               });

@@ -205,6 +205,10 @@ MediaVisualizerEngine.prototype.setEnabled = function(enabled) {
 
 MediaVisualizerEngine.prototype.sleep = function() {
   this.isSleeping = true;
+  for (var i = 0; i < 32; i++) {
+    this.rawSpectrum[i] = 0;
+    this.dampedSpectrum[i] = 0;
+  }
   if (this.ctx && this.dom.canvas) {
     this.ctx.clearRect(0, 0, this.dom.canvas.width, this.dom.canvas.height);
   }
@@ -1136,7 +1140,13 @@ MediaVisualizerEngine.prototype.wake = function() {
   };
 
   SvgForecastChartEngine.prototype.render = function() {
-    if (!this.dom.svg || !this.points || !this.points.length) return;
+    if (!this.dom.svg) return;
+    if (!this.points || !this.points.length) {
+      if (this.dom.linePath) this.dom.linePath.setAttribute('d', '');
+      if (this.dom.areaPath) this.dom.areaPath.setAttribute('d', '');
+      this.ensureElementPool(0);
+      return;
+    }
 
     var pts = this.points;
     var N = pts.length;
@@ -1303,6 +1313,8 @@ MediaVisualizerEngine.prototype.wake = function() {
     isPlaybackPaused: false,
     isSyncing: false,
     pendingSnapshot: null,
+    pendingNews: null,
+    pendingTrack: null,
     syncPending: false,
     syncPendingForce: false,
 
@@ -1740,6 +1752,18 @@ MediaVisualizerEngine.prototype.wake = function() {
             self.pendingSnapshot = null;
             self.renderAll(snap);
           }
+          if (self.pendingNews) {
+            var pNews = self.pendingNews;
+            self.pendingNews = null;
+            self.renderNews(pNews);
+          }
+          if (self.pendingTrack) {
+            var pTrack = self.pendingTrack;
+            self.pendingTrack = null;
+            if (self.mediaVisualizer) {
+              self.mediaVisualizer.handleTrackUpdate(pTrack);
+            }
+          }
           if (self.pomodoro && self.showPomodoro) self.pomodoro.resumeTicker();
           if (self.mediaVisualizer && (self.mediaVisualizer.demoMode > 0 || self.showMediaPlayer)) {
             self.mediaVisualizer.wake();
@@ -1863,7 +1887,10 @@ MediaVisualizerEngine.prototype.wake = function() {
 
       // Windows SMTC Current Track telemetry
       global.LivelyBridge.onCurrentTrack(function(track) {
-        if (self.isPlaybackPaused) return;
+        if (self.isPlaybackPaused) {
+          self.pendingTrack = track;
+          return;
+        }
         if (self.mediaVisualizer) {
           self.mediaVisualizer.handleTrackUpdate(track);
         }
@@ -2178,8 +2205,12 @@ MediaVisualizerEngine.prototype.wake = function() {
           if (topOffsetNum + dockHeight > vh - 10) {
             topOffsetNum = Math.max(16, vh - 10 - dockHeight);
           }
+          var bottomOffsetNum = 32 + hudHeight + offsetGap;
+          if (bottomOffsetNum + dockHeight > vh - 10) {
+            bottomOffsetNum = Math.max(16, vh - 10 - dockHeight);
+          }
           var topOffset = topOffsetNum + 'px';
-          var bottomOffset = (32 + hudHeight + offsetGap) + 'px';
+          var bottomOffset = bottomOffsetNum + 'px';
           document.documentElement.style.setProperty('--dock-top', topOffset);
           document.documentElement.style.setProperty('--dock-bottom', bottomOffset);
         }
@@ -3386,6 +3417,18 @@ MediaVisualizerEngine.prototype.wake = function() {
         var snap = this.pendingSnapshot;
         this.pendingSnapshot = null;
         this.renderAll(snap);
+      }
+      if (this.pendingNews) {
+        var pNews = this.pendingNews;
+        this.pendingNews = null;
+        this.renderNews(pNews);
+      }
+      if (this.pendingTrack) {
+        var pTrack = this.pendingTrack;
+        this.pendingTrack = null;
+        if (this.mediaVisualizer) {
+          this.mediaVisualizer.handleTrackUpdate(pTrack);
+        }
       }
 
       this.loop(this.lastFrameTime);
