@@ -20,5 +20,4 @@ scratch/
 
 # Distribution archives
 *.zip
-*.livelyzip
 dist_staging/

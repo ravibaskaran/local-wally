@@ -300,13 +300,30 @@ html, body {
   contain: layout paint style;
   will-change: transform, opacity;
   transform: translate3d(0, 0, 0);
-  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.3s ease, background 0.4s ease, border-color 0.4s ease, box-shadow 3s cubic-bezier(0.4, 0, 0.2, 1), color 0.4s ease;
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.3s ease, background 0.4s ease, border-color 0.4s ease, box-shadow 3s cubic-bezier(0.4, 0, 0.2, 1), color 0.4s ease, width 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
   pointer-events: auto;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-feature-settings: "cv01", "cv02", "tnum" 1;
   font-variant-numeric: tabular-nums;
+}
+
+/* Single-Column Collapsed Layout (~290px) when Secondary Column is completely hidden */
+#hud.hud-single-col {
+  width: 290px;
+  min-width: 280px;
+}
+
+#hud.hud-single-col .bento-col-primary {
+  flex: 1;
+  border-right: none;
+  padding-right: 0;
+  width: 100%;
+}
+
+#hud.hud-single-col .bento-col-secondary {
+  display: none !important;
 }
 
 /* HUD Corner Position Classes (Default Right Position preserves left desktop icons) */
@@ -349,7 +366,7 @@ html, body {
   contain: layout paint style;
   will-change: transform, opacity;
   transform: translate3d(0, 0, 0);
-  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.3s ease, background 0.4s ease, border-color 0.4s ease, box-shadow 3s cubic-bezier(0.4, 0, 0.2, 1), color 0.4s ease;
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.3s ease, background 0.4s ease, border-color 0.4s ease, box-shadow 3s cubic-bezier(0.4, 0, 0.2, 1), color 0.4s ease, width 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), top 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), bottom 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
   pointer-events: auto;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -359,23 +376,61 @@ html, body {
 }
 
 #dock-media-focus.top-right {
-  top: 456px;
+  top: var(--dock-top, 456px);
   right: 40px;
 }
 #dock-media-focus.top-left {
-  top: 456px;
+  top: var(--dock-top, 456px);
   left: 40px;
 }
 #dock-media-focus.bottom-right {
-  bottom: 456px;
+  bottom: var(--dock-bottom, 456px);
   right: 40px;
 }
 #dock-media-focus.bottom-left {
-  bottom: 456px;
+  bottom: var(--dock-bottom, 456px);
   left: 40px;
 }
 #dock-media-focus.is-hidden {
   display: none !important;
+}
+
+/* Dynamic Dock Card Auto-Expansion */
+#dock-media-focus:has(#pomodoro-card.is-hidden) #media-card,
+#media-card.is-solo {
+  flex: 1 1 100%;
+}
+#dock-media-focus:has(#pomodoro-card.is-hidden) .media-info-row,
+#media-card.is-solo .media-info-row {
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+#dock-media-focus:has(#pomodoro-card.is-hidden) .media-art-wrap,
+#media-card.is-solo .media-art-wrap {
+  width: 44px;
+  height: 44px;
+}
+#dock-media-focus:has(#pomodoro-card.is-hidden) .media-title,
+#media-card.is-solo .media-title {
+  font-size: 0.88rem;
+}
+#dock-media-focus:has(#pomodoro-card.is-hidden) .media-visualizer-wrap,
+#media-card.is-solo .media-visualizer-wrap {
+  height: 46px;
+}
+
+#dock-media-focus:has(#media-card.is-hidden) #pomodoro-card,
+#pomodoro-card.is-solo {
+  flex: 1 1 100%;
+}
+#dock-media-focus:has(#media-card.is-hidden) .pomo-content,
+#pomodoro-card.is-solo .pomo-content {
+  justify-content: center;
+  gap: 32px;
+}
+#dock-media-focus:has(#media-card.is-hidden) .pomo-controls,
+#pomodoro-card.is-solo .pomo-controls {
+  max-width: 220px;
 }
 
 /* Bento Dock Cards */
@@ -1425,6 +1480,90 @@ html, body {
   border-radius: 2px;
 }
 
+/* ==========================================================================
+   Secondary Column Auto-Adaptation (Dynamic Expansion & Flex Balancing)
+   ========================================================================== */
+
+/* When News Block is hidden: Hardware Monitor expands gracefully to fill column */
+.bento-col-secondary:has(#hud-news-block.is-hidden) #hud-hw-block,
+#hud-hw-block.flex-expand {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border-bottom: none;
+  padding-bottom: 8px;
+}
+
+.bento-col-secondary:has(#hud-news-block.is-hidden) .hw-metrics-container,
+#hud-hw-block.flex-expand .hw-metrics-container {
+  flex: 1;
+  justify-content: space-around;
+  gap: 8px;
+}
+
+.bento-col-secondary:has(#hud-news-block.is-hidden) .hw-row,
+#hud-hw-block.flex-expand .hw-row {
+  padding: 6px 8px;
+}
+
+/* When Hardware Monitor is hidden: News Block expands gracefully */
+.bento-col-secondary:has(#hud-hw-block.is-hidden) #hud-news-block,
+#hud-news-block.flex-expand {
+  flex: 1;
+  border-bottom: none;
+  padding-top: 0;
+}
+
+.bento-col-secondary:has(#hud-hw-block.is-hidden) .hud-news-body,
+#hud-news-block.flex-expand .hud-news-body {
+  flex: 1;
+  justify-content: space-between;
+  min-height: 140px;
+}
+
+.bento-col-secondary:has(#hud-hw-block.is-hidden) .hud-news-headline,
+#hud-news-block.flex-expand .hud-news-headline {
+  -webkit-line-clamp: 5;
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+/* ==========================================================================
+   Primary Column Auto-Adaptation (Gap Avoidance & Graceful Spacing)
+   ========================================================================== */
+
+#hud-metrics-row,
+#hud-ephemeris-card,
+#hud-aqi-card {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.bento-col-primary:has(#hud-metrics-row.is-hidden) #hud-ephemeris-card,
+.bento-col-primary:has(#hud-metrics-row.is-hidden) #hud-aqi-card {
+  margin-top: 2px;
+}
+
+.bento-col-primary:has(#hud-ephemeris-card.is-hidden):has(#hud-aqi-card.is-hidden) .hud-temp-block {
+  padding-bottom: 12px;
+}
+
+/* ==========================================================================
+   General Component Visibility System
+   ========================================================================== */
+
+.is-hidden,
+#hud-metrics-row.is-hidden,
+#hud-ephemeris-card.is-hidden,
+#hud-aqi-card.is-hidden,
+#hud-hw-block.is-hidden,
+#hud-news-block.is-hidden,
+#pomodoro-card.is-hidden,
+#media-card.is-hidden,
+#dock-media-focus.is-hidden {
+  display: none !important;
+}
+
 /* Footer & Telemetry Sync Status */
 .hud-footer {
   display: flex;
@@ -1531,7 +1670,13 @@ html, body {
     min-height: auto;
     max-height: calc(100vh - 16px);
     padding: 10px 14px;
-    gap: 12px;
+    gap: 10px;
+  }
+  #hud .hud-time {
+    font-size: 1.6rem;
+  }
+  #hud .hud-temp-val {
+    font-size: 2.3rem;
   }
   #hud.top-right, #hud.top-left {
     top: 10px;
@@ -1540,12 +1685,37 @@ html, body {
     top: auto;
     bottom: 10px;
   }
+  #dock-media-focus {
+    height: 124px;
+    padding: 8px 10px;
+  }
+  .pomo-ring-wrap {
+    width: 76px;
+    height: 76px;
+  }
+  .pomo-ring-wrap canvas {
+    width: 76px;
+    height: 76px;
+  }
+  #pomodoro-time {
+    font-size: 0.95rem;
+  }
+  .media-visualizer-wrap {
+    height: 38px;
+  }
+  #audio-visualizer-canvas {
+    height: 38px;
+  }
 }
 
 @media (max-width: 660px) {
   #hud, #dock-media-focus {
-    width: calc(100vw - 24px);
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px) !important;
     right: 12px !important;
     left: 12px !important;
+  }
+  #hud.hud-single-col {
+    width: calc(100vw - 24px) !important;
   }
 }

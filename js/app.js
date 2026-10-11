@@ -86,6 +86,18 @@
     this.initGradient();
   };
 
+  MediaVisualizerEngine.prototype.resize = function() {
+    if (!this.dom.canvas) return;
+    var wrap = this.dom.canvas.parentElement;
+    if (wrap && wrap.clientWidth > 0) {
+      var targetW = wrap.clientWidth - 8;
+      if (targetW > 60 && Math.abs(this.dom.canvas.width - targetW) > 2) {
+        this.dom.canvas.width = targetW;
+        this.initGradient();
+      }
+    }
+  };
+
   MediaVisualizerEngine.prototype.processAudioData = function(audioArray) {
     if (!this.enabled || !audioArray) return;
 
@@ -159,14 +171,16 @@ MediaVisualizerEngine.prototype.render = function(dt) {
 
   this.ctx.fillStyle = this.gradient;
   this.ctx.beginPath();
-  var barWidth = 5.2;
-  var gap = 2.2;
-  var startX = 2.0;
+  var usableW = Math.max(200, w - 4);
+  var step = usableW / 32;
+  var gap = Math.max(1.5, step * 0.28);
+  var barWidth = Math.max(2, step - gap);
+  var startX = 2.0 + (usableW - (32 * step)) / 2;
 
   for (var j = 0; j < 32; j++) {
     var val = this.dampedSpectrum[j];
     var barH = Math.max(1.8, val * (h - 4));
-    var x = startX + j * (barWidth + gap);
+    var x = startX + j * step;
     var y = h - barH;
     if (typeof this.ctx.roundRect === 'function') {
       this.ctx.roundRect(x, y, barWidth, barH, [2, 2, 0, 0]);
@@ -693,6 +707,16 @@ MediaVisualizerEngine.prototype.wake = function() {
     clockInterval: null,
     syncInterval: null,
 
+    // Feature Customization Component Toggles
+    showNewsFeed: true,
+    showHardwareMonitor: true,
+    showCelestial: true,
+    showAqi: true,
+    showEnvironmentalMetrics: true,
+    showPomodoro: true,
+    showMediaPlayer: true,
+    showMediaFocusDock: true,
+
     // DOM Elements Cache
     dom: {},
 
@@ -733,11 +757,22 @@ MediaVisualizerEngine.prototype.wake = function() {
       var cm = cfg.contrastMode || 'auto';
       this.setContrastMode(cm);
 
+      // Feature customization component toggles
+      this.setShowNewsFeed(typeof cfg.showNewsFeed !== 'undefined' ? cfg.showNewsFeed : true);
+      this.setShowHardwareMonitor(typeof cfg.showHardwareMonitor !== 'undefined' ? cfg.showHardwareMonitor : true);
+      this.setShowCelestial(typeof cfg.showCelestial !== 'undefined' ? cfg.showCelestial : true);
+      this.setShowAqi(typeof cfg.showAqi !== 'undefined' ? cfg.showAqi : true);
+      this.setShowEnvironmentalMetrics(typeof cfg.showEnvironmentalMetrics !== 'undefined' ? cfg.showEnvironmentalMetrics : true);
+      this.setShowPomodoro(typeof cfg.showPomodoro !== 'undefined' ? cfg.showPomodoro : true);
+      this.setShowMediaPlayer(typeof cfg.showMediaPlayer !== 'undefined' ? cfg.showMediaPlayer : true);
+
       if (typeof cfg.showMediaFocusDock !== 'undefined') {
         this.setShowMediaFocusDock(cfg.showMediaFocusDock);
       } else {
         this.setShowMediaFocusDock(true);
       }
+
+      this.updateLayoutAutoResize();
 
       if (typeof cfg.refreshIntervalMinutes === 'number' && global.CacheManager) {
         global.CacheManager.setTtlMinutes(cfg.refreshIntervalMinutes);
@@ -753,6 +788,8 @@ MediaVisualizerEngine.prototype.wake = function() {
         bgB: document.getElementById('bg-b'),
         particleCanvas: document.getElementById('particle-canvas'),
         hud: document.getElementById('hud'),
+        hudColPrimary: document.querySelector('.bento-col-primary'),
+        hudColSecondary: document.querySelector('.bento-col-secondary'),
         hudClock: document.getElementById('hud-clock'),
         hudDate: document.getElementById('hud-date'),
         hudLocationText: document.getElementById('hud-location-text'),
@@ -762,15 +799,18 @@ MediaVisualizerEngine.prototype.wake = function() {
         hudFeelsLike: document.getElementById('hud-feels-like'),
         hudTempHigh: document.getElementById('hud-temp-high'),
         hudTempLow: document.getElementById('hud-temp-low'),
+        hudMetricsRow: document.getElementById('hud-metrics-row'),
         metricHumidity: document.getElementById('metric-humidity'),
         metricWind: document.getElementById('metric-wind'),
         metricPrecip: document.getElementById('metric-precip'),
+        hudEphemerisCard: document.getElementById('hud-ephemeris-card'),
         ephemerisSunrise: document.getElementById('ephemeris-sunrise'),
         ephemerisNoon: document.getElementById('ephemeris-noon'),
         ephemerisSunset: document.getElementById('ephemeris-sunset'),
         ephemerisMoonGlyph: document.getElementById('ephemeris-moon-glyph'),
         ephemerisMoonPhase: document.getElementById('ephemeris-moon-phase'),
         ephemerisMoonIllum: document.getElementById('ephemeris-moon-illum'),
+        hudAqiCard: document.getElementById('hud-aqi-card'),
         hudAqiBadge: document.getElementById('hud-aqi-badge'),
         hudAqiCategory: document.getElementById('hud-aqi-category'),
         hudAqiFill: document.getElementById('hud-aqi-fill'),
@@ -789,6 +829,7 @@ MediaVisualizerEngine.prototype.wake = function() {
         diagCacheTtl: document.getElementById('diag-cache-ttl'),
 
         // Hardware Monitor DOM Nodes
+        hudHwBlock: document.getElementById('hud-hw-block'),
         hudHwBadge: document.getElementById('hud-hw-badge'),
         hwCpuName: document.getElementById('hw-cpu-name'),
         hwCpuSpark: document.getElementById('hw-cpu-spark'),
@@ -808,6 +849,7 @@ MediaVisualizerEngine.prototype.wake = function() {
         hwDiskBar: document.getElementById('hw-disk-bar'),
 
         // Regional News DOM Nodes
+        hudNewsBlock: document.getElementById('hud-news-block'),
         hudNewsLink: document.getElementById('hud-news-link'),
         hudNewsHeadline: document.getElementById('hud-news-headline'),
         hudNewsSource: document.getElementById('hud-news-source'),
@@ -887,6 +929,7 @@ MediaVisualizerEngine.prototype.wake = function() {
         if (self.contrastMode === 'auto' && self.lastLoadedImage) {
           self.adaptContrastToBackground(self.lastLoadedImage);
         }
+        self.updateLayoutAutoResize();
       });
 
       // Refresh button click
@@ -968,7 +1011,28 @@ MediaVisualizerEngine.prototype.wake = function() {
             self.setContrastMode(cmVal);
             break;
           case 'showMediaFocusDock':
-            self.setShowMediaFocusDock(val);
+            self.setShowMediaFocusDock(val === true || val === 1 || val === 'true');
+            break;
+          case 'showNewsFeed':
+            self.setShowNewsFeed(val === true || val === 1 || val === 'true');
+            break;
+          case 'showHardwareMonitor':
+            self.setShowHardwareMonitor(val === true || val === 1 || val === 'true');
+            break;
+          case 'showCelestial':
+            self.setShowCelestial(val === true || val === 1 || val === 'true');
+            break;
+          case 'showAqi':
+            self.setShowAqi(val === true || val === 1 || val === 'true');
+            break;
+          case 'showEnvironmentalMetrics':
+            self.setShowEnvironmentalMetrics(val === true || val === 1 || val === 'true');
+            break;
+          case 'showPomodoro':
+            self.setShowPomodoro(val === true || val === 1 || val === 'true');
+            break;
+          case 'showMediaPlayer':
+            self.setShowMediaPlayer(val === true || val === 1 || val === 'true');
             break;
           case 'pomodoroFocusMinutes':
             if (self.pomodoro) self.pomodoro.setDurations(typeof val === 'number' ? val : parseInt(val, 10), null, null);
@@ -1035,15 +1099,201 @@ MediaVisualizerEngine.prototype.wake = function() {
       if (this.contrastMode === 'auto' && this.lastLoadedImage) {
         this.adaptContrastToBackground(this.lastLoadedImage);
       }
+
+      this.updateLayoutAutoResize();
+    },
+
+    setShowNewsFeed: function(show) {
+      this.showNewsFeed = !!show;
+      if (this.dom.hudNewsBlock) {
+        if (this.showNewsFeed) {
+          this.dom.hudNewsBlock.classList.remove('is-hidden');
+          if (!this.newsTimer && !this.isPlaybackPaused && this.newsItems && this.newsItems.length > 1) {
+            var rotSec = (global.LOCAL_WALLY_CONFIG && typeof global.LOCAL_WALLY_CONFIG.newsRotateIntervalSeconds === 'number')
+              ? Math.max(3, global.LOCAL_WALLY_CONFIG.newsRotateIntervalSeconds)
+              : 7;
+            this.newsTimer = setInterval(this.rotateNews.bind(this), rotSec * 1000);
+          }
+        } else {
+          this.dom.hudNewsBlock.classList.add('is-hidden');
+          if (this.newsTimer) {
+            clearInterval(this.newsTimer);
+            this.newsTimer = null;
+          }
+        }
+      }
+      this.updateLayoutAutoResize();
+    },
+
+    setShowHardwareMonitor: function(show) {
+      this.showHardwareMonitor = !!show;
+      if (this.dom.hudHwBlock) {
+        if (this.showHardwareMonitor) {
+          this.dom.hudHwBlock.classList.remove('is-hidden');
+          if (!this.hwFallbackTimer && !this.isPlaybackPaused) {
+            this.executeHwFallbackTick();
+            this.hwFallbackTimer = setInterval(this.checkHwFallback.bind(this), 2000);
+          }
+        } else {
+          this.dom.hudHwBlock.classList.add('is-hidden');
+          if (this.hwFallbackTimer) {
+            clearInterval(this.hwFallbackTimer);
+            this.hwFallbackTimer = null;
+          }
+        }
+      }
+      this.updateLayoutAutoResize();
+    },
+
+    setShowCelestial: function(show) {
+      this.showCelestial = !!show;
+      if (this.dom.hudEphemerisCard) {
+        if (this.showCelestial) {
+          this.dom.hudEphemerisCard.classList.remove('is-hidden');
+        } else {
+          this.dom.hudEphemerisCard.classList.add('is-hidden');
+        }
+      }
+      this.updateLayoutAutoResize();
+    },
+
+    setShowAqi: function(show) {
+      this.showAqi = !!show;
+      if (this.dom.hudAqiCard) {
+        if (this.showAqi) {
+          this.dom.hudAqiCard.classList.remove('is-hidden');
+        } else {
+          this.dom.hudAqiCard.classList.add('is-hidden');
+        }
+      }
+      this.updateLayoutAutoResize();
+    },
+
+    setShowEnvironmentalMetrics: function(show) {
+      this.showEnvironmentalMetrics = !!show;
+      if (this.dom.hudMetricsRow) {
+        if (this.showEnvironmentalMetrics) {
+          this.dom.hudMetricsRow.classList.remove('is-hidden');
+        } else {
+          this.dom.hudMetricsRow.classList.add('is-hidden');
+        }
+      }
+      this.updateLayoutAutoResize();
+    },
+
+    setShowPomodoro: function(show) {
+      this.showPomodoro = !!show;
+      if (this.dom.pomodoroCard) {
+        if (this.showPomodoro) {
+          this.dom.pomodoroCard.classList.remove('is-hidden');
+          if (this.pomodoro && this.pomodoro.isRunning && !this.isPlaybackPaused) {
+            this.pomodoro.resumeTicker();
+          }
+        } else {
+          this.dom.pomodoroCard.classList.add('is-hidden');
+          if (this.pomodoro) {
+            this.pomodoro.sleepTicker();
+          }
+        }
+      }
+      this.updateLayoutAutoResize();
+    },
+
+    setShowMediaPlayer: function(show) {
+      this.showMediaPlayer = !!show;
+      if (this.dom.mediaCard) {
+        if (this.showMediaPlayer) {
+          this.dom.mediaCard.classList.remove('is-hidden');
+          if (this.mediaVisualizer && !this.isPlaybackPaused) {
+            this.mediaVisualizer.wake();
+          }
+        } else {
+          this.dom.mediaCard.classList.add('is-hidden');
+          if (this.mediaVisualizer) {
+            this.mediaVisualizer.sleep();
+          }
+        }
+      }
+      this.updateLayoutAutoResize();
     },
 
     setShowMediaFocusDock: function(show) {
       this.showMediaFocusDock = !!show;
-      if (!this.dom.dockMediaFocus) return;
-      if (this.showMediaFocusDock) {
-        this.dom.dockMediaFocus.classList.remove('is-hidden');
-      } else {
-        this.dom.dockMediaFocus.classList.add('is-hidden');
+      this.updateLayoutAutoResize();
+    },
+
+    updateLayoutAutoResize: function() {
+      var hwVisible = this.showHardwareMonitor;
+      var newsVisible = this.showNewsFeed;
+
+      // Secondary column auto-resizing
+      if (this.dom.hudColSecondary) {
+        if (!hwVisible && !newsVisible) {
+          this.dom.hudColSecondary.style.display = 'none';
+          if (this.dom.hud) this.dom.hud.classList.add('hud-single-col');
+        } else {
+          this.dom.hudColSecondary.style.display = '';
+          if (this.dom.hud) this.dom.hud.classList.remove('hud-single-col');
+
+          // Helper classes for single-item expansion in secondary col
+          if (this.dom.hudHwBlock) {
+            if (hwVisible && !newsVisible) {
+              this.dom.hudHwBlock.classList.add('flex-expand');
+            } else {
+              this.dom.hudHwBlock.classList.remove('flex-expand');
+            }
+          }
+          if (this.dom.hudNewsBlock) {
+            if (newsVisible && !hwVisible) {
+              this.dom.hudNewsBlock.classList.add('flex-expand');
+            } else {
+              this.dom.hudNewsBlock.classList.remove('flex-expand');
+            }
+          }
+        }
+      }
+
+      // Companion dock auto-resizing
+      if (this.dom.dockMediaFocus) {
+        var pomoVisible = this.showPomodoro;
+        var mediaVisible = this.showMediaPlayer;
+        var dockEnabled = (this.showMediaFocusDock !== false);
+
+        if (!dockEnabled || (!pomoVisible && !mediaVisible)) {
+          this.dom.dockMediaFocus.classList.add('is-hidden');
+        } else {
+          this.dom.dockMediaFocus.classList.remove('is-hidden');
+
+          // Check single-card solo state
+          if (this.dom.pomodoroCard) {
+            if (pomoVisible && !mediaVisible) {
+              this.dom.pomodoroCard.classList.add('is-solo');
+            } else {
+              this.dom.pomodoroCard.classList.remove('is-solo');
+            }
+          }
+          if (this.dom.mediaCard) {
+            if (mediaVisible && !pomoVisible) {
+              this.dom.mediaCard.classList.add('is-solo');
+            } else {
+              this.dom.mediaCard.classList.remove('is-solo');
+            }
+          }
+
+          if (this.mediaVisualizer && mediaVisible) {
+            this.mediaVisualizer.resize();
+          }
+        }
+
+        // Dynamically compute companion dock vertical positioning offset
+        if (this.dom.hud) {
+          var hudHeight = this.dom.hud.offsetHeight || 395;
+          var offsetGap = 14;
+          var topOffset = (32 + hudHeight + offsetGap) + 'px';
+          var bottomOffset = (32 + hudHeight + offsetGap) + 'px';
+          document.documentElement.style.setProperty('--dock-top', topOffset);
+          document.documentElement.style.setProperty('--dock-bottom', bottomOffset);
+        }
       }
     },
 
@@ -1582,7 +1832,7 @@ MediaVisualizerEngine.prototype.wake = function() {
     },
 
     handleSystemInfo: function(data) {
-      if (!data || this.isPlaybackPaused) return;
+      if (!data || this.isPlaybackPaused || !this.showHardwareMonitor) return;
       this.lastHwUpdate = Date.now();
 
       // CPU load and name
@@ -1681,7 +1931,7 @@ MediaVisualizerEngine.prototype.wake = function() {
     },
 
     checkHwFallback: function() {
-      if (this.isPlaybackPaused) return;
+      if (this.isPlaybackPaused || !this.showHardwareMonitor) return;
       var now = Date.now();
       var hwInterval = (global.LOCAL_WALLY_CONFIG && typeof global.LOCAL_WALLY_CONFIG.hwUpdateIntervalSeconds === 'number')
         ? Math.max(1, global.LOCAL_WALLY_CONFIG.hwUpdateIntervalSeconds) * 1000
@@ -1697,7 +1947,7 @@ MediaVisualizerEngine.prototype.wake = function() {
     },
 
     executeHwFallbackTick: function() {
-      if (this.isPlaybackPaused) return;
+      if (this.isPlaybackPaused || !this.showHardwareMonitor) return;
       // Zero-allocation fallback ticker simulating realistic desktop workloads
       var cpuDelta = (Math.random() - 0.48) * 6;
       this.simulatedCpuLoad = Math.max(10, Math.min(65, Math.round(this.simulatedCpuLoad + cpuDelta)));
@@ -1765,7 +2015,7 @@ MediaVisualizerEngine.prototype.wake = function() {
       var rotSec = (global.LOCAL_WALLY_CONFIG && typeof global.LOCAL_WALLY_CONFIG.newsRotateIntervalSeconds === 'number')
         ? Math.max(3, global.LOCAL_WALLY_CONFIG.newsRotateIntervalSeconds)
         : 7;
-      if (!this.isPlaybackPaused && this.newsItems && this.newsItems.length > 1) {
+      if (!this.isPlaybackPaused && this.showNewsFeed && this.newsItems && this.newsItems.length > 1) {
         this.newsTimer = setInterval(this.rotateNews.bind(this), rotSec * 1000);
       }
     },
@@ -1897,20 +2147,20 @@ MediaVisualizerEngine.prototype.wake = function() {
         this.updateClock();
         this.clockInterval = setInterval(this.updateClock.bind(this), 1000);
       }
-      if (!this.hwFallbackTimer) {
+      if (!this.hwFallbackTimer && this.showHardwareMonitor) {
         this.executeHwFallbackTick();
         this.hwFallbackTimer = setInterval(this.checkHwFallback.bind(this), 2000);
       }
       var rotSec = (global.LOCAL_WALLY_CONFIG && typeof global.LOCAL_WALLY_CONFIG.newsRotateIntervalSeconds === 'number')
         ? Math.max(3, global.LOCAL_WALLY_CONFIG.newsRotateIntervalSeconds)
         : 7;
-      if (!this.newsTimer && this.newsItems && this.newsItems.length > 1) {
+      if (!this.newsTimer && this.showNewsFeed && this.newsItems && this.newsItems.length > 1) {
         this.newsTimer = setInterval(this.rotateNews.bind(this), rotSec * 1000);
       }
       if (!this.syncInterval) {
         this.syncInterval = setInterval(this.checkAndSync.bind(this), 60000);
       }
-      if (this.pomodoro) {
+      if (this.pomodoro && this.showPomodoro) {
         this.pomodoro.resumeTicker();
       }
 

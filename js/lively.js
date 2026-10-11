@@ -18,13 +18,15 @@
       currentTrack: [],
       audioData: []
     },
+    properties: {},
 
     /**
-     * Retrieves active external configuration object
+     * Retrieves active external configuration object merged with runtime Lively properties
      * @returns {Object}
      */
     getConfig: function() {
-      return global.LOCAL_WALLY_CONFIG || {};
+      var cfg = global.LOCAL_WALLY_CONFIG || {};
+      return Object.assign({}, cfg, this.properties);
     },
 
     /**
@@ -93,6 +95,7 @@
 
     emitProperty: function(name, val) {
       console.log('[LivelyBridge] Property changed:', name, val);
+      this.properties[name] = val;
       for (var i = 0; i < this.listeners.property.length; i++) {
         try {
           this.listeners.property[i](name, val);
@@ -197,6 +200,12 @@
   };
 
   // Immediate global hook fallback in case host invokes before init()
+  global.livelyPropertyListener = function(name, val) {
+    if (global.LivelyBridge && global.LivelyBridge.emitProperty) {
+      global.LivelyBridge.emitProperty(name, val);
+    }
+  };
+
   global.livelySystemInformation = function(data) {
     if (global.LivelyBridge && global.LivelyBridge.emitSystemInfo) {
       try {

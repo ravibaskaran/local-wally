@@ -158,6 +158,70 @@
     // background chromatic filters, directional card drop shadows, and vignette angles.
     // Evaluated once per minute with smooth 3-second CSS transitions for 0% per-frame CPU.
     // Default: true | Options: true, false
-    enableDynamicSolarLighting: true
+    enableDynamicSolarLighting: true,
+
+    // --------------------------------------------------------------------------
+    // 20. REGIONAL NEWS DISPATCH BLOCK DISPLAY
+    // --------------------------------------------------------------------------
+    // Toggles the regional Google News RSS block in the secondary column.
+    // When false, the news carousel timer is halted (0% CPU) and the hardware
+    // monitor expands to occupy the secondary Bento column.
+    // Default: true | Options: true, false
+    showNewsFeed: true,
+
+    // --------------------------------------------------------------------------
+    // 21. HARDWARE SYSTEM TELEMETRY MONITOR DISPLAY
+    // --------------------------------------------------------------------------
+    // Toggles the CPU, GPU, RAM, and Disk hardware monitor block in the secondary column.
+    // When false, the hardware simulation/poll timer is halted (0% CPU) and the news
+    // dispatch block expands to occupy the secondary Bento column.
+    // If BOTH showNewsFeed and showHardwareMonitor are false, the entire secondary
+    // column collapses and the HUD transforms into a sleek single-column layout (~290px).
+    // Default: true | Options: true, false
+    showHardwareMonitor: true,
+
+    // --------------------------------------------------------------------------
+    // 22. SOLAR & LUNAR CELESTIAL EPHEMERIS CARD DISPLAY
+    // --------------------------------------------------------------------------
+    // Toggles the astronomical ephemeris card displaying Sunrise, Solar Noon, Sunset,
+    // and live Moon phase glyph with illumination percentage.
+    // Default: true | Options: true, false
+    showCelestial: true,
+
+    // --------------------------------------------------------------------------
+    // 23. AIR QUALITY INDEX (AQI) CARD DISPLAY
+    // --------------------------------------------------------------------------
+    // Toggles the European Air Quality Index (AQI) telemetry card with colored
+    // category dot, progress bar, and PM2.5 / PM10 particulate readings.
+    // Default: true | Options: true, false
+    showAqi: true,
+
+    // --------------------------------------------------------------------------
+    // 24. ENVIRONMENTAL METRICS 3-CARD ROW DISPLAY
+    // --------------------------------------------------------------------------
+    // Toggles the 3-column environmental metrics row displaying Relative Humidity (%),
+    // Surface Wind Speed (km/h), and Precipitation accumulation (mm).
+    // Default: true | Options: true, false
+    showEnvironmentalMetrics: true,
+
+    // --------------------------------------------------------------------------
+    // 25. POMODORO FOCUS TIMER CARD DISPLAY
+    // --------------------------------------------------------------------------
+    // Toggles the interactive Pomodoro Focus Timer card in the companion Bento Dock.
+    // When false, the Pomodoro interval ticker enters deep sleep (0% CPU) and the
+    // Media Player card expands to occupy 100% of the companion dock width.
+    // Default: true | Options: true, false
+    showPomodoro: true,
+
+    // --------------------------------------------------------------------------
+    // 26. WINDOWS SMTC MEDIA PLAYER & VISUALIZER CARD DISPLAY
+    // --------------------------------------------------------------------------
+    // Toggles the Windows SMTC media player and 60 FPS audio visualizer card.
+    // When false, the visualizer enters deep sleep (0% CPU/GPU) and the Pomodoro
+    // Focus Timer expands to occupy 100% of the companion dock width.
+    // If BOTH showPomodoro and showMediaPlayer are false, the entire companion dock
+    // is cleanly hidden from view.
+    // Default: true | Options: true, false
+    showMediaPlayer: true
   };
 })(typeof window !== 'undefined' ? window : this);

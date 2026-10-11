@@ -760,5 +760,36 @@ These coordinates are mapped in real-time to CSS Custom Properties exposed on `:
 4. **Zero CPU Overhead**:
    Filters and gradients utilize smooth CSS transitions (`transition: filter 3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 3s ease`). The math runs once per minute (or on atmosphere sync), inducing **zero per-frame CPU cycles**.
 
+---
+
+## 20. Modular Feature Customization & Dynamic Auto-Resizing Layout Engine
+
+### 20.1 Core Directive: Granular Zero-Spill Modularity
+To maximize personalization and maintain hardware efficiency across diverse user setups, all seven major telemetry and utility modules can be independently enabled or disabled via `config.js` or Lively's native Settings UI:
+1. `showNewsFeed`: Regional Google News RSS dispatch.
+2. `showHardwareMonitor`: CPU, GPU, RAM, Disk telemetry block.
+3. `showCelestial`: SunCalc solar altitude and lunar phase ephemeris.
+4. `showAqi`: European Air Quality Index rating and particulate densities.
+5. `showEnvironmentalMetrics`: 3-card humidity, wind speed, and precipitation row.
+6. `showPomodoro`: Pomodoro Focus Timer with Canvas 2D radial arc countdown.
+7. `showMediaPlayer`: Windows SMTC Media Player and 60 FPS audio spectrum visualizer.
+
+### 20.2 Dynamic Single-Column & Flex Auto-Resizing
+When modules are disabled, the UI automatically reorganizes and resizes with zero empty voids or visual distortion:
+- **Secondary Column Collapse**: If both News and Hardware Monitor are disabled, `.bento-col-secondary` is completely unmounted (`display: none`), and `#hud` automatically collapses from 580px to a compact **single-column layout (~290px)** with a smooth 0.35s cubic-bezier transition.
+- **Secondary Column Solo Expansion**: If only one secondary card is active (e.g., Hardware Monitor without News), that card dynamically receives `.flex-expand` and fills 100% of the column height with balanced vertical spacing (`justify-content: space-around`).
+- **Primary Column Auto-Balancing**: Disabling any primary card (`#hud-metrics-row`, `#hud-ephemeris-card`, `#hud-aqi-card`) adjusts remaining flex spacing so content sits neatly without awkward gaps.
+- **Companion Dock Solo Expansion**: If Pomodoro is disabled, the Media Player card expands to 100% of the dock width, and the audio spectrum canvas dynamically recalculates bar widths and distribution via `MediaVisualizerEngine.resize()`. If Media is disabled, Pomodoro expands to 100% with centered controls. If both are disabled, `#dock-media-focus` is cleanly hidden.
+- **Dynamic Dock Height Tracking**: The companion dock calculates `--dock-top` and `--dock-bottom` dynamically based on `#hud.offsetHeight + 14px`, maintaining exact vertical alignment regardless of how tall or compact `#hud` becomes.
+
+### 20.3 Deep-Sleep Timer Throttling
+When a feature is disabled, its underlying JavaScript timers are immediately stopped:
+- Disabling News clears `newsTimer` (zero RSS rotating or string slicing).
+- Disabling Hardware Monitor clears `hwFallbackTimer` and skips `handleSystemInfo` DOM mutations.
+- Disabling Pomodoro puts the timer ticker to sleep.
+- Disabling Media Player halts the audio visualizer render loop and clears the canvas.
+Result: The application achieves absolute **0.0% idle CPU** on all configurations.
+
+
 
 

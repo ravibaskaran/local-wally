@@ -77,11 +77,11 @@ Automatically derives the display's native physical resolution (`screen.width * 
 
 ## 📦 Installation & Setup
 
-### Method 1: 1-Click Drag-and-Drop Install via `.livelyzip` (Fastest)
+### Method 1: 1-Click Drag-and-Drop Install via `local-wally.zip` (Fastest)
 
-1. **Download the Release**: Download `local-wally.livelyzip` (or `local-wally.zip`) from the [Latest GitHub Release](https://github.com/ravibaskaran/local-wally/releases).
-2. **Drag & Drop**: Open Lively Wallpaper and drag `local-wally.livelyzip` straight into the Lively window.
-3. **Done!** Lively instantly extracts, validates, and adds **Local Wally HUD** to your library. Click it to set as active.
+1. **Download the Release**: Download `local-wally.zip` from the [Latest GitHub Release](https://github.com/ravibaskaran/local-wally/releases).
+2. **Drag & Drop**: Open Lively Wallpaper and drag `local-wally.zip` straight into the Lively window.
+3. **Done!** Lively Wallpaper natively extracts, validates, and adds **Local Wally HUD** to your library. Click it to set as active.
 
 ---
 
@@ -98,7 +98,14 @@ Automatically derives the display's native physical resolution (`screen.width * 
 3. **Customize via Lively Settings**:
    - Right-click the wallpaper in Lively and choose **Customise Wallpaper**:
      - **HUD Position**: Top Right (default), Top Left, Bottom Right, Bottom Left.
+     - **Show Regional News Feed**: Toggles the regional Google News RSS block.
+     - **Show Hardware Monitor**: Toggles CPU/GPU/RAM/Disk telemetry monitor.
+     - **Show Solar & Lunar Ephemeris**: Toggles astronomical SunCalc ephemeris card.
+     - **Show Air Quality Index (AQI)**: Toggles European AQI card.
+     - **Show Environmental Metrics**: Toggles humidity/wind/precip row.
      - **Show Media & Focus Dock**: Toggles the companion Bento Dock.
+     - **Show Pomodoro Focus Timer**: Toggles Pomodoro Focus Timer in companion dock.
+     - **Show Media Player & Visualizer**: Toggles Windows SMTC media player card.
      - **Pomodoro Focus Duration**: 5 to 60 minutes (default: 25).
      - **Pomodoro Break Duration**: 1 to 15 minutes (default: 5).
      - **Enable Audio Visualizer**: 60 FPS 32-band spectrum toggle.
@@ -155,7 +162,14 @@ window.LOCAL_WALLY_CONFIG = {
   unsplashApiKey: '',                   // Optional user API key
   maxPrecipitationParticles: 1800,      // 200 to 3500 particles
   contrastMode: 'auto',                 // 'auto', 'dark', 'light'
+  showNewsFeed: true,                   // Toggles Regional Google News RSS block
+  showHardwareMonitor: true,            // Toggles CPU/GPU/RAM/Disk hardware monitor
+  showCelestial: true,                  // Toggles SunCalc Solar & Lunar Ephemeris card
+  showAqi: true,                        // Toggles European Air Quality Index (AQI) card
+  showEnvironmentalMetrics: true,       // Toggles Humidity/Wind/Precip 3-card row
   showMediaFocusDock: true,             // Companion Bento Dock toggle
+  showPomodoro: true,                   // Toggles Pomodoro Focus Timer card
+  showMediaPlayer: true,                // Toggles Windows SMTC Media Player card
   pomodoroFocusMinutes: 25,             // 1 to 60 minutes
   pomodoroBreakMinutes: 5,              // 1 to 30 minutes
   pomodoroLongBreakMinutes: 15,         // 1 to 60 minutes

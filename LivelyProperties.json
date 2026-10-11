@@ -82,5 +82,40 @@
     "type": "checkbox",
     "value": true,
     "text": "Dynamic Solar Lighting & Shadows"
+  },
+  "showNewsFeed": {
+    "type": "checkbox",
+    "value": true,
+    "text": "Show Regional News Feed"
+  },
+  "showHardwareMonitor": {
+    "type": "checkbox",
+    "value": true,
+    "text": "Show Hardware Monitor (CPU/GPU/RAM/Disk)"
+  },
+  "showCelestial": {
+    "type": "checkbox",
+    "value": true,
+    "text": "Show Solar & Lunar Ephemeris"
+  },
+  "showAqi": {
+    "type": "checkbox",
+    "value": true,
+    "text": "Show Air Quality Index (AQI)"
+  },
+  "showEnvironmentalMetrics": {
+    "type": "checkbox",
+    "value": true,
+    "text": "Show Environmental Metrics (Humidity/Wind/Precip)"
+  },
+  "showPomodoro": {
+    "type": "checkbox",
+    "value": true,
+    "text": "Show Pomodoro Focus Timer"
+  },
+  "showMediaPlayer": {
+    "type": "checkbox",
+    "value": true,
+    "text": "Show Media Player & Visualizer"
   }
 }
