@@ -45,10 +45,17 @@
   --temp-low-color: #93c5fd;
   
   --font-stack: "Segoe UI Variable Display", "Segoe UI Variable Text", "Segoe UI Variable Small", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+
+  /* macOS-Style Dynamic Solar Lighting & Physical Shadow System */
+  --dynamic-wallpaper-filter: brightness(1.02) contrast(1.02) saturate(1.05);
+  --dynamic-card-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.52);
+  --dynamic-vignette-gradient: radial-gradient(circle at center, transparent 40%, rgba(2, 6, 23, 0.45) 100%), linear-gradient(180deg, rgba(2, 6, 23, 0.2) 0%, transparent 40%, rgba(2, 6, 23, 0.5) 100%);
+  --dynamic-solar-elevation: 0deg;
 }
 
 /* Wallpaper-Adaptive Light Glass Theme for High-Luminance / Bright Backgrounds */
-#hud.theme-light {
+#hud.theme-light,
+#dock-media-focus.theme-light {
   --glass-bg: rgba(255, 255, 255, 0.74);
   --glass-border: rgba(0, 0, 0, 0.14);
   --glass-inner-glow: rgba(255, 255, 255, 0.95);
@@ -229,8 +236,9 @@ html, body {
   background-size: cover;
   background-position: center center;
   background-repeat: no-repeat;
-  transition: opacity 1.2s cubic-bezier(0.4, 0.0, 0.2, 1);
-  will-change: opacity, transform;
+  filter: var(--dynamic-wallpaper-filter, none);
+  transition: opacity 1.2s cubic-bezier(0.4, 0.0, 0.2, 1), filter 3s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: opacity, transform, filter;
   transform: translate3d(0, 0, 0);
 }
 
@@ -245,8 +253,9 @@ html, body {
 .bg-vignette {
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at center, transparent 40%, rgba(2, 6, 23, 0.45) 100%),
-              linear-gradient(180deg, rgba(2, 6, 23, 0.2) 0%, transparent 40%, rgba(2, 6, 23, 0.5) 100%);
+  background: var(--dynamic-vignette-gradient, radial-gradient(circle at center, transparent 40%, rgba(2, 6, 23, 0.45) 100%),
+              linear-gradient(180deg, rgba(2, 6, 23, 0.2) 0%, transparent 40%, rgba(2, 6, 23, 0.5) 100%));
+  transition: background 3s cubic-bezier(0.4, 0, 0.2, 1);
   pointer-events: none;
 }
 
@@ -283,7 +292,7 @@ html, body {
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation)) contrast(105%);
   border: 1px solid var(--glass-border);
   border-radius: 20px;
-  box-shadow: var(--glass-shadow);
+  box-shadow: var(--glass-shadow), var(--dynamic-card-shadow, 0 20px 40px -10px rgba(0, 0, 0, 0.52));
   padding: 16px 18px;
   display: flex;
   flex-direction: row;
@@ -291,7 +300,7 @@ html, body {
   contain: layout paint style;
   will-change: transform, opacity;
   transform: translate3d(0, 0, 0);
-  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.3s ease, background 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease, color 0.4s ease;
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.3s ease, background 0.4s ease, border-color 0.4s ease, box-shadow 3s cubic-bezier(0.4, 0, 0.2, 1), color 0.4s ease;
   pointer-events: auto;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -316,6 +325,363 @@ html, body {
 #hud.bottom-left {
   bottom: 32px;
   left: 40px;
+}
+
+/* ==========================================================================
+   Layer 3.5: Companion Bento Dock - Media Player & Pomodoro Focus Timer
+   ========================================================================== */
+
+#dock-media-focus {
+  position: absolute;
+  z-index: 10;
+  width: 580px;
+  height: 140px;
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation)) contrast(105%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation)) contrast(105%);
+  border: 1px solid var(--glass-border);
+  border-radius: 20px;
+  box-shadow: var(--glass-shadow), var(--dynamic-card-shadow, 0 20px 40px -10px rgba(0, 0, 0, 0.52));
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: row;
+  gap: 12px;
+  contain: layout paint style;
+  will-change: transform, opacity;
+  transform: translate3d(0, 0, 0);
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.3s ease, background 0.4s ease, border-color 0.4s ease, box-shadow 3s cubic-bezier(0.4, 0, 0.2, 1), color 0.4s ease;
+  pointer-events: auto;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "cv01", "cv02", "tnum" 1;
+  font-variant-numeric: tabular-nums;
+}
+
+#dock-media-focus.top-right {
+  top: 456px;
+  right: 40px;
+}
+#dock-media-focus.top-left {
+  top: 456px;
+  left: 40px;
+}
+#dock-media-focus.bottom-right {
+  bottom: 456px;
+  right: 40px;
+}
+#dock-media-focus.bottom-left {
+  bottom: 456px;
+  left: 40px;
+}
+#dock-media-focus.is-hidden {
+  display: none !important;
+}
+
+/* Bento Dock Cards */
+.dock-card {
+  flex: 1;
+  min-width: 0;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 14px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.dock-card:hover {
+  background: var(--card-hover-bg);
+  border-color: var(--card-hover-border);
+}
+
+.dock-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.dock-card-title-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dock-card-title {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.pomo-icon {
+  width: 13px;
+  height: 13px;
+  color: var(--accent-emerald);
+}
+
+.media-icon {
+  width: 13px;
+  height: 13px;
+  color: var(--accent-cyan);
+}
+
+.pomo-mode-badge,
+.media-source-badge {
+  font-size: 0.62rem;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 9999px;
+  background: var(--badge-bg);
+  border: 1px solid var(--badge-border);
+  color: var(--accent-cyan);
+  letter-spacing: 0.03em;
+}
+
+.pomo-mode-badge.is-break {
+  color: var(--accent-amber);
+}
+
+/* Pomodoro Layout */
+.pomo-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  height: calc(100% - 20px);
+}
+
+.pomo-ring-wrap {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pomo-ring-wrap canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 88px;
+  height: 88px;
+}
+
+.pomo-ring-center {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#pomodoro-time {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+.pomo-controls {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  flex: 1;
+}
+
+.pomo-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.pomo-btn {
+  flex: 1;
+  padding: 5px 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid var(--card-border);
+  transition: all 0.2s ease;
+  outline: none;
+  font-family: inherit;
+}
+
+.pomo-btn-primary {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: rgba(16, 185, 129, 0.4);
+  color: #34d399;
+}
+
+.pomo-btn-primary:hover {
+  background: rgba(16, 185, 129, 0.35);
+  border-color: rgba(16, 185, 129, 0.6);
+  color: #6ee7b7;
+}
+
+.pomo-btn-primary.is-running {
+  background: rgba(244, 63, 94, 0.2);
+  border-color: rgba(244, 63, 94, 0.4);
+  color: #fb7185;
+}
+
+.pomo-btn-primary.is-running:hover {
+  background: rgba(244, 63, 94, 0.35);
+  border-color: rgba(244, 63, 94, 0.6);
+  color: #fda4af;
+}
+
+.pomo-btn-secondary {
+  background: var(--tag-bg);
+  color: var(--text-secondary);
+}
+
+.pomo-btn-secondary:hover {
+  background: var(--card-hover-bg);
+  color: var(--text-primary);
+  border-color: var(--card-hover-border);
+}
+
+.pomo-pills {
+  display: flex;
+  gap: 5px;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 2px;
+  border-radius: 8px;
+  border: 1px solid var(--card-border);
+}
+
+.pomo-pill {
+  flex: 1;
+  background: transparent;
+  border: none;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 3px 0;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.pomo-pill.is-active {
+  background: var(--tag-bg);
+  color: var(--text-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+/* Media Card Layout */
+.media-content {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: calc(100% - 20px);
+}
+
+.media-info-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.media-art-wrap {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--card-border);
+  background: #090d16;
+}
+
+.media-art {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: opacity 0.3s ease;
+}
+
+.media-art-vinyl {
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
+  pointer-events: none;
+}
+
+.media-text-wrap {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.media-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: -0.01em;
+}
+
+.media-artist {
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+
+.media-visualizer-wrap {
+  width: 100%;
+  height: 44px;
+  display: flex;
+  align-items: flex-end;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.15);
+  padding: 0 4px;
+  overflow: hidden;
+  border: 1px solid var(--card-border);
+}
+
+#audio-visualizer-canvas {
+  width: 100%;
+  height: 44px;
+  display: block;
+}
+
+/* Light Theme overrides for #dock-media-focus */
+#dock-media-focus.theme-light .pomo-pills {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+#dock-media-focus.theme-light .media-visualizer-wrap {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+#dock-media-focus.theme-light #pomodoro-time {
+  text-shadow: none;
+}
+
+#dock-media-focus.theme-light .media-art-wrap {
+  background: #f1f5f9;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
 }
 
 /* Bento Column System */
@@ -1155,4 +1521,31 @@ html, body {
 }
 .unsplash-attribution:hover {
   color: rgba(255, 255, 255, 0.85);
+}
+
+/* ==========================================================================
+   Responsive Adaptations for Compact Screens & Preview Windows
+   ========================================================================== */
+@media (max-height: 640px) {
+  #hud {
+    min-height: auto;
+    max-height: calc(100vh - 16px);
+    padding: 10px 14px;
+    gap: 12px;
+  }
+  #hud.top-right, #hud.top-left {
+    top: 10px;
+  }
+  #dock-media-focus.top-right, #dock-media-focus.top-left {
+    top: auto;
+    bottom: 10px;
+  }
+}
+
+@media (max-width: 660px) {
+  #hud, #dock-media-focus {
+    width: calc(100vw - 24px);
+    right: 12px !important;
+    left: 12px !important;
+  }
 }

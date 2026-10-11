@@ -51,5 +51,36 @@
     "value": 0,
     "text": "Glass Contrast Theme",
     "items": ["Auto (Wallpaper-Adaptive)", "Dark Glass (White Text)", "Light Glass (Dark Text)"]
+  },
+  "showMediaFocusDock": {
+    "type": "checkbox",
+    "value": true,
+    "text": "Show Media & Focus Dock"
+  },
+  "pomodoroFocusMinutes": {
+    "type": "slider",
+    "value": 25,
+    "min": 5,
+    "max": 60,
+    "step": 1,
+    "text": "Pomodoro Focus Duration (Minutes)"
+  },
+  "pomodoroBreakMinutes": {
+    "type": "slider",
+    "value": 5,
+    "min": 1,
+    "max": 15,
+    "step": 1,
+    "text": "Pomodoro Break Duration (Minutes)"
+  },
+  "enableAudioVisualizer": {
+    "type": "checkbox",
+    "value": true,
+    "text": "Enable Audio Visualizer (60 FPS)"
+  },
+  "enableDynamicSolarLighting": {
+    "type": "checkbox",
+    "value": true,
+    "text": "Dynamic Solar Lighting & Shadows"
   }
 }

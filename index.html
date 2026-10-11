@@ -270,6 +270,64 @@
       </div>
     </aside>
 
+    <!-- Layer 3.5: Companion Bento Dock - Media Player & Pomodoro Focus Timer -->
+    <aside id="dock-media-focus" class="dock-media-focus top-right" aria-label="Media and Focus Productivity Dock">
+      <!-- Left Card: Pomodoro Focus Timer -->
+      <section id="pomodoro-card" class="dock-card pomo-card" aria-label="Pomodoro Focus Timer">
+        <div class="dock-card-header">
+          <div class="dock-card-title-group">
+            <svg class="bento-icon pomo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <span class="dock-card-title">FOCUS TIMER</span>
+          </div>
+          <span id="pomo-mode-label" class="pomo-mode-badge">Focus</span>
+        </div>
+        <div class="pomo-content">
+          <div class="pomo-ring-wrap">
+            <canvas id="pomodoro-canvas" width="88" height="88"></canvas>
+            <div class="pomo-ring-center">
+              <span id="pomodoro-time">25:00</span>
+            </div>
+          </div>
+          <div class="pomo-controls">
+            <div class="pomo-actions">
+              <button id="pomo-btn-toggle" class="pomo-btn pomo-btn-primary" type="button">Start</button>
+              <button id="pomo-btn-reset" class="pomo-btn pomo-btn-secondary" type="button">Reset</button>
+            </div>
+            <div class="pomo-pills">
+              <button id="pomo-pill-focus" class="pomo-pill is-active" type="button">Focus</button>
+              <button id="pomo-pill-break" class="pomo-pill" type="button">Break</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Card: Universal Windows SMTC Media Player & Visualizer -->
+      <section id="media-card" class="dock-card media-card" aria-label="Windows Media Player">
+        <div class="dock-card-header">
+          <div class="dock-card-title-group">
+            <svg class="bento-icon media-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+            <span class="dock-card-title">NOW PLAYING</span>
+          </div>
+          <span id="media-source-badge" class="media-source-badge">SMTC</span>
+        </div>
+        <div class="media-content">
+          <div class="media-info-row">
+            <div class="media-art-wrap">
+              <img id="media-art" class="media-art" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='44' height='44' viewBox='0 0 24 24' fill='none' stroke='%2338bdf8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='10'/><circle cx='12' cy='12' r='3'/></svg>" alt="Artwork" />
+              <div class="media-art-vinyl"></div>
+            </div>
+            <div class="media-text-wrap">
+              <div id="media-title" class="media-title" title="No Media Playing">No Media Playing</div>
+              <div id="media-artist" class="media-artist" title="Windows SMTC Idle">Windows SMTC Idle</div>
+            </div>
+          </div>
+          <div class="media-visualizer-wrap">
+            <canvas id="audio-visualizer-canvas" width="240" height="44"></canvas>
+          </div>
+        </div>
+      </section>
+    </aside>
+
     <!-- Optional Diagnostics Panel (Press 'D' to toggle) -->
     <div id="diagnostic-panel">
       <div>GPU: <span id="diag-gpu">Detecting...</span></div>

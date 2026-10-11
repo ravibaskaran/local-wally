@@ -14,7 +14,9 @@
     listeners: {
       playback: [],
       property: [],
-      systemInfo: []
+      systemInfo: [],
+      currentTrack: [],
+      audioData: []
     },
 
     /**
@@ -55,6 +57,26 @@
       }
     },
 
+    /**
+     * Registers a callback for Windows SMTC current track telemetry updates
+     * @param {function(Object)} cb Called with parsed track metadata object
+     */
+    onCurrentTrack: function(cb) {
+      if (typeof cb === 'function') {
+        this.listeners.currentTrack.push(cb);
+      }
+    },
+
+    /**
+     * Registers a callback for 60 FPS audio FFT frequency bins [0.0..1.0]
+     * @param {function(Array<number>)} cb Called with 128 normalized float bins
+     */
+    onAudioData: function(cb) {
+      if (typeof cb === 'function') {
+        this.listeners.audioData.push(cb);
+      }
+    },
+
     setPaused: function(paused) {
       if (this.isPaused === paused) return;
       this.isPaused = paused;
@@ -86,6 +108,35 @@
           this.listeners.systemInfo[i](info);
         } catch (e) {
           console.error('[LivelyBridge] Error in systemInfo listener:', e);
+        }
+      }
+    },
+
+    emitCurrentTrack: function(data) {
+      var track = null;
+      try {
+        track = typeof data === 'string' ? JSON.parse(data) : data;
+      } catch (err) {
+        console.warn('[LivelyBridge] Failed to parse track payload:', err);
+        track = null;
+      }
+
+      for (var i = 0; i < this.listeners.currentTrack.length; i++) {
+        try {
+          this.listeners.currentTrack[i](track);
+        } catch (e) {
+          console.error('[LivelyBridge] Error in currentTrack listener:', e);
+        }
+      }
+    },
+
+    emitAudioData: function(audioArray) {
+      if (!audioArray) return;
+      for (var i = 0; i < this.listeners.audioData.length; i++) {
+        try {
+          this.listeners.audioData[i](audioArray);
+        } catch (e) {
+          console.error('[LivelyBridge] Error in audioData listener:', e);
         }
       }
     },
@@ -122,7 +173,17 @@
         }
       };
 
-      // 4. Page Visibility API fallback (WebView2 native parking)
+      // 4. Lively Host Native Current Track (Windows SMTC) Listener
+      global.livelyCurrentTrack = function(data) {
+        self.emitCurrentTrack(data);
+      };
+
+      // 5. Lively Host Native Audio Visualizer Listener (128 normalized float bins)
+      global.livelyAudioListener = function(audioArray) {
+        self.emitAudioData(audioArray);
+      };
+
+      // 6. Page Visibility API fallback (WebView2 native parking)
       if (typeof document !== 'undefined') {
         document.addEventListener('visibilitychange', function() {
           if (document.hidden) {
@@ -144,6 +205,18 @@
       } catch (err) {
         console.warn('[LivelyBridge] Early system info parse error:', err);
       }
+    }
+  };
+
+  global.livelyCurrentTrack = function(data) {
+    if (global.LivelyBridge && global.LivelyBridge.emitCurrentTrack) {
+      global.LivelyBridge.emitCurrentTrack(data);
+    }
+  };
+
+  global.livelyAudioListener = function(audioArray) {
+    if (global.LivelyBridge && global.LivelyBridge.emitAudioData) {
+      global.LivelyBridge.emitAudioData(audioArray);
     }
   };
 

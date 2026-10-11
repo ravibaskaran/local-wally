@@ -16,6 +16,9 @@
 6. **Zero-Power Host Lifecycle Parking**: Seamless Lively Wallpaper host IPC integration dropping CPU/GPU utilization to absolute 0.0% whenever occluded, minimized, or when full-screen applications/games are active.
 7. **Hardware Telemetry HUD & Text-Track Sparklines**: Direct host telemetry hook via Lively `--system-information` (`livelySystemInformation`), rendering rolling CPU, GPU 3D, RAM (used/total & %), and storage charts with zero-allocation Unicode sparklines (` ▂▃▄▅▆▇█`) and an automatic 10-second preview fallback ticker.
 8. **Zero-Key Regional News Feed Dispatch**: Proximity-targeted Google News RSS ingestion via CORS gateways and native browser XML `DOMParser()`, normalized, cached inside the 15-minute firewall, and rotated smoothly every 7 seconds with CSS opacity transitions.
+9. **Universal Windows Media SMTC Canvas & 60 FPS Visualizer**: Integrates native `livelyCurrentTrack(data)` and 60 FPS `livelyAudioListener(audioArray)` to extract live track/artist/artwork and render a 32-band downsampled frequency spectrum with auto-sleep parking when silent (0% CPU).
+10. **Performant Pomodoro Countdown HUD**: Lightweight offline JavaScript interval state timer with native Canvas 2D radial countdown arc vector rendering and direct background mouse toggles (zero page reloads).
+11. **macOS-Style Dynamic Solar Lighting & Shadowing Engine**: Continuous SunCalc astronomical solar vector projection mapped to CSS Custom Properties, seamlessly adjusting wallpaper brightness, color temperature filters, and physical directional drop-shadows across day/night cycles without CPU spikes.
 
 ---
 
@@ -29,6 +32,8 @@
 |       - Playback Controller (livelyWallpaperPlaybackChanged)                       |
 |       - Settings UI Property Broker (livelyPropertyListener)                     |
 |       - Hardware Telemetry Stream (livelySystemInformation: --system-information) |
+|       - Windows SMTC Media Controller (livelyCurrentTrack)                        |
+|       - 60 FPS Audio Visualizer Stream (livelyAudioListener)                     |
 +-----------------------------------------------------------------------------------+
                                          │
                                    IPC / WebView2
@@ -42,8 +47,10 @@
 - Playback State    - LocalStorage Firewall             - 60 FPS Animation Loop
 - Property Interop  - 5-30m Clamped TTL                 - Double-Buffered Swap
 - Hardware Stream   - Emergency Fallbacks               - Diagnostics Overlay
-- Visibility API    - News & Weather Snapshot           - Hardware Sparkline Engine
-                           │                            - 7s News Rotation Dispatch
+- SMTC Media Stream - News & Weather Snapshot           - Hardware Sparkline Engine
+- Audio Spectrum                                        - 7s News Rotation Dispatch
+- Visibility API                                        - Adaptive Contrast Engine
+                           │                            - macOS Solar Lighting Map
                            ▼                                   │
                     [ApiService]                               │
                     - Geolocation (GPS / IP)                   │
@@ -59,13 +66,17 @@
 +-----------------------------------------------------------------------------------+
 | Layer 0: [SkyEngine]        -> Dynamic SunCalc Solar/Lunar Celestial Gradient     |
 | Layer 1: [Double Buffer]    -> Cross-Fading Landscape Imagery (bg-a / bg-b)       |
+|                             -> macOS Dynamic Solar Lighting & Shadow Engine       |
 | Layer 2: [ParticleEngine]   -> SoA Canvas 2D Precipitation / Stars / Splashes     |
 | Layer 3: [Bento Grid HUD]   -> 2-Column Windows 11 Acrylic Bento Telemetry:       |
 |                                - Col 1: Clock/Location, Temp, Metrics, Ephemeris, |
 |                                         European Air Quality Index                |
 |                                - Col 2: Hardware Telemetry, Regional News Ticker, |
 |                                         Sync Pulse & Manual Refresh               |
-| Layer 4: [Telemetry/Attrib] -> Real-time GPU/FPS Diag Panel & Unsplash Credit     |
+| Layer 4: [Media & Focus]    -> Companion Glass Bento Dock:                        |
+|                                - Card 1: Pomodoro Canvas 2D Radial Countdown Ring |
+|                                - Card 2: Windows SMTC Media & 60 FPS Spectrum     |
+| Layer 5: [Telemetry/Attrib] -> Real-time GPU/FPS Diag Panel & Unsplash Credit     |
 +-----------------------------------------------------------------------------------+
 ```
 
@@ -650,5 +661,104 @@ Whenever a new wallpaper completes double-buffered preloading (or when the windo
   - `LivelyProperties.json` and `config.js` support `contrastMode`: `'auto'` (Adaptive), `'dark'` (Manual Dark), and `'light'` (Manual Light).
   - Pressing `'C'` cycles contrast modes immediately.
   - Active theme mode and sampled state are reported in real-time within the Diagnostics Overlay (`diag-theme`).
+
+---
+
+## 17. Universal Windows Media SMTC Canvas & 60 FPS Visualizer Engine
+
+### 17.1 Lively Windows SMTC Hook Architecture
+Lively Wallpaper exposes the Windows System Media Transport Controls (SMTC) subsystem to hosted WebViews via the global IPC event:
+```javascript
+window.livelyCurrentTrack = function(data) { ... }
+```
+- **Payload Normalization**: The host payload arrives either as a JSON-encoded string or an Object:
+  `{ Title, Artist, AlbumTitle, AlbumArtist, PlaybackType, AlbumArt }`.
+- **Universal Source Compatibility**: Ingests track titles, artist metadata, and Base64-encoded album art universally from Spotify, Apple Music, Amazon Music, Gaana, YouTube Music, Tidal, and active Chromium/Gecko browser tabs.
+- **State Management & Standby Mode**:
+  - Active: Displays album artwork thumbnail with vinyl edge reflection, smooth text marquee, and active playback indicator.
+  - Idle (no media session or stopped): Automatically transitions to an elegant standby state ("No Media Playing" with ambient acoustic icon).
+  - Preview Fallback: Browser preview mode (`serve.js`) includes a demo track simulator toggled via the `M` key.
+
+### 17.2 Real-Time 60 FPS Audio Visualizer (`livelyAudioListener`)
+Lively pushes real-time audio FFT frequency telemetry via:
+```javascript
+window.livelyAudioListener = function(audioArray) { ... }
+```
+where `audioArray` is an array of 128 normalized frequency float bins ($0.0 \le A_k \le 1.0$).
+
+1. **Logarithmic 32-Band Downsampling**:
+   To conserve fill-rate and maximize perceptual readability, the 128 raw linear frequency bins are downsampled into 32 logarithmically spaced psychoacoustic frequency bands (accentuating sub-bass $20\text{--}60\text{ Hz}$, mid-bass $60\text{--}250\text{ Hz}$, vocal midrange $250\text{--}4000\text{ Hz}$, and treble brilliance).
+2. **Damped Ballistics (Attack / Decay Physics)**:
+   - Contiguous static typed buffers `spectrumValues = new Float32Array(32)` and `peakValues = new Float32Array(32)`.
+   - **Attack**: Rapid rise ($0.65$ lerp factor) for instantaneous transient response on drum kicks.
+   - **Decay**: Smooth gravity falloff ($0.12$ lerp factor) preventing unnatural flickering.
+3. **Single-Path Batched Canvas 2D Vector Rendering**:
+   - Rendered onto `#audio-visualizer-canvas` with `{ alpha: true, desynchronized: true, willReadFrequently: false }`.
+   - Each bar is drawn with smooth rounded caps (`ctx.roundRect` or arc caps) and a vertical gradient matching the active theme palette (`--accent-cyan` to `--accent-indigo`).
+4. **Silence Detection & Automatic 0.0% CPU Sleep Parking**:
+   - Measures frame aggregate amplitude $S = \sum_{k=0}^{31} A_k$.
+   - If $S < 0.005$ continuously for $> 90$ consecutive frames (~1.5 seconds), the visualizer enters **Deep Sleep**: clears the canvas, halts draw execution, and disconnects from the `requestAnimationFrame` render dispatch.
+   - Upon receiving non-zero audio packets, it wakes immediately ($< 16\text{ms}$) with zero dropped frames.
+
+---
+
+## 18. Performant Pomodoro Countdown HUD
+
+### 18.1 Purpose & Ergonomics
+To transform the ambient wallpaper into a distraction-free productivity surface, Local Wally integrates a dedicated **Pomodoro Focus Countdown HUD** directly inside the secondary Bento Dock (`#dock-media-focus`):
+- Work / Break cycles: **Focus** (25 min), **Short Break** (5 min), **Long Break** (15 min).
+- Direct mouse interaction: Clicking the radial ring or action pills toggles Start, Pause, Reset, and mode switching with zero page reloads.
+
+### 18.2 Canvas 2D Radial Vector Architecture
+Rather than thrashing SVG DOM elements or CSS stroke-dashoffset transitions, the radial progress ring is rendered via a dedicated Canvas 2D context (`#pomodoro-canvas`, $88 \times 88$ px):
+1. **Static Background Track**: Light translucent ring at radius $r = 36\text{px}$, stroke width $4.5\text{px}$.
+2. **Dynamic Progress Arc**:
+   $$\theta_{\text{start}} = -\frac{\pi}{2}, \quad \theta_{\text{end}} = -\frac{\pi}{2} + 2\pi \cdot \left(\frac{t_{\text{remaining}}}{t_{\text{total}}}\right)$$
+   Drawn with `ctx.arc(cx, cy, r, \theta_{\text{start}}, \theta_{\text{end}})` using rounded stroke caps (`lineCap = 'round'`).
+3. **Chromatic Mode Gradients**:
+   - Focus Mode: Emerald (`#10b981`) to Sky Blue (`#38bdf8`) gradient.
+   - Break Mode: Warm Gold (`#fbbf24`) to Rose (`#f43f5e`) gradient.
+4. **Digital Center Readout**:
+   - Formatted $MM:SS$ tabular countdown with mode label underneath.
+   - Pulse animation upon timer completion.
+5. **Zero-Overhead Clock Cycle**:
+   - Redraw executes strictly once per second when running, and drops to absolute 0% CPU when paused or idle.
+
+---
+
+## 19. macOS-Style Dynamic Solar Lighting & Directional Shadow Engine
+
+### 19.1 Astronomical Solar Vector Mapping
+Local Wally continuously calculates the celestial position of the Sun using `SunCalc.getPosition(now, lat, lon)`:
+- $\text{Altitude } (\alpha)$: Angle of the sun above the horizon in radians ($-\frac{\pi}{2} \le \alpha \le \frac{\pi}{2}$).
+- $\text{Azimuth } (\theta)$: Solar compass heading in radians ($-\pi \le \theta \le \pi$).
+
+### 19.2 Real-Time Physical Lighting Transformations
+These coordinates are mapped in real-time to CSS Custom Properties exposed on `:root` and `#bg-stack`:
+
+1. **Directional Shadow Projection**:
+   Physical shadows cast directly opposite the sun:
+   $$\text{Shadow Angle } \phi = (\theta \cdot 180 / \pi + 180) \pmod{360}^\circ$$
+   $$\Delta x = -\sin(\theta) \cdot d(\alpha), \quad \Delta y = \cos(\theta) \cdot d(\alpha)$$
+   where distance $d(\alpha) = \max(6, \min(28, 20 \cdot (1 - \sin(\alpha))))$.
+   - **Morning (East)**: Light strikes from the East; soft long shadows stretch Westward ($\Delta x < 0$).
+   - **Solar Noon**: Minimal vertical drop shadow directly beneath Bento cards ($\Delta x \approx 0, \Delta y \approx 6\text{px}$).
+   - **Evening (West)**: Deep golden light strikes from the West; long shadows stretch Eastward ($\Delta x > 0$).
+   - Applied dynamically to Bento HUD elevation:
+     `box-shadow: var(--dynamic-card-shadow);`
+
+2. **Landscape Chromatic Grading & Sky Filters**:
+   A dynamic filter matrix is applied to the Unsplash background stack (`.bg-layer`):
+   - **Daylight** ($\alpha > 0.20\text{ rad}$): Neutral clarity: `brightness(1.02) contrast(1.02) saturate(1.05)`.
+   - **Golden Hour** ($0.0 \le \alpha \le 0.20\text{ rad}$): Warm sunset glow: `brightness(0.96) contrast(1.06) saturate(1.35) sepia(0.22) hue-rotate(-12deg)`.
+   - **Twilight / Dusk** ($-0.15 \le \alpha < 0.0\text{ rad}$): Crimson violet: `brightness(0.82) contrast(1.10) saturate(1.15) hue-rotate(15deg)`.
+   - **Night** ($\alpha < -0.15\text{ rad}$): Moonlight grading: `brightness(0.66) contrast(1.15) saturate(0.85) hue-rotate(185deg)`.
+
+3. **Directional Sky Vignette Shifting**:
+   The vignette gradient (`.bg-vignette`) shifts its focal point along the solar azimuth, ensuring atmospheric illumination feels seamless on any downloaded landscape photo.
+
+4. **Zero CPU Overhead**:
+   Filters and gradients utilize smooth CSS transitions (`transition: filter 3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 3s ease`). The math runs once per minute (or on atmosphere sync), inducing **zero per-frame CPU cycles**.
+
 
 

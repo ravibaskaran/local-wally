@@ -12,10 +12,638 @@
 (function(global) {
   'use strict';
 
+  /**
+   * ==============================================================================
+   * 1. MediaVisualizerEngine
+   * Universal Windows Media SMTC Canvas & 60 FPS Visualizer Engine
+   * ==============================================================================
+   */
+  function MediaVisualizerEngine(options) {
+    options = options || {};
+    this.dom = {
+      card: options.card,
+      art: options.art,
+      title: options.title,
+      artist: options.artist,
+      badge: options.badge,
+      canvas: options.canvas
+    };
+
+    this.enabled = options.enabled !== false;
+    this.ctx = this.dom.canvas ? this.dom.canvas.getContext('2d', { alpha: true, desynchronized: true }) : null;
+    this.isLightTheme = false;
+
+    // Zero-allocation typed buffers
+    this.bandCount = 32;
+    this.rawSpectrum = new Float32Array(32);
+    this.dampedSpectrum = new Float32Array(32);
+    this.synthBuffer = new Float32Array(128);
+
+    // Precalculate 32 logarithmic psychoacoustic frequency bands across 128 input bins
+    this.bandRanges = new Int32Array(64);
+    var alpha = 0.08;
+    var A = 128 / (Math.exp(alpha * 32) - 1);
+    var prev = 0;
+    for (var i = 0; i < 32; i++) {
+      var startBin = prev;
+      var endBin = (i === 31) ? 128 : Math.min(128, Math.max(startBin + 1, Math.round(A * (Math.exp(alpha * (i + 1)) - 1))));
+      prev = endBin;
+      this.bandRanges[i * 2] = startBin;
+      this.bandRanges[i * 2 + 1] = endBin;
+    }
+
+    // Zero-CPU Silence Sleep state
+    this.silenceFrames = 0;
+    this.isSleeping = false;
+
+    // Demo / Preview Mode state
+    this.demoMode = 0; // 0: Normal / SMTC, 1: Synthwave, 2: Lo-Fi, 3: Ambient
+    this.demoTracks = [
+      { title: 'Resonance', artist: 'HOME (Synthwave)', badge: 'DEMO' },
+      { title: 'Coffee Breath', artist: 'Sofia Mills (Lo-Fi)', badge: 'DEMO' },
+      { title: 'Weightless', artist: 'Marconi Union (Ambient)', badge: 'DEMO' }
+    ];
+
+    this.defaultArt = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='44' height='44' viewBox='0 0 24 24' fill='none' stroke='%2338bdf8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='10'/><circle cx='12' cy='12' r='3'/></svg>";
+    this.initGradient();
+  }
+
+  MediaVisualizerEngine.prototype.initGradient = function() {
+    if (!this.ctx || !this.dom.canvas) return;
+    var h = this.dom.canvas.height;
+    this.gradient = this.ctx.createLinearGradient(0, h, 0, 0);
+    if (this.isLightTheme) {
+      this.gradient.addColorStop(0, '#0284c7');
+      this.gradient.addColorStop(1, '#7c3aed');
+    } else {
+      this.gradient.addColorStop(0, '#38bdf8');
+      this.gradient.addColorStop(1, '#a78bfa');
+    }
+  };
+
+  MediaVisualizerEngine.prototype.setTheme = function(theme) {
+    this.isLightTheme = (theme === 'light');
+    this.initGradient();
+  };
+
+  MediaVisualizerEngine.prototype.processAudioData = function(audioArray) {
+    if (!this.enabled || !audioArray) return;
+
+    var totalEnergy = 0;
+    for (var i = 0; i < 32; i++) {
+      var s = this.bandRanges[i * 2];
+      var e = this.bandRanges[i * 2 + 1];
+      var sum = 0;
+      var count = e - s;
+      for (var b = s; b < e; b++) {
+        sum += audioArray[b] || 0;
+      }
+      var avg = count > 0 ? (sum / count) : 0;
+      var eq = 1.0 + (i / 31) * 0.75;
+      var val = Math.min(1.0, avg * eq);
+      this.rawSpectrum[i] = val;
+      totalEnergy += val;
+    }
+
+    if (totalEnergy < 0.005) {
+      this.silenceFrames++;
+      if (this.silenceFrames > 90 && !this.isSleeping) {
+      this.sleep();
+    }
+  } else {
+    this.silenceFrames = 0;
+    if (this.isSleeping) {
+      this.wake();
+    }
+  }
+};
+
+MediaVisualizerEngine.prototype.render = function(dt) {
+  if (!this.enabled || !this.ctx || !this.dom.canvas) return;
+
+  if (this.demoMode > 0) {
+    this.synthesizeDemoAudio();
+  }
+
+  if (this.isSleeping) return;
+
+  // Ballistics: attack 0.65, decay 0.88
+  var activeEnergy = 0;
+  for (var i = 0; i < 32; i++) {
+    var raw = this.rawSpectrum[i];
+    var cur = this.dampedSpectrum[i];
+    if (raw > cur) {
+      cur = cur + (raw - cur) * 0.65;
+    } else {
+      cur = cur * 0.88;
+    }
+    if (cur < 0.002) cur = 0;
+    this.dampedSpectrum[i] = cur;
+    activeEnergy += cur;
+  }
+
+  // If energy is silent, count silence frames and enter deep sleep after 90 frames (~1.5s)
+  if (activeEnergy < 0.005) {
+    this.silenceFrames++;
+    if (this.silenceFrames > 90) {
+      this.sleep();
+      return;
+    }
+  } else {
+    this.silenceFrames = 0;
+  }
+
+  var w = this.dom.canvas.width;
+  var h = this.dom.canvas.height;
+  this.ctx.clearRect(0, 0, w, h);
+
+  this.ctx.fillStyle = this.gradient;
+  this.ctx.beginPath();
+  var barWidth = 5.2;
+  var gap = 2.2;
+  var startX = 2.0;
+
+  for (var j = 0; j < 32; j++) {
+    var val = this.dampedSpectrum[j];
+    var barH = Math.max(1.8, val * (h - 4));
+    var x = startX + j * (barWidth + gap);
+    var y = h - barH;
+    if (typeof this.ctx.roundRect === 'function') {
+      this.ctx.roundRect(x, y, barWidth, barH, [2, 2, 0, 0]);
+    } else {
+      this.ctx.rect(x, y, barWidth, barH);
+    }
+  }
+  this.ctx.fill();
+};
+
+MediaVisualizerEngine.prototype.sleep = function() {
+  this.isSleeping = true;
+  if (this.ctx && this.dom.canvas) {
+    this.ctx.clearRect(0, 0, this.dom.canvas.width, this.dom.canvas.height);
+  }
+};
+
+MediaVisualizerEngine.prototype.wake = function() {
+  this.isSleeping = false;
+  this.silenceFrames = 0;
+};
+
+  MediaVisualizerEngine.prototype.synthesizeDemoAudio = function() {
+    var now = performance.now() * 0.001;
+    var tempo = this.demoMode === 1 ? 4.2 : (this.demoMode === 2 ? 2.8 : 1.4);
+    var kick = Math.pow(Math.max(0, Math.sin(now * tempo)), 6);
+    var snare = Math.pow(Math.max(0, Math.cos(now * (tempo * 0.5))), 8);
+
+    for (var b = 0; b < 128; b++) {
+      var norm = b / 128;
+      var val = 0;
+      if (b < 12) {
+        val = kick * 0.85 + Math.sin(now * 3 + b) * 0.12;
+      } else if (b < 45) {
+        val = (Math.sin(now * 5 + b * 0.25) * 0.5 + 0.5) * 0.55 + snare * 0.25;
+      } else {
+        val = (Math.sin(now * 10 + b * 0.4) * 0.5 + 0.5) * 0.35 * (1 - norm);
+      }
+      this.synthBuffer[b] = Math.max(0, Math.min(1.0, val));
+    }
+    this.processAudioData(this.synthBuffer);
+  };
+
+  MediaVisualizerEngine.prototype.cycleDemoTrack = function() {
+    this.demoMode = (this.demoMode + 1) % (this.demoTracks.length + 1);
+    if (this.demoMode === 0) {
+      if (this.dom.badge) this.dom.badge.textContent = 'SMTC';
+      if (this.dom.title) {
+        this.dom.title.textContent = 'No Media Playing';
+        this.dom.title.title = 'No Media Playing';
+      }
+      if (this.dom.artist) {
+        this.dom.artist.textContent = 'Windows SMTC Idle';
+        this.dom.artist.title = 'Windows SMTC Idle';
+      }
+      if (this.dom.art) this.dom.art.src = this.defaultArt;
+      this.rawSpectrum.fill(0);
+      this.dampedSpectrum.fill(0);
+      this.sleep();
+      console.log('[MediaVisualizerEngine] Demo mode disabled');
+    } else {
+      var track = this.demoTracks[this.demoMode - 1];
+      if (this.dom.badge) this.dom.badge.textContent = track.badge;
+      if (this.dom.title) {
+        this.dom.title.textContent = track.title;
+        this.dom.title.title = track.title;
+      }
+      if (this.dom.artist) {
+        this.dom.artist.textContent = track.artist;
+        this.dom.artist.title = track.artist;
+      }
+      if (this.dom.art) this.dom.art.src = this.defaultArt;
+      this.wake();
+      console.log('[MediaVisualizerEngine] Demo mode enabled: ' + track.title);
+    }
+  };
+
+  MediaVisualizerEngine.prototype.handleTrackUpdate = function(data) {
+    if (this.demoMode > 0) return;
+
+    if (!data) {
+      if (this.dom.title) {
+        this.dom.title.textContent = 'No Media Playing';
+        this.dom.title.title = 'No Media Playing';
+      }
+      if (this.dom.artist) {
+        this.dom.artist.textContent = 'Windows SMTC Idle';
+        this.dom.artist.title = 'Windows SMTC Idle';
+      }
+      if (this.dom.art) this.dom.art.src = this.defaultArt;
+      if (this.dom.badge) this.dom.badge.textContent = 'SMTC';
+      return;
+    }
+
+    var title = data.Title || data.title || '';
+    var artist = data.Artist || data.artist || '';
+    var albumArt = data.AlbumArt || data.albumArt || data.Thumbnail || '';
+
+    if (title) {
+      if (this.dom.title) {
+        this.dom.title.textContent = title;
+        this.dom.title.title = title;
+      }
+      if (this.dom.artist) {
+        this.dom.artist.textContent = artist || 'Unknown Artist';
+        this.dom.artist.title = artist || 'Unknown Artist';
+      }
+      if (this.dom.badge) this.dom.badge.textContent = 'SMTC';
+
+      if (albumArt && albumArt.length > 20) {
+        var src = albumArt;
+        if (!src.startsWith('data:') && !src.startsWith('http') && !src.startsWith('file:')) {
+          src = 'data:image/jpeg;base64,' + src;
+        }
+        if (this.dom.art) this.dom.art.src = src;
+      } else {
+        if (this.dom.art) this.dom.art.src = this.defaultArt;
+      }
+    } else {
+      if (this.dom.title) {
+        this.dom.title.textContent = 'No Media Playing';
+        this.dom.title.title = 'No Media Playing';
+      }
+      if (this.dom.artist) {
+        this.dom.artist.textContent = 'Windows SMTC Idle';
+        this.dom.artist.title = 'Windows SMTC Idle';
+      }
+      if (this.dom.art) this.dom.art.src = this.defaultArt;
+      if (this.dom.badge) this.dom.badge.textContent = 'SMTC';
+    }
+  };
+
+  /**
+   * ==============================================================================
+   * 2. PomodoroEngine
+   * Performant Pomodoro Countdown HUD State Machine & Radial Canvas Renderer
+   * ==============================================================================
+   */
+  function PomodoroEngine(options) {
+    options = options || {};
+    this.dom = {
+      card: options.card,
+      canvas: options.canvas,
+      time: options.time,
+      modeLabel: options.modeLabel,
+      btnToggle: options.btnToggle,
+      btnReset: options.btnReset,
+      pillFocus: options.pillFocus,
+      pillBreak: options.pillBreak
+    };
+
+    this.focusMinutes = options.focusMinutes || 25;
+    this.breakMinutes = options.breakMinutes || 5;
+    this.longBreakMinutes = options.longBreakMinutes || 15;
+
+    this.mode = 'focus';
+    this.isRunning = false;
+    this.totalSeconds = this.focusMinutes * 60;
+    this.remainingSeconds = this.totalSeconds;
+    this.completedFocusSessions = 0;
+    this.timerId = null;
+    this.isLightTheme = false;
+
+    this.ctx = this.dom.canvas ? this.dom.canvas.getContext('2d') : null;
+
+    this.bindEvents();
+    this.render();
+  }
+
+  PomodoroEngine.prototype.bindEvents = function() {
+    var self = this;
+    if (this.dom.btnToggle && typeof this.dom.btnToggle.addEventListener === 'function') {
+      this.dom.btnToggle.addEventListener('click', function() {
+        self.toggle();
+      });
+    }
+    if (this.dom.btnReset && typeof this.dom.btnReset.addEventListener === 'function') {
+      this.dom.btnReset.addEventListener('click', function() {
+        self.reset();
+      });
+    }
+    if (this.dom.pillFocus && typeof this.dom.pillFocus.addEventListener === 'function') {
+      this.dom.pillFocus.addEventListener('click', function() {
+        self.setMode('focus');
+      });
+    }
+    if (this.dom.pillBreak && typeof this.dom.pillBreak.addEventListener === 'function') {
+      this.dom.pillBreak.addEventListener('click', function() {
+        self.setMode('break');
+      });
+    }
+  };
+
+  PomodoroEngine.prototype.setDurations = function(focusM, breakM, longBreakM) {
+    if (typeof focusM === 'number') this.focusMinutes = Math.max(1, Math.min(60, focusM));
+    if (typeof breakM === 'number') this.breakMinutes = Math.max(1, Math.min(30, breakM));
+    if (typeof longBreakM === 'number') this.longBreakMinutes = Math.max(1, Math.min(60, longBreakM));
+
+    if (!this.isRunning) {
+      this.reset();
+    }
+  };
+
+  PomodoroEngine.prototype.setMode = function(newMode) {
+    this.mode = newMode;
+    if (newMode === 'focus') {
+      this.totalSeconds = this.focusMinutes * 60;
+      if (this.dom.modeLabel) {
+        this.dom.modeLabel.textContent = 'Focus';
+        if (this.dom.modeLabel.classList) this.dom.modeLabel.classList.remove('is-break');
+      }
+      if (this.dom.pillFocus && this.dom.pillFocus.classList) this.dom.pillFocus.classList.add('is-active');
+      if (this.dom.pillBreak && this.dom.pillBreak.classList) this.dom.pillBreak.classList.remove('is-active');
+    } else if (newMode === 'break') {
+      this.totalSeconds = this.breakMinutes * 60;
+      if (this.dom.modeLabel) {
+        this.dom.modeLabel.textContent = 'Short Break';
+        if (this.dom.modeLabel.classList) this.dom.modeLabel.classList.add('is-break');
+      }
+      if (this.dom.pillFocus && this.dom.pillFocus.classList) this.dom.pillFocus.classList.remove('is-active');
+      if (this.dom.pillBreak && this.dom.pillBreak.classList) this.dom.pillBreak.classList.add('is-active');
+    } else if (newMode === 'longBreak') {
+      this.totalSeconds = this.longBreakMinutes * 60;
+      if (this.dom.modeLabel) {
+        this.dom.modeLabel.textContent = 'Long Break';
+        if (this.dom.modeLabel.classList) this.dom.modeLabel.classList.add('is-break');
+      }
+      if (this.dom.pillFocus && this.dom.pillFocus.classList) this.dom.pillFocus.classList.remove('is-active');
+      if (this.dom.pillBreak && this.dom.pillBreak.classList) this.dom.pillBreak.classList.add('is-active');
+    }
+    this.remainingSeconds = this.totalSeconds;
+    this.pause();
+    this.render();
+  };
+
+  PomodoroEngine.prototype.toggle = function() {
+    if (this.isRunning) {
+      this.pause();
+    } else {
+      this.start();
+    }
+  };
+
+  PomodoroEngine.prototype.start = function() {
+    if (this.isRunning) return;
+    this.isRunning = true;
+    this.targetEndTime = Date.now() + (this.remainingSeconds * 1000);
+    if (this.dom.btnToggle) {
+      this.dom.btnToggle.textContent = 'Pause';
+      if (this.dom.btnToggle.classList) this.dom.btnToggle.classList.add('is-running');
+    }
+    var self = this;
+    if (this.timerId) clearInterval(this.timerId);
+    this.timerId = setInterval(function() {
+      self.tick();
+    }, 1000);
+    this.render();
+  };
+
+  PomodoroEngine.prototype.pause = function() {
+    if (this.isRunning && this.targetEndTime) {
+      this.remainingSeconds = Math.max(0, Math.ceil((this.targetEndTime - Date.now()) / 1000));
+    }
+    this.isRunning = false;
+    this.targetEndTime = null;
+    if (this.timerId) {
+      clearInterval(this.timerId);
+      this.timerId = null;
+    }
+    if (this.dom.btnToggle) {
+      this.dom.btnToggle.textContent = 'Start';
+      if (this.dom.btnToggle.classList) this.dom.btnToggle.classList.remove('is-running');
+    }
+  };
+
+  PomodoroEngine.prototype.sleepTicker = function() {
+    if (this.timerId) {
+      clearInterval(this.timerId);
+      this.timerId = null;
+    }
+  };
+
+  PomodoroEngine.prototype.resumeTicker = function() {
+    if (this.isRunning && this.targetEndTime) {
+      var self = this;
+      if (this.timerId) clearInterval(this.timerId);
+      this.timerId = setInterval(function() {
+        self.tick();
+      }, 1000);
+      this.tick();
+    }
+  };
+
+  PomodoroEngine.prototype.reset = function() {
+    this.pause();
+    if (this.mode === 'focus') {
+      this.totalSeconds = this.focusMinutes * 60;
+    } else if (this.mode === 'break') {
+      this.totalSeconds = this.breakMinutes * 60;
+    } else {
+      this.totalSeconds = this.longBreakMinutes * 60;
+    }
+    this.remainingSeconds = this.totalSeconds;
+    this.render();
+  };
+
+  PomodoroEngine.prototype.tick = function() {
+    if (!this.isRunning || !this.targetEndTime) return;
+    var now = Date.now();
+    this.remainingSeconds = Math.max(0, Math.ceil((this.targetEndTime - now) / 1000));
+    this.render();
+
+    if (this.remainingSeconds <= 0) {
+      this.onComplete();
+    }
+  };
+
+  PomodoroEngine.prototype.onComplete = function() {
+    this.pause();
+    if (this.dom.card) {
+      this.dom.card.style.transform = 'scale(1.02)';
+      var self = this;
+      setTimeout(function() {
+        if (self.dom.card) self.dom.card.style.transform = '';
+      }, 400);
+    }
+
+    if (this.mode === 'focus') {
+      this.completedFocusSessions++;
+      if (this.completedFocusSessions % 4 === 0) {
+        this.setMode('longBreak');
+      } else {
+        this.setMode('break');
+      }
+    } else {
+      this.setMode('focus');
+    }
+  };
+
+  PomodoroEngine.prototype.render = function() {
+    var m = Math.floor(this.remainingSeconds / 60);
+    var s = this.remainingSeconds % 60;
+    var mStr = m < 10 ? '0' + m : '' + m;
+    var sStr = s < 10 ? '0' + s : '' + s;
+    if (this.dom.time) {
+      this.dom.time.textContent = mStr + ':' + sStr;
+    }
+
+    if (!this.ctx || !this.dom.canvas) return;
+    var ctx = this.ctx;
+    var cx = 44;
+    var cy = 44;
+    var r = 36;
+    var lineWidth = 4.5;
+
+    ctx.clearRect(0, 0, 88, 88);
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.lineWidth = lineWidth;
+    ctx.strokeStyle = this.isLightTheme ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.08)';
+    ctx.stroke();
+
+    if (this.totalSeconds > 0) {
+      var progress = this.remainingSeconds / this.totalSeconds;
+      if (progress > 0) {
+        ctx.beginPath();
+        var startAngle = -Math.PI / 2;
+        var endAngle = -Math.PI / 2 + (progress * 2 * Math.PI);
+        ctx.arc(cx, cy, r, startAngle, endAngle);
+        ctx.lineWidth = lineWidth;
+        ctx.lineCap = 'round';
+
+        var grad = ctx.createLinearGradient(10, 10, 78, 78);
+        if (this.mode === 'focus') {
+          grad.addColorStop(0, '#10b981');
+          grad.addColorStop(1, '#38bdf8');
+        } else {
+          grad.addColorStop(0, '#fbbf24');
+          grad.addColorStop(1, '#f43f5e');
+        }
+        ctx.strokeStyle = grad;
+        ctx.stroke();
+      }
+    }
+  };
+
+  PomodoroEngine.prototype.setTheme = function(theme) {
+    this.isLightTheme = (theme === 'light');
+    this.render();
+  };
+
+  /**
+   * ==============================================================================
+   * 3. SolarLightingEngine
+   * macOS-Style Dynamic Solar Lighting & Directional Shadow Engine
+   * ==============================================================================
+   */
+  function SolarLightingEngine(options) {
+    options = options || {};
+    this.enabled = options.enabled !== false;
+    this.lastAltitude = null;
+    this.lastAzimuth = null;
+  }
+
+  SolarLightingEngine.prototype.update = function(now, lat, lng) {
+    if (!this.enabled || !global.SunCalc) {
+      this.resetStyles();
+      return;
+    }
+
+    try {
+      now = now || new Date();
+      var pos = global.SunCalc.getPosition(now, lat, lng);
+      var alpha = pos.altitude;
+      var theta = pos.azimuth;
+
+      if (typeof alpha !== 'number' || isNaN(alpha) || typeof theta !== 'number' || isNaN(theta)) {
+        return;
+      }
+
+      this.lastAltitude = alpha;
+      this.lastAzimuth = theta;
+
+      // 1. Directional Shadow Vectors
+      var sinAlpha = Math.sin(alpha);
+      var d = Math.max(6, Math.min(28, 20 * (1 - sinAlpha)));
+      var dx = -Math.sin(theta) * d;
+      var dy = Math.cos(theta) * d;
+      var blur = Math.max(16, d * 1.8);
+      var shadowOpacity = (alpha < 0) ? 0.60 : 0.45;
+      var cardShadow = Math.round(dx) + 'px ' + Math.round(dy) + 'px ' + Math.round(blur) + 'px -6px rgba(0, 0, 0, ' + shadowOpacity.toFixed(2) + '), 0 20px 40px -10px rgba(0, 0, 0, 0.52)';
+
+      // 2. Chromatic Grading Filter
+      var filterStr = '';
+      if (alpha > 0.20) {
+        filterStr = 'brightness(1.02) contrast(1.02) saturate(1.05)';
+      } else if (alpha >= 0.0) {
+        filterStr = 'brightness(0.96) contrast(1.06) saturate(1.35) sepia(0.22) hue-rotate(-12deg)';
+      } else if (alpha >= -0.15) {
+        filterStr = 'brightness(0.82) contrast(1.10) saturate(1.15) hue-rotate(15deg)';
+      } else {
+        filterStr = 'brightness(0.66) contrast(1.15) saturate(0.85) hue-rotate(185deg)';
+      }
+
+      // 3. Directional Sky Vignette Shifting
+      var focalX = 50 + 20 * Math.sin(theta);
+      var focalY = 50 - 20 * Math.cos(theta);
+      var vignetteStr = 'radial-gradient(circle at ' + focalX.toFixed(1) + '% ' + focalY.toFixed(1) + '%, transparent 35%, rgba(2, 6, 23, 0.48) 100%), linear-gradient(180deg, rgba(2, 6, 23, 0.2) 0%, transparent 40%, rgba(2, 6, 23, 0.5) 100%)';
+
+      var elevDeg = alpha * (180 / Math.PI);
+
+      var style = document.documentElement.style;
+      style.setProperty('--dynamic-wallpaper-filter', filterStr);
+      style.setProperty('--dynamic-card-shadow', cardShadow);
+      style.setProperty('--dynamic-vignette-gradient', vignetteStr);
+      style.setProperty('--dynamic-solar-elevation', elevDeg.toFixed(1) + 'deg');
+    } catch (err) {
+      console.warn('[SolarLightingEngine] Error updating lighting vectors:', err);
+    }
+  };
+
+  SolarLightingEngine.prototype.resetStyles = function() {
+    var style = document.documentElement.style;
+    style.setProperty('--dynamic-wallpaper-filter', 'none');
+    style.setProperty('--dynamic-card-shadow', '0 20px 40px -10px rgba(0, 0, 0, 0.52)');
+    style.setProperty('--dynamic-vignette-gradient', 'radial-gradient(circle at center, transparent 40%, rgba(2, 6, 23, 0.45) 100%), linear-gradient(180deg, rgba(2, 6, 23, 0.2) 0%, transparent 40%, rgba(2, 6, 23, 0.5) 100%)');
+    style.setProperty('--dynamic-solar-elevation', '0deg');
+  };
+
   var App = {
     // Engine references
     particles: null,
     sky: null,
+    mediaVisualizer: null,
+    pomodoro: null,
+    solarLighting: null,
 
     // State
     state: null,
@@ -105,6 +733,12 @@
       var cm = cfg.contrastMode || 'auto';
       this.setContrastMode(cm);
 
+      if (typeof cfg.showMediaFocusDock !== 'undefined') {
+        this.setShowMediaFocusDock(cfg.showMediaFocusDock);
+      } else {
+        this.setShowMediaFocusDock(true);
+      }
+
       if (typeof cfg.refreshIntervalMinutes === 'number' && global.CacheManager) {
         global.CacheManager.setTtlMinutes(cfg.refreshIntervalMinutes);
       }
@@ -177,7 +811,25 @@
         hudNewsLink: document.getElementById('hud-news-link'),
         hudNewsHeadline: document.getElementById('hud-news-headline'),
         hudNewsSource: document.getElementById('hud-news-source'),
-        hudNewsDots: document.getElementById('hud-news-dots')
+        hudNewsDots: document.getElementById('hud-news-dots'),
+
+        // Companion Media & Focus Bento Dock DOM Nodes
+        dockMediaFocus: document.getElementById('dock-media-focus'),
+        pomodoroCard: document.getElementById('pomodoro-card'),
+        pomodoroCanvas: document.getElementById('pomodoro-canvas'),
+        pomodoroTime: document.getElementById('pomodoro-time'),
+        pomoModeLabel: document.getElementById('pomo-mode-label'),
+        pomoBtnToggle: document.getElementById('pomo-btn-toggle'),
+        pomoBtnReset: document.getElementById('pomo-btn-reset'),
+        pomoPillFocus: document.getElementById('pomo-pill-focus'),
+        pomoPillBreak: document.getElementById('pomo-pill-break'),
+
+        mediaCard: document.getElementById('media-card'),
+        mediaArt: document.getElementById('media-art'),
+        mediaTitle: document.getElementById('media-title'),
+        mediaArtist: document.getElementById('media-artist'),
+        mediaSourceBadge: document.getElementById('media-source-badge'),
+        audioVisualizerCanvas: document.getElementById('audio-visualizer-canvas')
       };
     },
 
@@ -188,6 +840,40 @@
       if (global.SkyEngine && this.dom.skyBackdrop) {
         this.sky = new global.SkyEngine(this.dom.skyBackdrop, this.dom.celestialContainer);
       }
+
+      var cfg = (global.LOCAL_WALLY_CONFIG) || {};
+
+      if (this.dom.audioVisualizerCanvas) {
+        this.mediaVisualizer = new MediaVisualizerEngine({
+          card: this.dom.mediaCard,
+          art: this.dom.mediaArt,
+          title: this.dom.mediaTitle,
+          artist: this.dom.mediaArtist,
+          badge: this.dom.mediaSourceBadge,
+          canvas: this.dom.audioVisualizerCanvas,
+          enabled: cfg.enableAudioVisualizer !== false
+        });
+      }
+
+      if (this.dom.pomodoroCanvas) {
+        this.pomodoro = new PomodoroEngine({
+          card: this.dom.pomodoroCard,
+          canvas: this.dom.pomodoroCanvas,
+          time: this.dom.pomodoroTime,
+          modeLabel: this.dom.pomoModeLabel,
+          btnToggle: this.dom.pomoBtnToggle,
+          btnReset: this.dom.pomoBtnReset,
+          pillFocus: this.dom.pomoPillFocus,
+          pillBreak: this.dom.pomoPillBreak,
+          focusMinutes: cfg.pomodoroFocusMinutes || 25,
+          breakMinutes: cfg.pomodoroBreakMinutes || 5,
+          longBreakMinutes: cfg.pomodoroLongBreakMinutes || 15
+        });
+      }
+
+      this.solarLighting = new SolarLightingEngine({
+        enabled: cfg.enableDynamicSolarLighting !== false
+      });
     },
 
     bindEvents: function() {
@@ -222,6 +908,10 @@
           self.toggleTempUnit();
         } else if (e.key === 'c' || e.key === 'C') {
           self.cycleContrastMode();
+        } else if (e.key === 'm' || e.key === 'M') {
+          if (self.mediaVisualizer) self.mediaVisualizer.cycleDemoTrack();
+        } else if (e.key === 'p' || e.key === 'P') {
+          if (self.pomodoro) self.pomodoro.toggle();
         }
       });
     },
@@ -237,8 +927,14 @@
         self.isPlaybackPaused = !!isPaused;
         if (isPaused) {
           self.stopLoop();
+          if (self.pomodoro) self.pomodoro.sleepTicker();
+          if (self.mediaVisualizer) self.mediaVisualizer.sleep();
         } else {
           self.startLoop();
+          if (self.pomodoro) self.pomodoro.resumeTicker();
+          if (self.mediaVisualizer && self.mediaVisualizer.demoMode > 0) {
+            self.mediaVisualizer.wake();
+          }
         }
       });
 
@@ -271,12 +967,44 @@
             var cmVal = typeof val === 'number' ? (['auto', 'dark', 'light'][val] || 'auto') : val;
             self.setContrastMode(cmVal);
             break;
+          case 'showMediaFocusDock':
+            self.setShowMediaFocusDock(val);
+            break;
+          case 'pomodoroFocusMinutes':
+            if (self.pomodoro) self.pomodoro.setDurations(typeof val === 'number' ? val : parseInt(val, 10), null, null);
+            break;
+          case 'pomodoroBreakMinutes':
+            if (self.pomodoro) self.pomodoro.setDurations(null, typeof val === 'number' ? val : parseInt(val, 10), null);
+            break;
+          case 'enableAudioVisualizer':
+            if (self.mediaVisualizer) self.mediaVisualizer.enabled = !!val;
+            break;
+          case 'enableDynamicSolarLighting':
+            if (self.solarLighting) {
+              self.solarLighting.enabled = !!val;
+              self.updateClock();
+            }
+            break;
         }
       });
 
       // Real-time Hardware System Information telemetry
       global.LivelyBridge.onSystemInfo(function(hwData) {
         self.handleSystemInfo(hwData);
+      });
+
+      // Windows SMTC Current Track telemetry
+      global.LivelyBridge.onCurrentTrack(function(track) {
+        if (self.mediaVisualizer) {
+          self.mediaVisualizer.handleTrackUpdate(track);
+        }
+      });
+
+      // Real-time Audio Spectrum telemetry (128 normalized float bins)
+      global.LivelyBridge.onAudioData(function(audioArray) {
+        if (self.mediaVisualizer) {
+          self.mediaVisualizer.processAudioData(audioArray);
+        }
       });
     },
 
@@ -299,8 +1027,23 @@
 
       this.dom.hud.classList.add(targetClass);
 
+      if (this.dom.dockMediaFocus) {
+        this.dom.dockMediaFocus.classList.remove('top-right', 'top-left', 'bottom-right', 'bottom-left');
+        this.dom.dockMediaFocus.classList.add(targetClass);
+      }
+
       if (this.contrastMode === 'auto' && this.lastLoadedImage) {
         this.adaptContrastToBackground(this.lastLoadedImage);
+      }
+    },
+
+    setShowMediaFocusDock: function(show) {
+      this.showMediaFocusDock = !!show;
+      if (!this.dom.dockMediaFocus) return;
+      if (this.showMediaFocusDock) {
+        this.dom.dockMediaFocus.classList.remove('is-hidden');
+      } else {
+        this.dom.dockMediaFocus.classList.add('is-hidden');
       }
     },
 
@@ -338,13 +1081,26 @@
     },
 
     setHudTheme: function(theme) {
-      if (!this.dom.hud) return;
       this.currentTheme = theme === 'light' ? 'light' : 'dark';
-      if (this.currentTheme === 'light') {
-        this.dom.hud.classList.add('theme-light');
-      } else {
-        this.dom.hud.classList.remove('theme-light');
+      var isLight = (this.currentTheme === 'light');
+
+      if (this.dom.hud) {
+        if (isLight) this.dom.hud.classList.add('theme-light');
+        else this.dom.hud.classList.remove('theme-light');
       }
+
+      if (this.dom.dockMediaFocus) {
+        if (isLight) this.dom.dockMediaFocus.classList.add('theme-light');
+        else this.dom.dockMediaFocus.classList.remove('theme-light');
+      }
+
+      if (this.pomodoro) {
+        this.pomodoro.setTheme(this.currentTheme);
+      }
+      if (this.mediaVisualizer) {
+        this.mediaVisualizer.setTheme(this.currentTheme);
+      }
+
       this.updateThemeDiagnostics();
     },
 
@@ -593,6 +1349,18 @@
         this.renderCelestial();
         this.updateSky();
         this.lastCelestialUpdate = now.getTime();
+      }
+
+      // Dynamic macOS-Style Solar Lighting & Directional Shadows
+      if (this.solarLighting) {
+        var defaultLoc = (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.defaultLocation) || {};
+        var lat = typeof defaultLoc.latitude === 'number' ? defaultLoc.latitude : 35.6762;
+        var lng = typeof defaultLoc.longitude === 'number' ? defaultLoc.longitude : 139.6503;
+        if (this.state && this.state.location) {
+          if (typeof this.state.location.latitude === 'number') lat = this.state.location.latitude;
+          if (typeof this.state.location.longitude === 'number') lng = this.state.location.longitude;
+        }
+        this.solarLighting.update(now, lat, lng);
       }
     },
 
@@ -1142,6 +1910,9 @@
       if (!this.syncInterval) {
         this.syncInterval = setInterval(this.checkAndSync.bind(this), 60000);
       }
+      if (this.pomodoro) {
+        this.pomodoro.resumeTicker();
+      }
 
       this.loop(this.lastFrameTime);
     },
@@ -1168,6 +1939,12 @@
         clearInterval(this.syncInterval);
         this.syncInterval = null;
       }
+      if (this.pomodoro) {
+        this.pomodoro.sleepTicker();
+      }
+      if (this.mediaVisualizer) {
+        this.mediaVisualizer.sleep();
+      }
       console.log('[App] Animation loop halted (0% CPU/GPU parked)');
     },
 
@@ -1181,6 +1958,11 @@
       if (this.particles) {
         this.particles.update(dt);
         this.particles.render();
+      }
+
+      // 1.5. Render 60 FPS Audio Visualizer
+      if (this.mediaVisualizer) {
+        this.mediaVisualizer.render(dt);
       }
 
       // 2. FPS & Performance Diagnostics
@@ -1217,5 +1999,8 @@
     App.init();
   }
 
+  global.MediaVisualizerEngine = MediaVisualizerEngine;
+  global.PomodoroEngine = PomodoroEngine;
+  global.SolarLightingEngine = SolarLightingEngine;
   global.App = App;
 })(typeof window !== 'undefined' ? window : this);

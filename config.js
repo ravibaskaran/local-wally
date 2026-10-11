@@ -112,6 +112,52 @@
     // 'dark': Locks to dark acrylic glass with crisp white typography.
     // 'light': Locks to frosted white acrylic glass with dark slate typography.
     // Default: 'auto' | Options: 'auto', 'dark', 'light'
-    contrastMode: 'auto'
+    contrastMode: 'auto',
+
+    // --------------------------------------------------------------------------
+    // 14. MEDIA & FOCUS DOCK COMPANION HUD
+    // --------------------------------------------------------------------------
+    // Toggles the companion Bento Dock beneath the main weather HUD containing
+    // the Pomodoro Focus Timer and Windows SMTC Media Player.
+    // Default: true | Options: true, false
+    showMediaFocusDock: true,
+
+    // --------------------------------------------------------------------------
+    // 15. POMODORO FOCUS DURATION (MINUTES)
+    // --------------------------------------------------------------------------
+    // Length in minutes for deep work focus sessions.
+    // Default: 25 | Valid Range: 1 to 60 minutes
+    pomodoroFocusMinutes: 25,
+
+    // --------------------------------------------------------------------------
+    // 16. POMODORO SHORT BREAK DURATION (MINUTES)
+    // --------------------------------------------------------------------------
+    // Length in minutes for short rest breaks between focus sessions.
+    // Default: 5 | Valid Range: 1 to 30 minutes
+    pomodoroBreakMinutes: 5,
+
+    // --------------------------------------------------------------------------
+    // 17. POMODORO LONG BREAK DURATION (MINUTES)
+    // --------------------------------------------------------------------------
+    // Length in minutes for extended rest breaks after 4 completed focus cycles.
+    // Default: 15 | Valid Range: 1 to 60 minutes
+    pomodoroLongBreakMinutes: 15,
+
+    // --------------------------------------------------------------------------
+    // 18. 60 FPS AUDIO SPECTRUM VISUALIZER
+    // --------------------------------------------------------------------------
+    // Renders real-time 32-band audio FFT telemetry onto the media card canvas.
+    // Automatically enters zero-overhead 0% CPU sleep mode when audio is silent.
+    // Default: true | Options: true, false
+    enableAudioVisualizer: true,
+
+    // --------------------------------------------------------------------------
+    // 19. MACOS-STYLE DYNAMIC SOLAR LIGHTING & DIRECTIONAL SHADOWS
+    // --------------------------------------------------------------------------
+    // Computes celestial solar vector angles using SunCalc and dynamically updates
+    // background chromatic filters, directional card drop shadows, and vignette angles.
+    // Evaluated once per minute with smooth 3-second CSS transitions for 0% per-frame CPU.
+    // Default: true | Options: true, false
+    enableDynamicSolarLighting: true
   };
 })(typeof window !== 'undefined' ? window : this);

@@ -25,6 +25,24 @@ Traditional live wallpapers are notorious resource hogs: heavy video playback lo
 
 ## 🚀 Key Features
 
+### 🎵 Universal Windows Media Canvas & 60 FPS Visualizer
+- **Native Windows SMTC Integration**: Leverages Lively's native `livelyCurrentTrack(data)` interface to extract track titles, artist metadata, and Base64 album art across Spotify, YouTube Music, Apple Music, Amazon Music, Gaana, or active browser tabs.
+- **Real-Time 32-Band Psychoacoustic Spectrum**: Consumes Lively's 60 FPS `livelyAudioListener(audioArray)` 128-bin FFT stream, mapped to 32 logarithmic bands ($A \cdot (e^{\alpha \cdot i} - 1)$) with smooth ballistic decay (0.65 attack, 0.88 decay) and dual-tone gradients.
+- **Zero-Overhead Silence Sleeping**: Continuously monitors audio energy $\sum A_k$. If silent ($< 0.005$) for $\ge 90$ frames (~1.5s), the visualizer enters deep sleep, halts rendering, clears the canvas, and uses **0.0% CPU/GPU** until audio resumes.
+- **Demo / Preview Mode**: Press <kbd>M</kbd> in any browser to cycle through mock demo tracks (Synthwave, Lo-Fi, Ambient) with a procedurally generated audio spectrum.
+
+### ⏱️ Performant Pomodoro Countdown HUD
+- **Canvas 2D Radial Arc Countdown**: Renders smooth countdown arcs via hardware-accelerated Canvas 2D vectors (`ctx.arc()`) with rounded caps and mode-based gradients (Emerald $\to$ Sky Blue for Focus; Warm Gold $\to$ Rose for Breaks).
+- **Drift-Free Wall-Clock Precision**: Uses timestamp calculations (`Date.now()`) to eliminate timer drift caused by JavaScript interval jitter or CPU throttling.
+- **Lively Lifecycle Aware**: When applications are maximized or the wallpaper is backgrounded, ticking is safely suspended (0 CPU wakeups) and seamlessly recalculates remaining time upon returning to the desktop.
+- **Interactive Background Controls**: Toggle Start/Pause (<kbd>P</kbd> or click), Reset, and switch modes (25m Focus, 5m Short Break, 15m Long Break) without reloading or losing state.
+
+### ☀️ macOS-Style Dynamic Solar Lighting & Physical Shadow Engine
+- **Astronomical Solar Vector Projection**: Computes real-time solar altitude ($\alpha$) and azimuth ($\theta$) angles continuously via `SunCalc`.
+- **Directional Shadow Projection**: Casts realistic solar drop shadows ($\Delta x = -\sin(\theta) \cdot d$, $\Delta y = \cos(\theta) \cdot d$) beneath all Bento cards that shift naturally throughout the day.
+- **4-Tier Diurnal Chromatic Landscape Grading**: Smoothly maps celestial angles to CSS Custom Properties (`--dynamic-wallpaper-filter`, `--dynamic-card-shadow`, `--dynamic-vignette-gradient`) across Daylight, Golden Hour, Twilight, and Moonlight Night.
+- **Zero Frame-Drop Transitions**: Visual changes are executed with a GPU-composited 3-second cubic-bezier transition, guaranteeing zero CPU spikes during color and lighting shifts.
+
 ### 🪟 Wallpaper-Adaptive Glassmorphism Contrast Engine
 Incoming wallpapers vary dramatically in tonal range—from dark starry nights to high-key midday skies or snowy horizons.
 - **Geometric Bounding-Box Sampling**: Samples the exact region of the wallpaper positioned behind the HUD using an offscreen downscaled $24 \times 16$ canvas.
@@ -59,32 +77,41 @@ Automatically derives the display's native physical resolution (`screen.width * 
 
 ## 📦 Installation & Setup
 
-### Method 1: Using Lively Wallpaper (Recommended)
+### Method 1: 1-Click Drag-and-Drop Install via `.livelyzip` (Fastest)
 
-1. **Download**: Clone or download this repository:
+1. **Download the Release**: Download `local-wally.livelyzip` (or `local-wally.zip`) from the [Latest GitHub Release](https://github.com/ravibaskaran/local-wally/releases).
+2. **Drag & Drop**: Open Lively Wallpaper and drag `local-wally.livelyzip` straight into the Lively window.
+3. **Done!** Lively instantly extracts, validates, and adds **Local Wally HUD** to your library. Click it to set as active.
+
+---
+
+### Method 2: Manual Folder Install
+
+1. **Clone or Download**:
    ```bash
    git clone https://github.com/ravibaskaran/local-wally.git
    ```
-2. **Open Lively Wallpaper**:
-   - Click the **Add Wallpaper** (`+`) button in the top bar.
-   - Click **Browse** and select the folder where `local-wally` was downloaded, or drag and drop the folder directly into the Lively window.
-   - Lively will automatically detect `LivelyInfo.json` and add **Local Wally HUD** to your library.
-3. **Set as Active Wallpaper**:
-   - Click the wallpaper card in your library to activate it.
-4. **Customize via Lively Settings**:
+2. **Add to Lively Wallpaper**:
+   - In Lively, click **Add Wallpaper** (`+`).
+   - Click **Browse** and select the `local-wally` directory (or drag the folder into Lively).
+   - Click **OK** to add to your library.
+3. **Customize via Lively Settings**:
    - Right-click the wallpaper in Lively and choose **Customise Wallpaper**:
      - **HUD Position**: Top Right (default), Top Left, Bottom Right, Bottom Left.
+     - **Show Media & Focus Dock**: Toggles the companion Bento Dock.
+     - **Pomodoro Focus Duration**: 5 to 60 minutes (default: 25).
+     - **Pomodoro Break Duration**: 1 to 15 minutes (default: 5).
+     - **Enable Audio Visualizer**: 60 FPS 32-band spectrum toggle.
+     - **Dynamic Solar Lighting & Shadows**: macOS-style celestial vector lighting.
      - **Glass Blur**: 0px to 40px (default: 14px).
      - **Particle Density Multiplier**: 0.2x to 2.0x.
      - **Temperature Unit**: Celsius (°C) or Fahrenheit (°F).
      - **Data Refresh Interval**: 5 to 30 minutes (default: 15 minutes).
      - **Glass Contrast Theme**: Auto (Wallpaper-Adaptive), Dark Glass, Light Glass.
-     - **Simulate Weather**: Debug preset triggers (Clear Day, Rain & Storm, Snow, Starry Night).
-     - **Unsplash API Key**: Optional personal key for custom photo search queries.
 
 ---
 
-### Method 2: Standalone Browser Preview
+### Method 3: Standalone Browser Preview
 
 You can preview and test Local Wally in any modern Chromium browser (Microsoft Edge, Google Chrome, Brave):
 
@@ -103,6 +130,8 @@ You can preview and test Local Wally in any modern Chromium browser (Microsoft E
 
 | Key | Action |
 |:---:|---|
+| <kbd>P</kbd> | Toggle Pomodoro Focus Timer **Start / Pause** without reloading. |
+| <kbd>M</kbd> | Cycle mock demo media tracks (**Synthwave $\to$ Lo-Fi $\to$ Ambient $\to$ Idle SMTC**) in browser preview. |
 | <kbd>D</kbd> | Toggle real-time Diagnostics Overlay (GPU tier, FPS, frametime, particle count, cache TTL, contrast mode). |
 | <kbd>C</kbd> | Cycle Glass Contrast Mode (`Auto (Adaptive)` $\to$ `Dark` $\to$ `Light`). |
 | <kbd>R</kbd> | Force immediate atmosphere & wallpaper synchronization (bypasses 15-minute cache). |
@@ -126,6 +155,12 @@ window.LOCAL_WALLY_CONFIG = {
   unsplashApiKey: '',                   // Optional user API key
   maxPrecipitationParticles: 1800,      // 200 to 3500 particles
   contrastMode: 'auto',                 // 'auto', 'dark', 'light'
+  showMediaFocusDock: true,             // Companion Bento Dock toggle
+  pomodoroFocusMinutes: 25,             // 1 to 60 minutes
+  pomodoroBreakMinutes: 5,              // 1 to 30 minutes
+  pomodoroLongBreakMinutes: 15,         // 1 to 60 minutes
+  enableAudioVisualizer: true,          // 60 FPS 32-band spectrum
+  enableDynamicSolarLighting: true,     // macOS-style solar shadows
   defaultLocation: {                    // Offline fallback coordinates
     city: 'Tokyo',
     country: 'Japan',
