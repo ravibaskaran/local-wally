@@ -909,6 +909,7 @@ MediaVisualizerEngine.prototype.wake = function() {
 
     this.tempUnit = options.tempUnit || 'C';
     this.activeTab = options.defaultTab || 'temp';
+    if (this.activeTab === 'Feels Like') this.activeTab = 'feels_like';
     this.points = [];
 
     // Pre-allocated DOM element caches
@@ -916,8 +917,13 @@ MediaVisualizerEngine.prototype.wake = function() {
     this.valLabelPool = [];
     this.timeLabelPool = [];
 
+    // Pre-allocated typed coordinate buffers (zero GC allocations per frame/render)
+    this.xs = new Float32Array(32);
+    this.ys = new Float32Array(32);
+
     this.colorMap = {
       temp: { stroke: '#f59e0b', fill: 'url(#forecast-grad-temp)', dot: '#fbbf24' },
+      feels_like: { stroke: '#fb923c', fill: 'url(#forecast-grad-feels)', dot: '#fb923c' },
       precip: { stroke: '#38bdf8', fill: 'url(#forecast-grad-precip)', dot: '#38bdf8' },
       wind: { stroke: '#34d399', fill: 'url(#forecast-grad-wind)', dot: '#34d399' },
       humidity: { stroke: '#a78bfa', fill: 'url(#forecast-grad-humidity)', dot: '#c084fc' },
@@ -1017,6 +1023,7 @@ MediaVisualizerEngine.prototype.wake = function() {
       if (!p) continue;
       var v = NaN;
       if (tab === 'temp') v = isF ? p.tempF : p.tempC;
+      else if (tab === 'feels_like') v = isF ? p.apparentF : p.apparentC;
       else if (tab === 'precip') v = p.precipProb != null ? p.precipProb : 0;
       else if (tab === 'wind') v = isF ? p.windSpeedMph : p.windSpeedKm;
       else if (tab === 'humidity') v = p.humidity != null ? p.humidity : 50;
@@ -1034,7 +1041,7 @@ MediaVisualizerEngine.prototype.wake = function() {
       return { min: 0, max: 100 };
     }
 
-    if (tab === 'temp') {
+    if (tab === 'temp' || tab === 'feels_like') {
       var range = Math.max(2, maxVal - minVal);
       return {
         min: minVal - range * 0.25,
@@ -1086,8 +1093,12 @@ MediaVisualizerEngine.prototype.wake = function() {
     var yBase = 95;
     var isF = (this.tempUnit === 'F');
 
-    var xs = new Float32Array(N);
-    var ys = new Float32Array(N);
+    if (N > this.xs.length) {
+      this.xs = new Float32Array(N);
+      this.ys = new Float32Array(N);
+    }
+    var xs = this.xs;
+    var ys = this.ys;
     var colors = this.colorMap[tab] || this.colorMap.temp;
 
     for (var i = 0; i < N; i++) {
@@ -1096,6 +1107,10 @@ MediaVisualizerEngine.prototype.wake = function() {
       var label = '';
       if (tab === 'temp') {
         v = isF ? p.tempF : p.tempC;
+        if (typeof v !== 'number' || !Number.isFinite(v)) v = minB;
+        label = Math.round(v) + '°';
+      } else if (tab === 'feels_like') {
+        v = isF ? p.apparentF : p.apparentC;
         if (typeof v !== 'number' || !Number.isFinite(v)) v = minB;
         label = Math.round(v) + '°';
       } else if (tab === 'precip') {
@@ -1741,8 +1756,8 @@ MediaVisualizerEngine.prototype.wake = function() {
             self.setShowForecastChart(val === true || val === 1 || val === 'true');
             break;
           case 'defaultForecastTab':
-            var tabs = ['temp', 'precip', 'wind', 'humidity', 'aqi'];
-            var tabVal = (typeof val === 'number') ? (tabs[val] || 'temp') : val;
+            var tabs = ['temp', 'feels_like', 'precip', 'wind', 'humidity', 'aqi'];
+            var tabVal = (typeof val === 'number') ? (tabs[val] || 'temp') : (val === 'Feels Like' ? 'feels_like' : val);
             if (self.forecastChart) self.forecastChart.setTab(tabVal);
             break;
           case 'showPomodoro':

@@ -100,6 +100,7 @@
         <section id="hud-forecast-card" class="hud-forecast-card" aria-label="Hourly Forecast Telemetry">
           <div class="forecast-tab-bar" role="tablist" aria-label="Forecast Metrics">
             <button class="forecast-tab is-active" data-tab="temp" role="tab" aria-selected="true" type="button">Temperature</button>
+            <button class="forecast-tab" data-tab="feels_like" role="tab" aria-selected="false" type="button">Feels Like</button>
             <button class="forecast-tab" data-tab="precip" role="tab" aria-selected="false" type="button">Precipitation</button>
             <button class="forecast-tab" data-tab="wind" role="tab" aria-selected="false" type="button">Wind</button>
             <button class="forecast-tab" data-tab="humidity" role="tab" aria-selected="false" type="button">Humidity</button>
@@ -111,6 +112,10 @@
                 <linearGradient id="forecast-grad-temp" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.38"/>
                   <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.0"/>
+                </linearGradient>
+                <linearGradient id="forecast-grad-feels" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#fb923c" stop-opacity="0.38"/>
+                  <stop offset="100%" stop-color="#fb923c" stop-opacity="0.0"/>
                 </linearGradient>
                 <linearGradient id="forecast-grad-precip" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.38"/>

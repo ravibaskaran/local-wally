@@ -160,42 +160,11 @@
 
         // Helper: fetch with safety timeout to prevent hanging on dead networks
         function fetchJsonWithTimeout(url, timeoutMs) {
-          return new Promise(function(resolveFetch, rejectFetch) {
-            var timeout = timeoutMs || 3500;
-            var controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-            var timedOut = false;
-
-            var timer = setTimeout(function() {
-              timedOut = true;
-              if (controller) {
-                try { controller.abort(); } catch (e) {}
-              }
-              rejectFetch(new Error('Fetch timeout: ' + url));
-            }, timeout);
-
-            var fetchOpts = { cache: 'no-store' };
-            if (controller) {
-              fetchOpts.signal = controller.signal;
-            }
-
-            fetch(url, fetchOpts)
-              .then(function(res) {
-                if (!res.ok) throw new Error('HTTP ' + res.status);
-                return res.json();
-              })
-              .then(function(data) {
-                clearTimeout(timer);
-                resolveFetch(data);
-              })
-              .catch(function(err) {
-                clearTimeout(timer);
-                if (timedOut) {
-                  rejectFetch(new Error('Fetch timeout: ' + url));
-                } else {
-                  rejectFetch(err);
-                }
-              });
-          });
+          return ApiService.fetchWithTimeout(url, timeoutMs || 3500, { cache: 'no-store' })
+            .then(function(res) {
+              if (!res.ok) throw new Error('HTTP ' + res.status);
+              return res.json();
+            });
         }
 
         // 1. Try HTML5 Geolocation (4s timeout)
@@ -806,31 +775,38 @@
       },
 
       normalizeOpenWeatherMap: function(data) {
-        var list = data.list || data.hourly || [];
-        if (!list.length) throw new Error('Empty OpenWeatherMap list');
-
-        var cur = list[0];
-        var main = cur.main || cur || {};
-        var wind = cur.wind || cur || {};
+        var isOneCall = !!(data && data.current);
+        var cur = isOneCall ? data.current : ((data.list && data.list[0]) || {});
+        var main = cur.main || cur;
+        var wind = cur.wind || cur;
         var weather0 = (cur.weather && cur.weather[0]) || {};
         var wmo = ApiService.owmToWmo(weather0.id || 800);
         var wmoMeta = ApiService.interpretWmoCode(wmo);
 
-        var tempC = (main.temp != null) ? main.temp : (cur.temp != null ? cur.temp : 20.0);
-        var apparentC = (main.feels_like != null) ? main.feels_like : (cur.feels_like != null ? cur.feels_like : tempC);
-        var rawWind = (wind.speed != null) ? wind.speed : (cur.wind_speed != null ? cur.wind_speed : 2.8);
+        var tempC = (main.temp != null) ? main.temp : 20.0;
+        var apparentC = (main.feels_like != null) ? main.feels_like : tempC;
+        var rawWind = (wind.speed != null) ? wind.speed : (wind.wind_speed != null ? wind.wind_speed : 2.8);
         var windSpeedKm = Math.round(rawWind * 3.6 * 10) / 10;
-        var humidity = (main.humidity != null) ? main.humidity : (cur.humidity != null ? cur.humidity : 55);
-        var precipMm = (cur.rain && cur.rain['3h'] != null) ? (cur.rain['3h'] / 3) : 0.0;
+        var humidity = (main.humidity != null) ? main.humidity : 55;
+        var precipMm = 0.0;
+        if (cur.rain) {
+          precipMm = cur.rain['1h'] != null ? cur.rain['1h'] : (cur.rain['3h'] != null ? cur.rain['3h'] / 3 : 0.0);
+        }
 
         var maxT = tempC;
         var minT = tempC;
-        var checkCount = Math.min(8, list.length);
-        for (var c = 0; c < checkCount; c++) {
-          var itemT = (list[c].main && list[c].main.temp != null) ? list[c].main.temp : list[c].temp;
-          if (itemT != null) {
-            if (itemT > maxT) maxT = itemT;
-            if (itemT < minT) minT = itemT;
+        if (data.daily && data.daily[0] && data.daily[0].temp) {
+          if (data.daily[0].temp.max != null) maxT = data.daily[0].temp.max;
+          if (data.daily[0].temp.min != null) minT = data.daily[0].temp.min;
+        } else {
+          var checkList = data.list || data.hourly || [];
+          var checkCount = Math.min(8, checkList.length);
+          for (var c = 0; c < checkCount; c++) {
+            var itemT = (checkList[c].main && checkList[c].main.temp != null) ? checkList[c].main.temp : checkList[c].temp;
+            if (itemT != null) {
+              if (itemT > maxT) maxT = itemT;
+              if (itemT < minT) minT = itemT;
+            }
           }
         }
 
@@ -856,41 +832,50 @@
         };
 
         var hourlyForecast = [];
-        for (var i = 0; i < 8 && i < list.length; i++) {
-          var item = list[i];
-          var iMain = item.main || item || {};
-          var iWind = item.wind || item || {};
-          var iW = (item.weather && item.weather[0]) || {};
-          var iWmo = ApiService.owmToWmo(iW.id || 800);
-          var dt = item.dt ? new Date(item.dt * 1000) : new Date(Date.now() + i * 3 * 3600000);
-          var h = dt.getHours();
-          var lbl = (i === 0) ? 'Now' : ((h % 12 || 12) + (h >= 12 ? ' PM' : ' AM'));
-          var ptT = (iMain.temp != null) ? iMain.temp : (item.temp != null ? item.temp : tempC);
-          var ptApp = (iMain.feels_like != null) ? iMain.feels_like : (item.feels_like != null ? item.feels_like : ptT);
-          var ptRawWind = (iWind.speed != null) ? iWind.speed : (item.wind_speed != null ? item.wind_speed : 2.8);
-          var ptWind = Math.round(ptRawWind * 3.6 * 10) / 10;
-          var ptHum = (iMain.humidity != null) ? iMain.humidity : (item.humidity != null ? item.humidity : humidity);
-          var ptProb = item.pop != null ? Math.round(item.pop * 100) : 0;
-          var ptP = (item.rain && item.rain['3h'] != null) ? (item.rain['3h'] / 3) : 0.0;
+        var list = data.hourly || data.list || [];
+        var count = Math.min(24, list.length);
+        var step = count >= 8 ? Math.floor(count / 8) : 1;
+        for (var i = 0; i < 8 && i < count; i++) {
+          var idx = Math.min(i * step, count - 1);
+          var item = list[idx];
+          if (item) {
+            var iMain = item.main || item;
+            var iWind = item.wind || item;
+            var iW = (item.weather && item.weather[0]) || {};
+            var iWmo = ApiService.owmToWmo(iW.id || 800);
+            var dt = item.dt ? new Date(item.dt * 1000) : new Date(Date.now() + i * 3 * 3600000);
+            var h = dt.getHours();
+            var lbl = (i === 0) ? 'Now' : ((h % 12 || 12) + (h >= 12 ? ' PM' : ' AM'));
+            var ptT = (iMain.temp != null) ? iMain.temp : tempC;
+            var ptApp = (iMain.feels_like != null) ? iMain.feels_like : ptT;
+            var ptRawWind = (iWind.speed != null) ? iWind.speed : (iWind.wind_speed != null ? iWind.wind_speed : 2.8);
+            var ptWind = Math.round(ptRawWind * 3.6 * 10) / 10;
+            var ptHum = (iMain.humidity != null) ? iMain.humidity : humidity;
+            var ptProb = item.pop != null ? Math.round(item.pop * 100) : 0;
+            var ptP = 0.0;
+            if (item.rain) {
+              ptP = item.rain['1h'] != null ? item.rain['1h'] : (item.rain['3h'] != null ? item.rain['3h'] / 3 : 0.0);
+            }
 
-          hourlyForecast.push({
-            time: (h < 10 ? '0' : '') + h + ':00',
-            label: lbl,
-            hour: h,
-            tempC: Math.round(ptT * 10) / 10,
-            tempF: Math.round(((ptT * 9 / 5) + 32) * 10) / 10,
-            apparentC: Math.round(ptApp * 10) / 10,
-            apparentF: Math.round(((ptApp * 9 / 5) + 32) * 10) / 10,
-            precipProb: ptProb,
-            precipMm: Math.round(ptP * 10) / 10,
-            windSpeedKm: ptWind,
-            windSpeedMph: Math.round(ptWind * 0.621371 * 10) / 10,
-            humidity: Math.round(ptHum),
-            aqi: 20,
-            aqiColor: '#10b981',
-            aqiCategory: 'Good',
-            conditionText: ApiService.interpretWmoCode(iWmo).text
-          });
+            hourlyForecast.push({
+              time: (h < 10 ? '0' : '') + h + ':00',
+              label: lbl,
+              hour: h,
+              tempC: Math.round(ptT * 10) / 10,
+              tempF: Math.round(((ptT * 9 / 5) + 32) * 10) / 10,
+              apparentC: Math.round(ptApp * 10) / 10,
+              apparentF: Math.round(((ptApp * 9 / 5) + 32) * 10) / 10,
+              precipProb: ptProb,
+              precipMm: Math.round(ptP * 10) / 10,
+              windSpeedKm: ptWind,
+              windSpeedMph: Math.round(ptWind * 0.621371 * 10) / 10,
+              humidity: Math.round(ptHum),
+              aqi: 20,
+              aqiColor: '#10b981',
+              aqiCategory: 'Good',
+              conditionText: ApiService.interpretWmoCode(iWmo).text
+            });
+          }
         }
 
         return Object.assign({}, weather, {
@@ -908,15 +893,30 @@
           return ApiService.WeatherAdapter['open-meteo'](lat, lon, options);
         }
 
-        var url = 'https://api.openweathermap.org/data/2.5/forecast?lat=' + encodeURIComponent(lat) +
+        var oneCallUrl = 'https://api.openweathermap.org/data/3.0/onecall?' +
+          'lat=' + encodeURIComponent(lat) +
+          '&lon=' + encodeURIComponent(lon) +
+          '&appid=' + encodeURIComponent(key) +
+          '&units=metric' +
+          '&exclude=minutely,daily,alerts';
+
+        var forecast25Url = 'https://api.openweathermap.org/data/2.5/forecast?' +
+          'lat=' + encodeURIComponent(lat) +
           '&lon=' + encodeURIComponent(lon) +
           '&appid=' + encodeURIComponent(key) +
           '&units=metric';
 
-        return ApiService.fetchWithTimeout(url, 5000)
+        return ApiService.fetchWithTimeout(oneCallUrl, 5000)
           .then(function(res) {
-            if (!res.ok) throw new Error('OpenWeatherMap HTTP ' + res.status);
+            if (!res.ok) throw new Error('One Call 3.0 HTTP ' + res.status);
             return res.json();
+          })
+          .catch(function() {
+            return ApiService.fetchWithTimeout(forecast25Url, 5000)
+              .then(function(res) {
+                if (!res.ok) throw new Error('OpenWeatherMap 2.5 HTTP ' + res.status);
+                return res.json();
+              });
           })
           .then(function(data) {
             return ApiService.WeatherAdapter.normalizeOpenWeatherMap(data);

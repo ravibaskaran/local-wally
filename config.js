@@ -280,7 +280,7 @@
     // 34. DEFAULT FORECAST TAB SELECTION
     // --------------------------------------------------------------------------
     // Active metric tab displayed upon wallpaper initialization.
-    // Default: 'temp' | Options: 'temp', 'precip', 'wind', 'humidity', 'aqi'
+    // Default: 'temp' | Options: 'temp', 'feels_like', 'precip', 'wind', 'humidity', 'aqi'
     defaultForecastTab: 'temp'
   };
 })(typeof window !== 'undefined' ? window : this);

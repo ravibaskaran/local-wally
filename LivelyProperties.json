@@ -159,6 +159,6 @@
     "type": "dropdown",
     "value": 0,
     "text": "Default Forecast Tab",
-    "items": ["Temperature", "Precipitation", "Wind", "Humidity", "AQI"]
+    "items": ["Temperature", "Feels Like", "Precipitation", "Wind", "Humidity", "AQI"]
   }
 }

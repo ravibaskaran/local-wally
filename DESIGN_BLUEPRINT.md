@@ -864,10 +864,12 @@ To ensure high availability and resilient atmospheric telemetry worldwide withou
    - High-precision Scandinavian meteorological model (`https://api.met.no/weatherapi/locationforecast/2.0/compact`).
    - Complies with strict User-Agent identification policy.
    - Automatically handles m/s to km/h conversion ($v_{\text{km/h}} = v_{\text{m/s}} \times 3.6$) and cross-origin CORS fallbacks.
-3. **OpenWeatherMap (`openweathermap`) - Keyed Fallback**:
+3. **OpenWeatherMap (`openweathermap`) - Keyed Provider (One Call 3.0 & 2.5)**:
    - Activated when a user specifies an API key in `LivelyProperties` or `config.js`.
-   - Maps OpenWeatherMap icon IDs to standard WMO codes and normalizes POP ($0.0-1.0 \to 0-100\%$).
-   - Automatically falls back to Open-Meteo if the API key is missing or unauthorized.
+   - Prioritizes OpenWeatherMap One Call 3.0 (`https://api.openweathermap.org/data/3.0/onecall`, 1,000 free calls/day tier) for high-resolution current and hourly telemetry.
+   - Automatically falls back to OpenWeatherMap 2.5 (`https://api.openweathermap.org/data/2.5/forecast`) if One Call 3.0 is not subscribed on the key.
+   - Maps OpenWeatherMap condition IDs to standard WMO codes and normalizes POP ($0.0-1.0 \to 0-100\%$) and precipitation accumulation.
+   - Automatically falls back to Open-Meteo if the API key is missing, unauthorized, or network fails.
 
 ### 21.3 Air Quality Providers
 1. **Open-Meteo Air Quality (`open-meteo`) - Default**:
@@ -912,8 +914,9 @@ The forecast HUD card `#hud-forecast-card` and chart container `.forecast-chart-
 This isolates internal SVG coordinate and label updates, guaranteeing that tab switches and path recomputations never trigger global reflows in the parent Bento grid.
 
 ### 22.2 Multi-Tab Metric Telemetry
-Provides 5 switchable pill tabs with color-coded gradients and active indicators:
+Provides 6 switchable pill tabs with color-coded gradients and active indicators:
 - 🌡️ **Temperature (`temp`)**: Amber gradient (`#f59e0b` $\to$ `#fbbf24`), dynamic padding based on temperature delta.
+- 🔥 **Feels Like (`feels_like`)**: Warm coral gradient (`#fb923c` $\to$ `#f97316`), apparent temperature trajectory mapped via `apparentC` / `apparentF`.
 - 🌧️ **Precipitation (`precip`)**: Sky blue gradient (`#38bdf8`), normalized 0–100% scale.
 - 💨 **Wind Speed (`wind`)**: Emerald gradient (`#34d399`), auto-scaled with 15 km/h baseline padding.
 - 💧 **Humidity (`humidity`)**: Purple/violet gradient (`#a78bfa`), 0–100% relative range.
@@ -926,9 +929,10 @@ $$CP_1 = \left(x_1 + \frac{x_2 - x_0}{6}, \; y_1 + \frac{y_2 - y_0}{6}\right)$$
 $$CP_2 = \left(x_2 - \frac{x_3 - x_1}{6}, \; y_2 - \frac{y_3 - y_1}{6}\right)$$
 Control point heights are strictly clamped between $y_{\text{top}} - 4$ and $y_{\text{bottom}} + 4$ to prevent vector clipping against SVG viewport boundaries.
 
-### 22.4 Zero-GC Pre-Allocated Element Pooling
+### 22.4 Zero-GC Pre-Allocated Element Pooling & TypedArray Coordinate Buffers
 `SvgForecastChartEngine` completely avoids `innerHTML` resets or element destruction:
 - Pre-allocates `<circle>` and `<text>` nodes in SVG object pools (`dotPool`, `valLabelPool`, `timeLabelPool`).
+- Pre-allocates and reuses `Float32Array` coordinate ring buffers (`this.xs`, `this.ys`), eliminating per-frame and per-tab heap allocations.
 - Toggling tabs or receiving fresh telemetry simply mutates attributes (`cx`, `cy`, `textContent`, `d`, `fill`, `stroke`) on existing nodes in-place.
 - Elements beyond point length are set to `visibility: hidden` rather than removed from DOM, resulting in **0.0 bytes GC allocation per render**.
 

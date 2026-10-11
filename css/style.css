@@ -1207,7 +1207,7 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 4px;
+  gap: 3px;
   background: rgba(0, 0, 0, 0.22);
   padding: 2.5px;
   border-radius: 9px;
@@ -1218,10 +1218,10 @@ html, body {
   flex: 1;
   background: transparent;
   border: none;
-  font-size: 0.61rem;
+  font-size: 0.58rem;
   font-weight: 600;
   color: var(--text-muted);
-  padding: 3px 2px;
+  padding: 3px 1.5px;
   border-radius: 7px;
   cursor: pointer;
   transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
@@ -1247,6 +1247,9 @@ html, body {
 
 .forecast-tab.is-active[data-tab="temp"] {
   color: #fbbf24;
+}
+.forecast-tab.is-active[data-tab="feels_like"] {
+  color: #fb923c;
 }
 .forecast-tab.is-active[data-tab="precip"] {
   color: #38bdf8;
@@ -1333,6 +1336,9 @@ html, body {
 
 #hud.theme-light .forecast-tab.is-active[data-tab="temp"] {
   color: #d97706;
+}
+#hud.theme-light .forecast-tab.is-active[data-tab="feels_like"] {
+  color: #ea580c;
 }
 #hud.theme-light .forecast-tab.is-active[data-tab="precip"] {
   color: #0284c7;
