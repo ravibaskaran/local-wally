@@ -373,7 +373,7 @@ html, body {
   display: none !important;
 }
 
-/* HUD Corner Position Classes (Default Right Position preserves left desktop icons) */
+/* HUD Corner & Center Position Classes */
 #hud.top-right {
   top: 32px;
   right: 40px;
@@ -389,6 +389,31 @@ html, body {
 #hud.bottom-left {
   bottom: 32px;
   left: 40px;
+}
+#hud.middle-right {
+  top: 50%;
+  right: 40px;
+  transform: translate3d(0, -50%, 0);
+}
+#hud.middle-left {
+  top: 50%;
+  left: 40px;
+  transform: translate3d(0, -50%, 0);
+}
+#hud.middle-top {
+  top: 32px;
+  left: 50%;
+  transform: translate3d(-50%, 0, 0);
+}
+#hud.middle-bottom {
+  bottom: 32px;
+  left: 50%;
+  transform: translate3d(-50%, 0, 0);
+}
+#hud.center {
+  top: 50%;
+  left: 50%;
+  transform: translate3d(-50%, -50%, 0);
 }
 
 /* ==========================================================================
@@ -437,6 +462,29 @@ html, body {
 #dock-media-focus.bottom-left {
   bottom: var(--dock-bottom, 456px);
   left: 40px;
+}
+#dock-media-focus.middle-right {
+  bottom: 32px;
+  right: 40px;
+}
+#dock-media-focus.middle-left {
+  bottom: 32px;
+  left: 40px;
+}
+#dock-media-focus.middle-top {
+  bottom: 32px;
+  left: 50%;
+  transform: translate3d(-50%, 0, 0);
+}
+#dock-media-focus.middle-bottom {
+  top: 32px;
+  left: 50%;
+  transform: translate3d(-50%, 0, 0);
+}
+#dock-media-focus.center {
+  bottom: 32px;
+  left: 50%;
+  transform: translate3d(-50%, 0, 0);
 }
 #dock-media-focus.is-hidden {
   display: none !important;
@@ -881,6 +929,20 @@ html, body {
   filter: drop-shadow(0 0 5px rgba(251, 146, 60, 0.5));
 }
 
+.ephemeris-item .moonrise-icon {
+  width: 15px;
+  height: 15px;
+  stroke: #38bdf8;
+  filter: drop-shadow(0 0 5px rgba(56, 189, 248, 0.5));
+}
+
+.ephemeris-item .moonset-icon {
+  width: 15px;
+  height: 15px;
+  stroke: #a78bfa;
+  filter: drop-shadow(0 0 5px rgba(167, 139, 250, 0.5));
+}
+
 .hw-icon {
   width: 13px;
   height: 13px;
@@ -1082,10 +1144,29 @@ html, body {
   border-bottom: 1px solid var(--divider-color);
 }
 
-.hud-ephemeris-sun {
+.hud-ephemeris-sun,
+.hud-ephemeris-moon-row {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 6px;
+}
+
+.hud-ephemeris-sun.is-hidden,
+.hud-ephemeris-moon-row.is-hidden {
+  display: none !important;
+}
+
+.ephemeris-moon-phase-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.ephemeris-moon-phase-item .moon-glyph {
+  font-size: 1.05rem;
+  margin-right: 0;
+  margin-bottom: 1px;
 }
 
 .ephemeris-item {
@@ -1973,6 +2054,239 @@ html, body {
 
 .hud-refresh-btn.is-spinning svg {
   animation: spin-refresh 0.8s linear infinite;
+}
+
+/* ==========================================================================
+   Layer 3.8: Reusable Contextual Card Detail Drawer / Popover
+   ========================================================================== */
+
+.hud-card-interactive {
+  cursor: pointer;
+  outline: none;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.hud-card-interactive:hover {
+  border-color: rgba(56, 189, 248, 0.45);
+}
+
+.hud-card-interactive:focus-visible {
+  outline: 2px solid var(--accent-cyan);
+  outline-offset: 2px;
+}
+
+#hud-card-detail {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur, 14px) + 8px)) saturate(var(--glass-saturation, 190%));
+  backdrop-filter: blur(calc(var(--glass-blur, 14px) + 8px)) saturate(var(--glass-saturation, 190%));
+  border-radius: 20px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.15), var(--glass-shadow);
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.22s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transform: translate3d(0, 0, 0);
+  pointer-events: auto;
+  overflow: hidden;
+}
+
+#hud-card-detail.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translate3d(0, 8px, 0);
+}
+
+.hud-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--divider-color);
+  padding-bottom: 8px;
+  flex-shrink: 0;
+}
+
+.hud-detail-title-group {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.hud-detail-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-cyan);
+}
+
+.hud-detail-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.hud-detail-title {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-primary);
+  text-transform: uppercase;
+}
+
+.hud-detail-close-btn {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  color: var(--text-muted);
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.2s ease;
+}
+
+.hud-detail-close-btn:hover {
+  background: var(--card-hover-bg);
+  color: var(--text-primary);
+  border-color: var(--accent-cyan);
+}
+
+.hud-detail-close-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+.hud-detail-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 4px;
+}
+
+.hud-detail-body::-webkit-scrollbar {
+  width: 4px;
+}
+.hud-detail-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+.hud-detail-body::-webkit-scrollbar-thumb {
+  background: var(--card-border);
+  border-radius: 4px;
+}
+
+.hud-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.hud-detail-item {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hud-detail-item.full-width {
+  grid-column: 1 / -1;
+}
+
+.hud-detail-item-label {
+  font-size: 0.62rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.hud-detail-item-val {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-detail-item-sub {
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+}
+
+.hud-detail-news-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hud-detail-news-item {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 7px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.hud-detail-news-item:hover {
+  background: var(--card-hover-bg);
+  border-color: rgba(56, 189, 248, 0.45);
+  transform: translateY(-1px);
+}
+
+.hud-detail-news-title {
+  font-size: 0.74rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.32;
+  margin: 0;
+}
+
+.hud-detail-news-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.62rem;
+  color: var(--text-muted);
+}
+
+.hud-detail-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--divider-color);
+  padding-top: 4px;
+  flex-shrink: 0;
+}
+
+.hud-detail-hint {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+}
+
+.hud-detail-hint kbd {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-family: inherit;
+  font-size: 0.6rem;
 }
 
 /* Diagnostic / FPS Overlay */

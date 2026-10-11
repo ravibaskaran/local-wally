@@ -1029,6 +1029,48 @@ Local Wally v0.6.3 addresses desktop ergonomics, typography hierarchy, and panel
 ### 25.5 Multi-Viewport Responsiveness & Verification
 - Verified across standard 720p (`1280×720`), 1080p (`1920×1080`), 1440p (`2560×1440`), and 4K (`3840×2160`) viewports via headless Chromium/Edge rasterization. Panels remain within viewport bounds with zero clipping, zero overlaps, and 100% desktop icon clearance.
 
+---
+
+## 26. v0.6.4 Regional News Architecture, Offline Moon Astronomy & Contextual Telemetry Drawer
+
+Local Wally v0.6.4 introduces proxy-free regional news ingestion via GDELT DOC 2.0, complete offline lunar ephemeris calculations, an interactive zero-allocation telemetry drawer, expanded 9-position spatial layout control, and media player host identity detection:
+
+### 26.1 GDELT DOC 2.0 API Integration & Multi-Source Fallback Chain
+- **Direct Web API Querying**: Replaces CORS proxy dependencies with direct client-side requests to `https://api.gdeltproject.org/api/v2/doc/doc` via WebView2.
+- **Safe Query Formatting (`URLSearchParams`)**: Constructs structured queries (`query=(City OR Alias) sourcecountry:CountryCode`, `mode=artlist`, `format=json`, `timespan=2d`, `maxrecords=25`, `sort=datedesc`). Incorporates geographical aliases (e.g. Bengaluru / Bangalore, Mumbai / Bombay) and encodes all parameters safely.
+- **Data Normalization & Link Security**: Sanitizes incoming article titles by decoding HTML entities (`&amp;`, `&quot;`, `&#39;`, `&lt;`, `&gt;`), enforces protocol validation (`/^https?:\/\//i`) to reject unsafe URL schemes (`javascript:`, `data:`), and deduplicates syndicated stories by title prefix and canonical URL.
+- **Resilient Fallback Hierarchy**: Queries GDELT with country filtering first, falls back to city-only GDELT query, then seamlessly cascades to Google News RSS via CORS proxies, and finally to curated offline news items.
+
+### 26.2 Bundled SunCalc Offline Moon Ephemeris, Cultural Full Moons & Meteor Showers
+- **Parabolic Interpolation (`SunCalc.getMoonTimes`)**: Bundles standard offline lunar event algorithms using 2-hour coordinate sampling and parabolic root finding (`roots = 1` or `2`). Accurately calculates local `rise` and `set` Date objects without network dependencies.
+- **Polar & Missing Event Detection**: Detects astronomical circumstances where the Moon does not cross the horizon in a solar day (moon day length ~24h 50m) or at extreme latitudes, flagging `alwaysUp` ("Up 24h") or `alwaysDown` ("Down 24h") without throwing or producing `NaN`.
+- **Day vs. Night Row Toggling**: Dynamically alternates between the Daytime row (`Sunrise | Solar Noon | Sunset`) and Nighttime row (`Moonrise | Moon Phase | Moonset`) based on solar altitude and sunrise/sunset boundaries.
+- **Cultural Full Moons & Astronomical Observances**: Displays universal Western full moon names by month (e.g., Harvest Moon, Wolf Moon) and cultural Vedic Purnima observances (e.g., Sharad Purnima, Guru Purnima) with clear tradition attribution. Integrates an annual transit calendar of major meteor showers (Perseids, Geminids, Orionids, Lyrids, etc.) displaying active dates and peak timing.
+
+### 26.3 Layer 3.8 Contextual Telemetry Detail Drawer (`#hud-card-detail`)
+- **Zero-Allocation Interactive Surface**: Clicking or pressing <kbd>Enter</kbd> / <kbd>Space</kbd> on any card (Weather, Forecast, Regional News, AQI, Hardware, Battery, Ephemeris, Media Player, Pomodoro) slides open a reusable acrylic glass modal drawer.
+- **Grounded Telemetry Inspection**:
+  - *Weather*: Explains current conditions, feels-like temperature, humidity, wind direction/speed, surface precipitation accumulation, mean sea-level pressure, and active provider.
+  - *Forecast*: Displays the active metric, prediction horizon (+24h), and an 8-interval table of upcoming predictions.
+  - *Regional News*: Displays full article headlines, publisher domains, publication ages, and direct publisher outbound links (`target="_blank" rel="noopener noreferrer"`).
+  - *Air Quality*: Shows AQI value, status category, individual pollutant concentrations (PM2.5, PM10, NO₂, O₃), and standard environmental health context.
+  - *Hardware Telemetry*: Breaks down CPU, GPU 3D, RAM, Disk, and Network ingress/egress alongside Lively IPC telemetry sampling rates.
+  - *Battery Subsystem*: Shows charge percentage, AC power connection state, and laptop power management profiles.
+  - *Ephemeris*: Full solar/lunar metrics, illumination percentage, lunar age in days (synodic cycle), waxing/waning status, Western full moon name, Vedic observance, and meteor shower peaks.
+  - *Media & Audio*: Displays track title, artist, audio visualizer state, and source application badge.
+  - *Pomodoro*: Displays session mode, time remaining, interval configuration, and keyboard controls.
+- **Accessibility & Dismissal**: Fully accessible via roving focus, <kbd>Esc</kbd> key listener, and outside-click dismissal. Does not perform hover fetches or per-frame allocations.
+
+### 26.4 9-Position Spatial Layout Grid & Dynamic Companion Dock Offsets
+- **Flexible Grid Alignment**: Extends `setHudPosition` to support 9 screen positions: `top-right`, `top-left`, `bottom-right`, `bottom-left`, `middle-right`, `middle-left`, `middle-top`, `middle-bottom`, and `center`.
+- **Dock Collision Prevention**: Symmetrically binds `#dock-media-focus` to matching positions with viewport clamping (`--dock-top` and `--dock-bottom`), ensuring companion cards never overlap primary HUD cards or clip display viewports across 720p through 4K displays.
+- **Lively Schema Synchronization**: Updates `LivelyProperties.json` and `config.js` with all 9 options.
+
+### 26.5 Windows SMTC Host Media Identity & AUMID Specification
+- **Media Source Parsing**: Parses `Source` and `AppId` properties from Windows System Media Transport Controls (`livelyCurrentTrack`) to label players (Spotify, Apple Music, Edge, Chrome, etc.), with neutral `SMTC` fallback when omitted.
+- **Host AUMID Pass-Through**: Documents requirements for Lively Wallpaper host C# code (`GlobalSystemMediaTransportControlsSession.SourceAppUserModelId`) to forward application identifiers directly to WebView2 wallpaper scripts.
+
+
 
 
 

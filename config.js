@@ -23,7 +23,7 @@
     // 2. HUD SCREEN POSITION & DESKTOP ICON AVOIDANCE
     // --------------------------------------------------------------------------
     // Position of the Bento HUD on your desktop display.
-    // Default: 'top-right' | Options: 'top-right', 'top-left', 'bottom-right', 'bottom-left'
+    // Default: 'top-right' | Options: 'top-right', 'top-left', 'bottom-right', 'bottom-left', 'middle-right', 'middle-left', 'middle-top', 'middle-bottom', 'center'
     // 'top-right' keeps Windows desktop icons on the left 100% unobstructed.
     hudPosition: 'top-right',
 

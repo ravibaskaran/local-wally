@@ -137,7 +137,7 @@ Right-click the wallpaper in your Lively Wallpaper library and choose **Customis
 
 | Setting | What It Does | Default |
 |---|---|---|
-| **HUD Position** | Move the dashboard to Top Right, Top Left, Bottom Right, or Bottom Left | Top Right |
+| **HUD Position** | Move dashboard: Top Right, Top Left, Bottom Right, Bottom Left, Middle Right, Middle Left, Middle Top, Middle Bottom, or Center | Top Right |
 | **Weather Provider** | Choose between Open-Meteo (free), MET Norway (free), or OpenWeatherMap | Open-Meteo |
 | **OpenWeatherMap API Key** | Optional personal API key if using OpenWeatherMap | *(Empty)* |
 | **Air Quality Provider** | Choose between Open-Meteo (free) or WAQI ground stations | Open-Meteo |
@@ -172,6 +172,8 @@ When using the wallpaper or previewing in a browser, you can use these quick key
 
 | Key | What It Does |
 |:---:|---|
+| <kbd>Click</kbd> / <kbd>Enter</kbd> | Click or focus any card to open its rich **Contextual Telemetry Drawer**. |
+| <kbd>Esc</kbd> | Dismiss the open **Contextual Telemetry Drawer**. |
 | <kbd>P</kbd> | **Start / Pause** the Pomodoro Focus Timer. |
 | <kbd>M</kbd> | Cycle through demo music tracks in preview mode (**Synthwave → Lo-Fi → Ambient → Idle**). |
 | <kbd>D</kbd> | Toggle the real-time **Diagnostics Overlay** (shows FPS, GPU info, memory, and cache status). |
@@ -189,7 +191,7 @@ For advanced users running portable setups or testing outside Lively, all parame
 ```javascript
 window.LOCAL_WALLY_CONFIG = {
   refreshIntervalMinutes: 15,          // How often data refreshes (5 to 30 mins)
-  hudPosition: 'top-right',             // 'top-right', 'top-left', 'bottom-right', 'bottom-left'
+  hudPosition: 'top-right',             // 9 positions: 'top-right', 'top-left', 'bottom-right', 'bottom-left', 'middle-right', 'middle-left', 'middle-top', 'middle-bottom', 'center'
   glassBlurPx: 14,                      // Glass blur radius (0 to 40 px)
   glassSaturationPct: 190,              // Glass saturation boost (100% to 250%)
   tempUnit: 'C',                        // 'C' for Celsius, 'F' for Fahrenheit
@@ -258,6 +260,13 @@ local-wally/
 ---
 
 ## 🛡️ Recent Updates & Quality Improvements
+
+### Version 0.6.4 — GDELT News, Moon Ephemeris & Contextual HUD Details
+- **Location-Based Regional News (GDELT DOC 2.0)**: Direct, keyless, and proxy-free regional news ingestion using the GDELT DOC 2.0 API. Formulates location queries with city alias matching, cleans and deduplicates stories, and opens direct publisher articles instead of aggregator redirects, with graceful fallback to Google News RSS.
+- **Astronomy & Offline Moon Ephemeris**: Replaced static nighttime displays with an active Day/Night celestial ephemeris row. Daytime showcases Sunrise, Solar Noon, and Sunset; Nighttime dynamically displays Moonrise, Moon Phase, and Moonset computed entirely offline via bundled `SunCalc.getMoonTimes`. Includes lunar cycle age, illumination percentage, traditional Western full moon names (Harvest Moon, Wolf Moon), cultural Vedic Purnima names, and active meteor shower trackers.
+- **Contextual Card Detail Drawer**: Click or press <kbd>Enter</kbd> on any card (Weather, Forecast, Regional News, Air Quality, Hardware, Battery, Ephemeris, Music Player, Pomodoro) to slide open an accessible acrylic glass telemetry drawer showing rich grounded metrics. Dismiss instantly with <kbd>Esc</kbd> or click outside. Zero per-frame memory allocation or hover fetching.
+- **9 Flexible HUD Positions**: Added Middle Right, Middle Left, Middle Top, Middle Bottom, and Center Screen options across Lively Properties, `config.js`, and CSS layout engines without dock collisions.
+- **Media Player Identity**: Intelligently identifies media player applications (Spotify, Apple Music, Edge, Chrome, etc.) from Windows SMTC sessions with neutral fallback, documenting host requirements for Windows AppUserModelId (AUMID) forwarding.
 
 ### Version 0.6.3 — Layout & Readability Refinements
 - **Compact Temperature Grouping**: Replaced the wide gap between the temperature and condition details with an integrated, cohesive weather header. Current temperature, condition description, "feels like", and high/low values now sit side-by-side naturally.

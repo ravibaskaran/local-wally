@@ -288,14 +288,37 @@ MediaVisualizerEngine.prototype.wake = function() {
       }
       if (this.dom.art) this.dom.art.src = this.defaultArt;
       if (this.dom.badge) this.dom.badge.textContent = 'SMTC';
+      this.currentTrackData = null;
       return;
     }
 
     var title = data.Title || data.title || '';
     var artist = data.Artist || data.artist || '';
     var albumArt = data.AlbumArt || data.albumArt || data.Thumbnail || '';
+    var rawSource = data.AppId || data.appId || data.Source || data.source || data.ProcessName || data.processName || '';
+    var sourceBadge = 'SMTC';
+
+    if (rawSource) {
+      var sLow = String(rawSource).toLowerCase();
+      if (sLow.indexOf('spotify') !== -1) sourceBadge = 'Spotify';
+      else if (sLow.indexOf('apple') !== -1) sourceBadge = 'Apple Music';
+      else if (sLow.indexOf('edge') !== -1) sourceBadge = 'Edge';
+      else if (sLow.indexOf('chrome') !== -1) sourceBadge = 'Chrome';
+      else if (sLow.indexOf('firefox') !== -1) sourceBadge = 'Firefox';
+      else if (sLow.indexOf('vlc') !== -1) sourceBadge = 'VLC';
+      else if (sLow.indexOf('music') !== -1) sourceBadge = 'Music';
+      else sourceBadge = rawSource.length > 12 ? rawSource.substring(0, 10) + '..' : rawSource;
+    }
+
+    this.currentTrackSource = sourceBadge;
 
     if (title) {
+      this.currentTrackData = {
+        title: title,
+        artist: artist || 'Unknown Artist',
+        source: sourceBadge,
+        albumArt: albumArt
+      };
       if (this.dom.title) {
         this.dom.title.textContent = title;
         this.dom.title.title = title;
@@ -304,7 +327,7 @@ MediaVisualizerEngine.prototype.wake = function() {
         this.dom.artist.textContent = artist || 'Unknown Artist';
         this.dom.artist.title = artist || 'Unknown Artist';
       }
-      if (this.dom.badge) this.dom.badge.textContent = 'SMTC';
+      if (this.dom.badge) this.dom.badge.textContent = sourceBadge;
 
       if (albumArt && albumArt.length > 20) {
         var src = albumArt;
@@ -316,6 +339,7 @@ MediaVisualizerEngine.prototype.wake = function() {
         if (this.dom.art) this.dom.art.src = this.defaultArt;
       }
     } else {
+      this.currentTrackData = null;
       if (this.dom.title) {
         this.dom.title.textContent = 'No Media Playing';
         this.dom.title.title = 'No Media Playing';
@@ -1468,14 +1492,22 @@ MediaVisualizerEngine.prototype.wake = function() {
         hudFeelsLike: document.getElementById('hud-feels-like'),
         hudTempHigh: document.getElementById('hud-temp-high'),
         hudTempLow: document.getElementById('hud-temp-low'),
+        hudWeatherCard: document.getElementById('hud-weather-card'),
         hudMetricsRow: document.getElementById('hud-metrics-row'),
         metricHumidity: document.getElementById('metric-humidity'),
         metricWind: document.getElementById('metric-wind'),
         metricPrecip: document.getElementById('metric-precip'),
         hudEphemerisCard: document.getElementById('hud-ephemeris-card'),
+        hudEphemerisSunRow: document.getElementById('hud-ephemeris-sun-row'),
+        hudEphemerisMoonRow: document.getElementById('hud-ephemeris-moon-row'),
         ephemerisSunrise: document.getElementById('ephemeris-sunrise'),
         ephemerisNoon: document.getElementById('ephemeris-noon'),
         ephemerisSunset: document.getElementById('ephemeris-sunset'),
+        ephemerisMoonrise: document.getElementById('ephemeris-moonrise'),
+        ephemerisNightMoonGlyph: document.getElementById('ephemeris-night-moon-glyph'),
+        ephemerisNightMoonPhase: document.getElementById('ephemeris-night-moon-phase'),
+        ephemerisNightMoonIllum: document.getElementById('ephemeris-night-moon-illum'),
+        ephemerisMoonset: document.getElementById('ephemeris-moonset'),
         ephemerisMoonGlyph: document.getElementById('ephemeris-moon-glyph'),
         ephemerisMoonPhase: document.getElementById('ephemeris-moon-phase'),
         ephemerisMoonIllum: document.getElementById('ephemeris-moon-illum'),
@@ -1485,6 +1517,13 @@ MediaVisualizerEngine.prototype.wake = function() {
         hudAqiFill: document.getElementById('hud-aqi-fill'),
         hudPm25: document.getElementById('hud-pm25'),
         hudPm10: document.getElementById('hud-pm10'),
+
+        // Contextual Detail Surface DOM Nodes
+        hudCardDetail: document.getElementById('hud-card-detail'),
+        hudDetailIcon: document.getElementById('hud-detail-icon'),
+        hudDetailTitle: document.getElementById('hud-detail-title'),
+        hudDetailBody: document.getElementById('hud-detail-body'),
+        hudDetailClose: document.getElementById('hud-detail-close'),
 
         // Google-Style Multi-Tab SVG Forecast Chart DOM Nodes
         hudForecastCard: document.getElementById('hud-forecast-card'),
@@ -1728,6 +1767,72 @@ MediaVisualizerEngine.prototype.wake = function() {
           if (self.mediaVisualizer) self.mediaVisualizer.cycleDemoTrack();
         } else if (e.key === 'p' || e.key === 'P') {
           if (self.pomodoro) self.pomodoro.toggle();
+        } else if (e.key === 'Escape' || e.key === 'Esc') {
+          if (self.isDetailOpen) {
+            e.preventDefault();
+            self.closeCardDetail();
+          }
+        }
+      });
+
+      // Interactive Card Telemetry Detail Surface Triggers
+      var interactiveCards = [
+        { el: this.dom.hudWeatherCard, type: 'weather' },
+        { el: this.dom.hudMetricsRow, type: 'weather' },
+        { el: this.dom.hudForecastCard, type: 'forecast' },
+        { el: this.dom.hudEphemerisCard, type: 'ephemeris' },
+        { el: this.dom.hudAqiCard, type: 'aqi' },
+        { el: this.dom.hudHwBlock, type: 'hardware' },
+        { el: this.dom.hudNewsBlock, type: 'news' },
+        { el: this.dom.pomodoroCard, type: 'pomodoro' },
+        { el: this.dom.mediaCard, type: 'media' },
+        { el: this.dom.hwBatteryRow, type: 'battery' }
+      ];
+
+      function attachCardListener(card) {
+        if (!card.el) return;
+        card.el.addEventListener('click', function(e) {
+          if (e.target && (e.target.closest('button') || e.target.closest('a') || e.target.closest('.forecast-tab') || e.target.closest('.news-dot'))) {
+            return;
+          }
+          self.openCardDetail(card.type, card.el);
+        });
+
+        card.el.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter' || e.key === ' ') {
+            if (e.target && (e.target.closest('button') || e.target.closest('a') || e.target.closest('.forecast-tab'))) return;
+            e.preventDefault();
+            self.openCardDetail(card.type, card.el);
+          }
+        });
+      }
+
+      for (var i = 0; i < interactiveCards.length; i++) {
+        attachCardListener(interactiveCards[i]);
+      }
+
+      // Close Detail Surface Button
+      if (this.dom.hudDetailClose) {
+        this.dom.hudDetailClose.addEventListener('click', function(e) {
+          e.stopPropagation();
+          self.closeCardDetail();
+        });
+      }
+
+      // Dismiss on click outside detail drawer
+      document.addEventListener('click', function(e) {
+        if (!self.isDetailOpen) return;
+        if (self.dom.hudCardDetail && !self.dom.hudCardDetail.contains(e.target)) {
+          var onCard = false;
+          for (var j = 0; j < interactiveCards.length; j++) {
+            if (interactiveCards[j].el && interactiveCards[j].el.contains(e.target)) {
+              onCard = true;
+              break;
+            }
+          }
+          if (!onCard) {
+            self.closeCardDetail();
+          }
         }
       });
     },
@@ -1907,25 +2012,40 @@ MediaVisualizerEngine.prototype.wake = function() {
 
     setHudPosition: function(pos) {
       if (!this.dom.hud) return;
-      this.dom.hud.classList.remove('top-right', 'top-left', 'bottom-right', 'bottom-left');
+      var allPositions = [
+        'top-right', 'top-left', 'bottom-right', 'bottom-left',
+        'middle-right', 'middle-left', 'middle-top', 'middle-bottom', 'center'
+      ];
 
-      var classMap = ['top-right', 'top-left', 'bottom-right', 'bottom-left'];
+      for (var i = 0; i < allPositions.length; i++) {
+        this.dom.hud.classList.remove(allPositions[i]);
+        if (this.dom.dockMediaFocus) {
+          this.dom.dockMediaFocus.classList.remove(allPositions[i]);
+        }
+      }
+
       var targetClass = 'top-right';
 
-      if (typeof pos === 'number' && classMap[pos]) {
-        targetClass = classMap[pos];
+      if (typeof pos === 'number' && allPositions[pos]) {
+        targetClass = allPositions[pos];
       } else if (typeof pos === 'string') {
-        var lower = pos.toLowerCase();
-        if (lower.indexOf('left') !== -1 && lower.indexOf('top') !== -1) targetClass = 'top-left';
+        var lower = pos.toLowerCase().trim();
+        if (lower === 'top-left' || lower === 'topleft') targetClass = 'top-left';
+        else if (lower === 'bottom-right' || lower === 'bottomright') targetClass = 'bottom-right';
+        else if (lower === 'bottom-left' || lower === 'bottomleft') targetClass = 'bottom-left';
+        else if (lower === 'middle-right' || lower === 'middleright' || lower === 'center-right') targetClass = 'middle-right';
+        else if (lower === 'middle-left' || lower === 'middleleft' || lower === 'center-left') targetClass = 'middle-left';
+        else if (lower === 'middle-top' || lower === 'middletop' || lower === 'center-top') targetClass = 'middle-top';
+        else if (lower === 'middle-bottom' || lower === 'middlebottom' || lower === 'center-bottom') targetClass = 'middle-bottom';
+        else if (lower === 'center' || lower === 'middle') targetClass = 'center';
+        else if (lower.indexOf('left') !== -1 && lower.indexOf('top') !== -1) targetClass = 'top-left';
         else if (lower.indexOf('left') !== -1 && lower.indexOf('bottom') !== -1) targetClass = 'bottom-left';
         else if (lower.indexOf('right') !== -1 && lower.indexOf('bottom') !== -1) targetClass = 'bottom-right';
         else targetClass = 'top-right';
       }
 
       this.dom.hud.classList.add(targetClass);
-
       if (this.dom.dockMediaFocus) {
-        this.dom.dockMediaFocus.classList.remove('top-right', 'top-left', 'bottom-right', 'bottom-left');
         this.dom.dockMediaFocus.classList.add(targetClass);
       }
 
@@ -2560,11 +2680,15 @@ MediaVisualizerEngine.prototype.wake = function() {
       }
 
       // 1. Solar Ephemeris (Sunrise, Solar Noon, Sunset)
+      var sunriseStr = '--:--';
+      var sunsetStr = '--:--';
+      var noonStr = '--:--';
+      var sunTimes = null;
       try {
-        var sunTimes = global.SunCalc.getTimes(now, lat, lng);
-        var sunriseStr = formatTime(sunTimes.sunrise);
-        var sunsetStr = formatTime(sunTimes.sunset);
-        var noonStr = formatTime(sunTimes.solarNoon);
+        sunTimes = global.SunCalc.getTimes(now, lat, lng);
+        sunriseStr = formatTime(sunTimes.sunrise);
+        sunsetStr = formatTime(sunTimes.sunset);
+        noonStr = formatTime(sunTimes.solarNoon);
 
         // Handle polar daylight/night edge cases gracefully
         if (!sunriseStr || !sunsetStr) {
@@ -2585,9 +2709,21 @@ MediaVisualizerEngine.prototype.wake = function() {
         console.warn('[App] Error computing solar ephemeris:', e);
       }
 
-      // 2. Lunar Ephemeris (Moon Phase name, Moon glyph, Illumination percentage)
+      // 2. Lunar Ephemeris (Moon Phase name, Moon glyph, Illumination percentage, Moonrise/Moonset)
+      var moonIllum = null;
+      var moonTimes = null;
+      var activePhase = { name: 'Full Moon', glyph: '🌕' };
+      var illumPct = '--%';
+      var lunarAge = '14.8';
+      var isWaxing = true;
+      var westernFullMoonName = '';
+      var vedicPurnimaName = '';
+      var activeShower = null;
+      var moonriseStr = '--:--';
+      var moonsetStr = '--:--';
+
       try {
-        var moonIllum = global.SunCalc.getMoonIllumination(now);
+        moonIllum = global.SunCalc.getMoonIllumination(now);
         var fraction = moonIllum.fraction || 0;
         var phase = moonIllum.phase || 0; // 0.0 to 1.0
 
@@ -2603,15 +2739,567 @@ MediaVisualizerEngine.prototype.wake = function() {
           { name: 'Waning Crescent', glyph: '🌘' }
         ];
 
-        var activePhase = moonPhases[phaseIndex] || moonPhases[0];
-        var illumPct = Math.round(fraction * 100) + '%';
+        activePhase = moonPhases[phaseIndex] || moonPhases[0];
+        illumPct = Math.round(fraction * 100) + '%';
+        lunarAge = (phase * 29.530588).toFixed(1);
+        isWaxing = phase < 0.5;
 
-        if (this.dom.ephemerisMoonGlyph) this.dom.ephemerisMoonGlyph.textContent = activePhase.glyph;
-        if (this.dom.ephemerisMoonPhase) this.dom.ephemerisMoonPhase.textContent = activePhase.name;
-        if (this.dom.ephemerisMoonIllum) this.dom.ephemerisMoonIllum.textContent = illumPct;
+        // Traditional Western Full Moon Names by month
+        var westernNames = [
+          'Wolf Moon', 'Snow Moon', 'Worm Moon', 'Pink Moon',
+          'Flower Moon', 'Strawberry Moon', 'Buck Moon', 'Sturgeon Moon',
+          'Harvest Moon', 'Hunter\'s Moon', 'Beaver Moon', 'Cold Moon'
+        ];
+        westernFullMoonName = westernNames[now.getMonth()] || 'Full Moon';
+
+        // Cultural Vedic Purnima Names (traditional Hindu lunar calendar)
+        var vedicNames = [
+          'Pausha Purnima', 'Magha Purnima', 'Phalguna Purnima', 'Chaitra Purnima',
+          'Vaishakha Purnima', 'Jyeshtha Purnima', 'Ashadha Purnima', 'Shravana Purnima',
+          'Bhadrapada Purnima', 'Ashvina Purnima', 'Kartika Purnima', 'Margashirsha Purnima'
+        ];
+        vedicPurnimaName = vedicNames[now.getMonth()] || 'Purnima';
+
+        // Prominent Annual Meteor Showers
+        var meteorShowers = [
+          { name: 'Quadrantids', startM: 0, startD: 1, endM: 0, endD: 12, peak: 'Jan 3-4' },
+          { name: 'Lyrids', startM: 3, startD: 14, endM: 3, endD: 30, peak: 'Apr 22-23' },
+          { name: 'Eta Aquariids', startM: 3, startD: 19, endM: 4, endD: 28, peak: 'May 5-6' },
+          { name: 'Delta Aquariids', startM: 6, startD: 12, endM: 7, endD: 23, peak: 'Jul 29-30' },
+          { name: 'Perseids', startM: 6, startD: 17, endM: 7, endD: 24, peak: 'Aug 12-13' },
+          { name: 'Orionids', startM: 9, startD: 2, endM: 10, endD: 7, peak: 'Oct 21-22' },
+          { name: 'Leonids', startM: 10, startD: 6, endM: 10, endD: 30, peak: 'Nov 17-18' },
+          { name: 'Geminids', startM: 11, startD: 4, endM: 11, endD: 20, peak: 'Dec 13-14' },
+          { name: 'Ursids', startM: 11, startD: 17, endM: 11, endD: 26, peak: 'Dec 22-23' }
+        ];
+
+        var curM = now.getMonth();
+        var curD = now.getDate();
+        for (var si = 0; si < meteorShowers.length; si++) {
+          var ms = meteorShowers[si];
+          var inRange = false;
+          if (ms.startM === ms.endM) {
+            inRange = (curM === ms.startM && curD >= ms.startD && curD <= ms.endD);
+          } else {
+            inRange = (curM === ms.startM && curD >= ms.startD) || (curM === ms.endM && curD <= ms.endD);
+          }
+          if (inRange) {
+            activeShower = ms;
+            break;
+          }
+        }
+
+        // Offline Moonrise and Moonset calculation via SunCalc
+        if (typeof global.SunCalc.getMoonTimes === 'function') {
+          moonTimes = global.SunCalc.getMoonTimes(now, lat, lng, false);
+          if (moonTimes) {
+            if (moonTimes.rise) {
+              moonriseStr = formatTime(moonTimes.rise);
+            } else if (moonTimes.alwaysUp) {
+              moonriseStr = 'Up 24h';
+            } else if (moonTimes.alwaysDown) {
+              moonriseStr = 'Down 24h';
+            } else {
+              moonriseStr = 'No Rise';
+            }
+
+            if (moonTimes.set) {
+              moonsetStr = formatTime(moonTimes.set);
+            } else if (moonTimes.alwaysUp) {
+              moonsetStr = 'Up 24h';
+            } else if (moonTimes.alwaysDown) {
+              moonsetStr = 'Down 24h';
+            } else {
+              moonsetStr = 'No Set';
+            }
+          }
+        }
       } catch (e) {
         console.warn('[App] Error computing lunar ephemeris:', e);
       }
+
+      // 3. Day vs Night Row Toggling: Daytime row (Sunrise | Solar Noon | Sunset), Nighttime row (Moonrise | Moon Phase | Moonset)
+      var isDay = true;
+      if (this.state && this.state.weather && typeof this.state.weather.isDay === 'boolean') {
+        isDay = this.state.weather.isDay;
+      } else if (sunTimes && sunTimes.sunrise && sunTimes.sunset && !isNaN(sunTimes.sunrise.getTime()) && !isNaN(sunTimes.sunset.getTime())) {
+        isDay = (now >= sunTimes.sunrise && now < sunTimes.sunset);
+      }
+
+      if (isDay) {
+        if (this.dom.hudEphemerisSunRow) this.dom.hudEphemerisSunRow.classList.remove('is-hidden');
+        if (this.dom.hudEphemerisMoonRow) this.dom.hudEphemerisMoonRow.classList.add('is-hidden');
+      } else {
+        if (this.dom.hudEphemerisSunRow) this.dom.hudEphemerisSunRow.classList.add('is-hidden');
+        if (this.dom.hudEphemerisMoonRow) this.dom.hudEphemerisMoonRow.classList.remove('is-hidden');
+      }
+
+      // Populate Night Row Elements
+      var displayPhaseName = (activePhase.name === 'Full Moon') ? westernFullMoonName : activePhase.name;
+      if (this.dom.ephemerisMoonrise) this.dom.ephemerisMoonrise.textContent = moonriseStr;
+      if (this.dom.ephemerisNightMoonGlyph) this.dom.ephemerisNightMoonGlyph.textContent = activePhase.glyph;
+      if (this.dom.ephemerisNightMoonPhase) this.dom.ephemerisNightMoonPhase.textContent = displayPhaseName;
+      if (this.dom.ephemerisNightMoonIllum) this.dom.ephemerisNightMoonIllum.textContent = illumPct;
+      if (this.dom.ephemerisMoonset) this.dom.ephemerisMoonset.textContent = moonsetStr;
+
+      // Populate Compact Moon Badge Elements
+      if (this.dom.ephemerisMoonGlyph) this.dom.ephemerisMoonGlyph.textContent = activePhase.glyph;
+      if (this.dom.ephemerisMoonPhase) this.dom.ephemerisMoonPhase.textContent = displayPhaseName;
+      if (this.dom.ephemerisMoonIllum) this.dom.ephemerisMoonIllum.textContent = illumPct;
+
+      // Store cached celestial context for detail drawer
+      this.celestialData = {
+        isDay: isDay,
+        sunriseStr: sunriseStr,
+        noonStr: noonStr,
+        sunsetStr: sunsetStr,
+        moonriseStr: moonriseStr,
+        moonsetStr: moonsetStr,
+        phase: activePhase,
+        illumPct: illumPct,
+        lunarAge: lunarAge,
+        isWaxing: isWaxing,
+        westernFullMoonName: westernFullMoonName,
+        vedicPurnimaName: vedicPurnimaName,
+        activeShower: activeShower,
+        now: now
+      };
+    },
+
+    openCardDetail: function(cardType, triggerEl) {
+      if (!this.dom.hudCardDetail) return;
+      this.isDetailOpen = true;
+      this.activeDetailCard = cardType;
+      this.lastDetailTrigger = triggerEl;
+
+      this.renderCardDetailContent(cardType);
+
+      this.dom.hudCardDetail.classList.remove('is-hidden');
+      this.dom.hudCardDetail.setAttribute('aria-hidden', 'false');
+
+      if (this.dom.hudDetailClose && typeof this.dom.hudDetailClose.focus === 'function') {
+        this.dom.hudDetailClose.focus();
+      }
+    },
+
+    closeCardDetail: function() {
+      if (!this.dom.hudCardDetail) return;
+      this.isDetailOpen = false;
+      this.activeDetailCard = null;
+
+      this.dom.hudCardDetail.classList.add('is-hidden');
+      this.dom.hudCardDetail.setAttribute('aria-hidden', 'true');
+
+      if (this.lastDetailTrigger && typeof this.lastDetailTrigger.focus === 'function') {
+        this.lastDetailTrigger.focus();
+        this.lastDetailTrigger = null;
+      }
+    },
+
+    renderCardDetailContent: function(cardType) {
+      if (!this.dom.hudCardDetail || !this.dom.hudDetailBody) return;
+
+      function esc(str) {
+        if (str === null || str === undefined) return '';
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
+
+      var iconEl = this.dom.hudDetailIcon;
+      var titleEl = this.dom.hudDetailTitle;
+      var bodyEl = this.dom.hudDetailBody;
+
+      var state = this.state || {};
+      var weather = state.weather || {};
+      var location = state.location || {};
+      var aqi = state.aqi || {};
+      var celestial = this.celestialData || {};
+      var tempUnit = this.tempUnit || 'C';
+
+      var html = '';
+
+      switch (cardType) {
+        case 'weather':
+          if (iconEl) iconEl.textContent = '🌤️';
+          if (titleEl) titleEl.textContent = 'Atmospheric Telemetry';
+
+          var tempStr = '--';
+          if (weather.temp != null && Number.isFinite(weather.temp)) {
+            var valT = tempUnit === 'F' ? Math.round(weather.temp * 9 / 5 + 32) : Math.round(weather.temp);
+            tempStr = valT + '°' + tempUnit;
+          }
+          var feelsStr = '--';
+          if (weather.feelsLike != null && Number.isFinite(weather.feelsLike)) {
+            var valF = tempUnit === 'F' ? Math.round(weather.feelsLike * 9 / 5 + 32) : Math.round(weather.feelsLike);
+            feelsStr = valF + '°' + tempUnit;
+          }
+
+          var locName = location.city || 'Local Area';
+          if (location.country && location.city && location.country !== location.city) {
+            locName += ', ' + location.country;
+          }
+
+          html = '<div class="hud-detail-grid">' +
+            '<div class="hud-detail-item">' +
+              '<span class="hud-detail-item-label">Current Temp</span>' +
+              '<span class="hud-detail-item-val">' + esc(tempStr) + '</span>' +
+              '<span class="hud-detail-item-sub">Feels like ' + esc(feelsStr) + '</span>' +
+            '</div>' +
+            '<div class="hud-detail-item">' +
+              '<span class="hud-detail-item-label">Condition</span>' +
+              '<span class="hud-detail-item-val">' + esc(weather.conditionText || 'Fair') + '</span>' +
+              '<span class="hud-detail-item-sub">Category: ' + esc(weather.category || 'CLEAR') + '</span>' +
+            '</div>' +
+            '<div class="hud-detail-item">' +
+              '<span class="hud-detail-item-label">Relative Humidity</span>' +
+              '<span class="hud-detail-item-val">' + (weather.humidity != null ? weather.humidity + '%' : 'Unavailable') + '</span>' +
+              '<span class="hud-detail-item-sub">Dew point equilibrium</span>' +
+            '</div>' +
+            '<div class="hud-detail-item">' +
+              '<span class="hud-detail-item-label">Surface Wind</span>' +
+              '<span class="hud-detail-item-val">' + (weather.windSpeedKm != null ? weather.windSpeedKm + ' km/h' : 'Calm') + '</span>' +
+              '<span class="hud-detail-item-sub">' + (weather.windDirection ? esc(weather.windDirection) : 'Variable direction') + '</span>' +
+            '</div>' +
+            '<div class="hud-detail-item">' +
+              '<span class="hud-detail-item-label">Precipitation</span>' +
+              '<span class="hud-detail-item-val">' + (weather.precipMm != null ? weather.precipMm + ' mm' : '0.0 mm') + '</span>' +
+              '<span class="hud-detail-item-sub">Surface accumulation</span>' +
+            '</div>' +
+            '<div class="hud-detail-item">' +
+              '<span class="hud-detail-item-label">Barometric Pressure</span>' +
+              '<span class="hud-detail-item-val">' + (weather.pressureHpa ? weather.pressureHpa + ' hPa' : '1013 hPa') + '</span>' +
+              '<span class="hud-detail-item-sub">Mean sea-level</span>' +
+            '</div>' +
+            '<div class="hud-detail-item full-width">' +
+              '<span class="hud-detail-item-label">Location & Source</span>' +
+              '<span class="hud-detail-item-val">' + esc(locName) + '</span>' +
+              '<span class="hud-detail-item-sub">Provider: ' + esc(weather.provider || 'Open-Meteo API') + ' (Verified Live)</span>' +
+            '</div>' +
+          '</div>';
+          break;
+
+        case 'forecast':
+          if (iconEl) iconEl.textContent = '📈';
+          if (titleEl) titleEl.textContent = 'Hourly Forecast Analysis';
+
+          var activeTab = (this.forecastChart && this.forecastChart.activeTab) || 'temp';
+          var tabLabels = {
+            temp: 'Temperature (°' + tempUnit + ')',
+            feels_like: 'Feels Like (°' + tempUnit + ')',
+            precip: 'Precipitation Probability (%)',
+            wind: 'Surface Wind Speed (km/h)',
+            humidity: 'Relative Humidity (%)',
+            aqi: 'Air Quality Index'
+          };
+          var metricTitle = tabLabels[activeTab] || 'Forecast Metric';
+          var points = (this.forecastChart && this.forecastChart.points) || [];
+
+          var ptsHtml = '';
+          if (points && points.length > 0) {
+            ptsHtml = '<div class="hud-detail-grid">';
+            for (var pi = 0; pi < Math.min(8, points.length); pi++) {
+              var pt = points[pi];
+              var ptVal = (typeof pt.value === 'number') ? pt.value.toFixed(1) : (pt.value || '--');
+              ptsHtml += '<div class="hud-detail-item">' +
+                '<span class="hud-detail-item-label">' + esc(pt.label || pt.time || ('+' + (pi * 3) + 'h')) + '</span>' +
+                '<span class="hud-detail-item-val">' + esc(ptVal) + '</span>' +
+              '</div>';
+            }
+            ptsHtml += '</div>';
+          } else {
+            ptsHtml = '<div class="hud-detail-item full-width"><span class="hud-detail-item-val">No hourly forecast series cached.</span></div>';
+          }
+
+          html = '<div class="hud-detail-item full-width" style="margin-bottom: 6px;">' +
+            '<span class="hud-detail-item-label">Active Forecast Horizon</span>' +
+            '<span class="hud-detail-item-val">' + esc(metricTitle) + '</span>' +
+            '<span class="hud-detail-item-sub">8 sequential prediction intervals (+24h horizon)</span>' +
+          '</div>' + ptsHtml;
+          break;
+
+        case 'news':
+          if (iconEl) iconEl.textContent = '📰';
+          if (titleEl) titleEl.textContent = 'Regional News Dispatch';
+
+          var newsList = this.newsItems || state.news || [];
+          if (newsList && newsList.length > 0) {
+            html = '<div class="hud-detail-news-list">';
+            for (var ni = 0; ni < newsList.length; ni++) {
+              var nItem = newsList[ni];
+              var safeUrl = (nItem.url && /^https?:\/\//i.test(nItem.url)) ? nItem.url : '#';
+              html += '<a class="hud-detail-news-item" href="' + esc(safeUrl) + '" target="_blank" rel="noopener noreferrer">' +
+                '<p class="hud-detail-news-title">' + esc(nItem.title || 'Untitled Story') + '</p>' +
+                '<div class="hud-detail-news-meta">' +
+                  '<span>' + esc(nItem.source || 'Regional Publisher') + '</span>' +
+                  '<span>' + esc(nItem.timeAgo || 'Recent') + '</span>' +
+                '</div>' +
+              '</a>';
+            }
+            html += '</div>';
+          } else {
+            html = '<div class="hud-detail-item full-width">' +
+              '<span class="hud-detail-item-val">No regional news stories available.</span>' +
+              '<span class="hud-detail-item-sub">GDELT DOC 2.0 query returned 0 articles for current locality.</span>' +
+            '</div>';
+          }
+          break;
+
+        case 'aqi':
+          if (iconEl) iconEl.textContent = '🍃';
+          if (titleEl) titleEl.textContent = 'Air Quality & Pollutants';
+
+          var aqiVal = (aqi.value != null) ? aqi.value : (aqi.europeanAqi != null ? aqi.europeanAqi : '--');
+          var aqiCat = aqi.category || 'Unavailable';
+          var pm25Val = aqi.pm25 != null ? aqi.pm25 + ' µg/m³' : '--';
+          var pm10Val = aqi.pm10 != null ? aqi.pm10 + ' µg/m³' : '--';
+          var no2Val = aqi.no2 != null ? aqi.no2 + ' µg/m³' : 'Nominal';
+          var o3Val = aqi.o3 != null ? aqi.o3 + ' µg/m³' : 'Nominal';
+
+          html = '<div class="hud-detail-grid">' +
+            '<div class="hud-detail-item">' +
+              '<span class="hud-detail-item-label">Air Quality Index</span>' +
+              '<span class="hud-detail-item-val">' + esc(aqiVal) + '</span>' +
+              '<span class="hud-detail-item-sub">Status: ' + esc(aqiCat) + '</span>' +
+            '</div>' +
+            '<div class="hud-detail-item">' +
+              '<span class="hud-detail-item-label">Data Provider</span>' +
+              '<span class="hud-detail-item-val">' + esc(aqi.provider || 'Open-Meteo Air Quality') + '</span>' +
+              '<span class="hud-detail-item-sub">European / US EPA Standard</span>' +
+            '</div>' +
+            '<div class="hud-detail-item">' +
+              '<span class="hud-detail-item-label">Fine Particulates (PM2.5)</span>' +
+              '<span class="hud-detail-item-val">' + esc(pm25Val) + '</span>' +
+              '<span class="hud-detail-item-sub">Respirable aerosol particles</span>' +
+            '</div>' +
+            '<div class="hud-detail-item">' +
+              '<span class="hud-detail-item-label">Coarse Dust (PM10)</span>' +
+              '<span class="hud-detail-item-val">' + esc(pm10Val) + '</span>' +
+              '<span class="hud-detail-item-sub">Inhalable coarse particles</span>' +
+            '</div>' +
+            '<div class="hud-detail-item">' +
+              '<span class="hud-detail-item-label">Nitrogen Dioxide (NO₂)</span>' +
+              '<span class="hud-detail-item-val">' + esc(no2Val) + '</span>' +
+              '<span class="hud-detail-item-sub">Combustion emissions</span>' +
+            '</div>' +
+            '<div class="hud-detail-item">' +
+              '<span class="hud-detail-item-label">Ground Ozone (O₃)</span>' +
+              '<span class="hud-detail-item-val">' + esc(o3Val) + '</span>' +
+              '<span class="hud-detail-item-sub">Photochemical oxidant</span>' +
+            '</div>' +
+            '<div class="hud-detail-item full-width">' +
+              '<span class="hud-detail-item-label">General Health Context</span>' +
+              '<span class="hud-detail-item-val">' + (aqiVal <= 50 ? 'Air quality is satisfactory. Outdoor activity is ideal.' : 'Moderate air quality. Sensitive individuals should consider reducing intense outdoor exposure.') + '</span>' +
+              '<span class="hud-detail-item-sub">Standard environmental advisory</span>' +
+            '</div>' +
+          '</div>';
+          break;
+
+        case 'hardware':
+          if (iconEl) iconEl.textContent = '⚡';
+          if (titleEl) titleEl.textContent = 'Hardware System Telemetry';
+
+          var cpuTxt = (this.dom.hwCpuVal ? this.dom.hwCpuVal.textContent : '--%');
+          var cpuDev = (this.dom.hwCpuName ? this.dom.hwCpuName.textContent : 'Processor');
+          var gpuTxt = (this.dom.hwGpuVal ? this.dom.hwGpuVal.textContent : '--%');
+          var gpuDev = (this.dom.hwGpuName ? this.dom.hwGpuName.textContent : 'Graphics 3D');
+          var ramTxt = (this.dom.hwRamVal ? this.dom.hwRamVal.textContent : '--%');
+          var ramDet = (this.dom.hwRamDetail ? this.dom.hwRamDetail.textContent : 'Physical RAM');
+          var diskTxt = (this.dom.hwDiskVal ? this.dom.hwDiskVal.textContent : '--%');
+          var netDn = (this.dom.hwNetDownVal ? this.dom.hwNetDownVal.textContent : '0 Kbps');
+          var netUp = (this.dom.hwNetUpVal ? this.dom.hwNetUpVal.textContent : '0 Kbps');
+
+          html = '<div class="hud-detail-grid">' +
+            '<div class="hud-detail-item">' +
+              '<span class="hud-detail-item-label">CPU Utilization</span>' +
+              '<span class="hud-detail-item-val">' + esc(cpuTxt) + '</span>' +
+              '<span class="hud-detail-item-sub">' + esc(cpuDev) + '</span>' +
+            '</div>' +
+            '<div class="hud-detail-item">' +
+              '<span class="hud-detail-item-label">GPU 3D Engine</span>' +
+              '<span class="hud-detail-item-val">' + esc(gpuTxt) + '</span>' +
+              '<span class="hud-detail-item-sub">' + esc(gpuDev) + '</span>' +
+            '</div>' +
+            '<div class="hud-detail-item">' +
+              '<span class="hud-detail-item-label">Memory (RAM)</span>' +
+              '<span class="hud-detail-item-val">' + esc(ramTxt) + '</span>' +
+              '<span class="hud-detail-item-sub">' + esc(ramDet) + '</span>' +
+            '</div>' +
+            '<div class="hud-detail-item">' +
+              '<span class="hud-detail-item-label">Primary Storage</span>' +
+              '<span class="hud-detail-item-val">' + esc(diskTxt) + '</span>' +
+              '<span class="hud-detail-item-sub">Drive C: Activity</span>' +
+            '</div>' +
+            '<div class="hud-detail-item">' +
+              '<span class="hud-detail-item-label">Network Ingress</span>' +
+              '<span class="hud-detail-item-val">' + esc(netDn) + '</span>' +
+              '<span class="hud-detail-item-sub">Real-time download rate</span>' +
+            '</div>' +
+            '<div class="hud-detail-item">' +
+              '<span class="hud-detail-item-label">Network Egress</span>' +
+              '<span class="hud-detail-item-val">' + esc(netUp) + '</span>' +
+              '<span class="hud-detail-item-sub">Real-time upload rate</span>' +
+            '</div>' +
+            '<div class="hud-detail-item full-width">' +
+              '<span class="hud-detail-item-label">Telemetry Ingestion Engine</span>' +
+              '<span class="hud-detail-item-val">Windows IPC Hook via Lively Wallpaper Host</span>' +
+              '<span class="hud-detail-item-sub">Hardware sampling rate: 2.0s cadence</span>' +
+            '</div>' +
+          '</div>';
+          break;
+
+        case 'battery':
+          if (iconEl) iconEl.textContent = '🔋';
+          if (titleEl) titleEl.textContent = 'Battery & Power Subsystem';
+
+          var batPct = (this.lastBatteryPct != null ? this.lastBatteryPct : 100) + '%';
+          var batChg = this.lastBatteryCharging ? 'Charging (AC Connected)' : 'Discharging (Battery Power)';
+
+          html = '<div class="hud-detail-grid">' +
+            '<div class="hud-detail-item">' +
+              '<span class="hud-detail-item-label">Charge Level</span>' +
+              '<span class="hud-detail-item-val">' + esc(batPct) + '</span>' +
+              '<span class="hud-detail-item-sub">Internal pack capacity</span>' +
+            '</div>' +
+            '<div class="hud-detail-item">' +
+              '<span class="hud-detail-item-label">Power Source</span>' +
+              '<span class="hud-detail-item-val">' + esc(batChg) + '</span>' +
+              '<span class="hud-detail-item-sub">Navigator.getBattery() API</span>' +
+            '</div>' +
+            '<div class="hud-detail-item full-width">' +
+              '<span class="hud-detail-item-label">Hardware Profile</span>' +
+              '<span class="hud-detail-item-val">Portable Laptop / Surface Power Management</span>' +
+              '<span class="hud-detail-item-sub">Auto-hides cleanly on desktop workstations lacking battery cells</span>' +
+            '</div>' +
+          '</div>';
+          break;
+
+        case 'ephemeris':
+          if (iconEl) iconEl.textContent = '🌗';
+          if (titleEl) titleEl.textContent = 'Ephemeris & Celestial Astronomy';
+
+          var cPhase = celestial.phase || { name: 'Moon Phase', glyph: '🌕' };
+          var showerTxt = celestial.activeShower
+            ? (celestial.activeShower.name + ' Meteor Shower (Peak: ' + celestial.activeShower.peak + ')')
+            : 'No major shower peak currently active';
+
+          html = '<div class="hud-detail-grid">' +
+            '<div class="hud-detail-item">' +
+              '<span class="hud-detail-item-label">Sunrise / Sunset</span>' +
+              '<span class="hud-detail-item-val">' + esc(celestial.sunriseStr || '--:--') + ' / ' + esc(celestial.sunsetStr || '--:--') + '</span>' +
+              '<span class="hud-detail-item-sub">Solar Noon: ' + esc(celestial.noonStr || '--:--') + '</span>' +
+            '</div>' +
+            '<div class="hud-detail-item">' +
+              '<span class="hud-detail-item-label">Moonrise / Moonset</span>' +
+              '<span class="hud-detail-item-val">' + esc(celestial.moonriseStr || '--:--') + ' / ' + esc(celestial.moonsetStr || '--:--') + '</span>' +
+              '<span class="hud-detail-item-sub">Bundled SunCalc 2.0 Engine</span>' +
+            '</div>' +
+            '<div class="hud-detail-item">' +
+              '<span class="hud-detail-item-label">Moon Phase & Illumination</span>' +
+              '<span class="hud-detail-item-val">' + esc(cPhase.glyph) + ' ' + esc(cPhase.name) + '</span>' +
+              '<span class="hud-detail-item-sub">' + esc(celestial.illumPct || '--%') + ' illuminated (' + (celestial.isWaxing ? 'Waxing' : 'Waning') + ')</span>' +
+            '</div>' +
+            '<div class="hud-detail-item">' +
+              '<span class="hud-detail-item-label">Lunar Cycle Age</span>' +
+              '<span class="hud-detail-item-val">' + esc(celestial.lunarAge || '14.8') + ' days</span>' +
+              '<span class="hud-detail-item-sub">29.53d synodic lunar month</span>' +
+            '</div>' +
+            '<div class="hud-detail-item full-width">' +
+              '<span class="hud-detail-item-label">Traditional Western Full Moon</span>' +
+              '<span class="hud-detail-item-val">' + esc(celestial.westernFullMoonName || 'Full Moon') + '</span>' +
+              '<span class="hud-detail-item-sub">Universal Western Almanac designation</span>' +
+            '</div>' +
+            '<div class="hud-detail-item full-width">' +
+              '<span class="hud-detail-item-label">Vedic Purnima Observance</span>' +
+              '<span class="hud-detail-item-val">' + esc(celestial.vedicPurnimaName || 'Purnima') + '</span>' +
+              '<span class="hud-detail-item-sub">Tradition: Hindu / Vedic Lunar Calendar</span>' +
+            '</div>' +
+            '<div class="hud-detail-item full-width">' +
+              '<span class="hud-detail-item-label">Active Meteor Shower</span>' +
+              '<span class="hud-detail-item-val">' + esc(showerTxt) + '</span>' +
+              '<span class="hud-detail-item-sub">Annual astronomical transit schedule</span>' +
+            '</div>' +
+          '</div>';
+          break;
+
+        case 'media':
+          if (iconEl) iconEl.textContent = '🎵';
+          if (titleEl) titleEl.textContent = 'Media & Audio Subsystem';
+
+          var track = (this.mediaVisualizer && this.mediaVisualizer.currentTrackData) || {};
+          var trackTitle = track.title || 'No active media session';
+          var trackArtist = track.artist || 'Windows SMTC Idle';
+          var trackSrc = track.source || 'SMTC';
+          var visEnabled = (this.mediaVisualizer && this.mediaVisualizer.enabled) ? 'Active (32 FFT frequency bands)' : 'Disabled';
+
+          html = '<div class="hud-detail-grid">' +
+            '<div class="hud-detail-item full-width">' +
+              '<span class="hud-detail-item-label">Active Track</span>' +
+              '<span class="hud-detail-item-val">' + esc(trackTitle) + '</span>' +
+              '<span class="hud-detail-item-sub">Artist: ' + esc(trackArtist) + '</span>' +
+            '</div>' +
+            '<div class="hud-detail-item">' +
+              '<span class="hud-detail-item-label">Source Application</span>' +
+              '<span class="hud-detail-item-val">' + esc(trackSrc) + '</span>' +
+              '<span class="hud-detail-item-sub">SMTC Session</span>' +
+            '</div>' +
+            '<div class="hud-detail-item">' +
+              '<span class="hud-detail-item-label">Audio Spectrum Visualizer</span>' +
+              '<span class="hud-detail-item-val">' + esc(visEnabled) + '</span>' +
+              '<span class="hud-detail-item-sub">Zero-allocation TypedArray buffer</span>' +
+            '</div>' +
+            '<div class="hud-detail-item full-width">' +
+              '<span class="hud-detail-item-label">Host Integration Note</span>' +
+              '<span class="hud-detail-item-val">Windows SMTC Bridge</span>' +
+              '<span class="hud-detail-item-sub">Lively Wallpaper forwards Title/Artist/Art. Dedicated app icons (e.g. Amazon Music) require host-side AppUserModelId (AUMID) forwarding.</span>' +
+            '</div>' +
+          '</div>';
+          break;
+
+        case 'pomodoro':
+          if (iconEl) iconEl.textContent = '⏱️';
+          if (titleEl) titleEl.textContent = 'Pomodoro Productivity Timer';
+
+          var pomo = this.pomodoro || {};
+          var pomoModeName = (pomo.mode === 'focus') ? 'Focus Session' : ((pomo.mode === 'break') ? 'Short Break' : 'Long Break');
+          var pomoRem = this.dom.pomodoroTime ? this.dom.pomodoroTime.textContent : '25:00';
+          var pomoStatus = pomo.isRunning ? 'Running (Active Cadence)' : 'Paused / Idle';
+
+          html = '<div class="hud-detail-grid">' +
+            '<div class="hud-detail-item">' +
+              '<span class="hud-detail-item-label">Current Mode</span>' +
+              '<span class="hud-detail-item-val">' + esc(pomoModeName) + '</span>' +
+              '<span class="hud-detail-item-sub">' + esc(pomoStatus) + '</span>' +
+            '</div>' +
+            '<div class="hud-detail-item">' +
+              '<span class="hud-detail-item-label">Remaining Time</span>' +
+              '<span class="hud-detail-item-val">' + esc(pomoRem) + '</span>' +
+              '<span class="hud-detail-item-sub">Hardware-throttled ticker</span>' +
+            '</div>' +
+            '<div class="hud-detail-item full-width">' +
+              '<span class="hud-detail-item-label">Interval Configuration</span>' +
+              '<span class="hud-detail-item-val">Focus: ' + (pomo.focusMinutes || 25) + 'm | Break: ' + (pomo.breakMinutes || 5) + 'm | Long: ' + (pomo.longBreakMinutes || 15) + 'm</span>' +
+              '<span class="hud-detail-item-sub">Completed focus sessions: ' + (pomo.completedFocusSessions || 0) + '</span>' +
+            '</div>' +
+            '<div class="hud-detail-item full-width">' +
+              '<span class="hud-detail-item-label">Keyboard Controls</span>' +
+              '<span class="hud-detail-item-val">Press <kbd>P</kbd> to start or pause focus timer</span>' +
+              '<span class="hud-detail-item-sub">Zero CPU consumption when parked</span>' +
+            '</div>' +
+          '</div>';
+          break;
+
+        default:
+          if (iconEl) iconEl.textContent = '📊';
+          if (titleEl) titleEl.textContent = 'Telemetry Details';
+          html = '<div class="hud-detail-item full-width"><span class="hud-detail-item-val">No telemetry details available for this card.</span></div>';
+          break;
+      }
+
+      bodyEl.innerHTML = html;
     },
 
     checkAndSync: function() {
@@ -2952,6 +3640,7 @@ MediaVisualizerEngine.prototype.wake = function() {
     handleSystemInfo: function(data) {
       if (!data || this.isPlaybackPaused || !this.showHardwareMonitor) return;
       this.lastHwUpdate = Date.now();
+      this.lastHwData = data;
 
       // CPU load and name
       var cpuVal = (typeof data.CurrentCpu === 'number' && Number.isFinite(data.CurrentCpu)) ? Math.round(data.CurrentCpu) : 0;

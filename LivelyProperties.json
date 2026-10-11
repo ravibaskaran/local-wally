@@ -3,7 +3,17 @@
     "type": "dropdown",
     "value": 0,
     "text": "HUD Position",
-    "items": ["Top Right", "Top Left", "Bottom Right", "Bottom Left"]
+    "items": [
+      "Top Right",
+      "Top Left",
+      "Bottom Right",
+      "Bottom Left",
+      "Middle Right",
+      "Middle Left",
+      "Middle Top",
+      "Middle Bottom",
+      "Center"
+    ]
   },
   "glassBlur": {
     "type": "slider",

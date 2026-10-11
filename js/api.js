@@ -1270,7 +1270,140 @@
     },
 
     /**
-     * Proximity-targeted regional news feed via Google News RSS & XML DOMParser
+     * Location-based regional news via GDELT DOC 2.0 API (Keyless & Proxy-Free)
+     * Queries GDELT using URLSearchParams, city/alias mapping, and country filtering.
+     * @param {string} cityName
+     * @param {string} [countryCode]
+     * @returns {Promise<Array<{title: string, source: string, link: string, seendate?: string, domain?: string}>>}
+     */
+    fetchGdeltNews: function(cityName, countryCode) {
+      var cleanCity = (cityName && String(cityName).trim()) || '';
+      var cleanCountry = (countryCode && String(countryCode).trim().toUpperCase()) || '';
+
+      if (!cleanCity || cleanCity === 'Local' || cleanCity === 'Metropolitan') {
+        return Promise.reject(new Error('City unspecified for GDELT query'));
+      }
+
+      // City alias mapping for major metropolitan centers where common variants exist
+      var cityAliases = {
+        'bengaluru': '(Bengaluru OR Bangalore)',
+        'bangalore': '(Bengaluru OR Bangalore)',
+        'mumbai': '(Mumbai OR Bombay)',
+        'bombay': '(Mumbai OR Bombay)',
+        'kolkata': '(Kolkata OR Calcutta)',
+        'calcutta': '(Kolkata OR Calcutta)',
+        'chennai': '(Chennai OR Madras)',
+        'madras': '(Chennai OR Madras)',
+        'kyiv': '(Kyiv OR Kiev)',
+        'kiev': '(Kyiv OR Kiev)'
+      };
+
+      var cityKey = cleanCity.toLowerCase();
+      var cityQuery = cityAliases[cityKey] || ('"' + cleanCity.replace(/["\\]/g, '') + '"');
+
+      // Country qualification filter when available
+      var fullQuery = cityQuery;
+      if (cleanCountry && cleanCountry.length === 2) {
+        fullQuery += ' sourcecountry:' + cleanCountry;
+      }
+
+      function executeQuery(q) {
+        var params = new URLSearchParams();
+        params.set('query', q);
+        params.set('mode', 'artlist');
+        params.set('format', 'json');
+        params.set('timespan', '2d');
+        params.set('maxrecords', '25');
+        params.set('sort', 'datedesc');
+
+        var url = 'https://api.gdeltproject.org/api/v2/doc/doc?' + params.toString();
+
+        return ApiService.fetchWithTimeout(url, 7000)
+          .then(function(res) {
+            if (!res.ok) throw new Error('GDELT HTTP ' + res.status);
+            return res.text();
+          })
+          .then(function(rawText) {
+            if (!rawText || typeof rawText !== 'string') {
+              throw new Error('Empty GDELT response');
+            }
+            var trimmed = rawText.trim();
+            if (trimmed.charAt(0) !== '{') {
+              throw new Error('Invalid GDELT JSON payload');
+            }
+            var data = JSON.parse(trimmed);
+            if (!data || !Array.isArray(data.articles) || data.articles.length === 0) {
+              throw new Error('No articles found in GDELT response');
+            }
+
+            var results = [];
+            var seenTitles = {};
+            var seenLinks = {};
+
+            for (var i = 0; i < data.articles.length && results.length < 5; i++) {
+              var item = data.articles[i];
+              if (!item) continue;
+
+              var rawTitle = item.title || '';
+              var rawUrl = item.url || '';
+              var rawDomain = item.domain || '';
+              var rawCountry = item.sourcecountry || '';
+
+              // Protocol validation for safe external links
+              if (!rawUrl || !/^https?:\/\//i.test(rawUrl.trim())) continue;
+              var safeUrl = rawUrl.trim();
+
+              // Title cleanup and entity decoding
+              var cleanTitle = rawTitle
+                .replace(/&amp;/g, '&')
+                .replace(/&lt;/g, '<')
+                .replace(/&gt;/g, '>')
+                .replace(/&quot;/g, '"')
+                .replace(/&#39;/g, "'")
+                .trim();
+
+              if (!cleanTitle || cleanTitle.length < 10) continue;
+
+              // Title deduplication
+              var titleKey = cleanTitle.toLowerCase().substring(0, 40);
+              if (seenTitles[titleKey] || seenLinks[safeUrl]) continue;
+              seenTitles[titleKey] = true;
+              seenLinks[safeUrl] = true;
+
+              // Source attribution
+              var sourceName = rawDomain || rawCountry || 'Regional News';
+              if (sourceName.indexOf('.') !== -1) {
+                sourceName = sourceName.replace(/^www\./i, '');
+              }
+
+              results.push({
+                title: cleanTitle,
+                source: sourceName,
+                link: safeUrl,
+                seendate: item.seendate || null,
+                domain: rawDomain || null
+              });
+            }
+
+            if (results.length === 0) {
+              throw new Error('Zero valid articles after GDELT normalization');
+            }
+            return results;
+          });
+      }
+
+      // Try city + country, fallback to city alone if first attempt produces no results
+      return executeQuery(fullQuery)
+        .catch(function() {
+          if (fullQuery !== cityQuery) {
+            return executeQuery(cityQuery);
+          }
+          throw new Error('GDELT city query yielded no articles');
+        });
+    },
+
+    /**
+     * Proximity-targeted regional news feed via GDELT DOC 2.0 with Google News RSS & Curated fallback
      * @param {string} cityName
      * @param {string} [countryCode]
      * @returns {Promise<Array<{title: string, source: string, link: string}>>} Top 5 articles
@@ -1367,12 +1500,19 @@
         return articles;
       }
 
-      return requestXml(geoUrl)
-        .then(parseItems)
-        .catch(function() {
-          return requestXml(fallbackUrl).then(parseItems);
+      // 1. Try GDELT DOC 2.0 API first (keyless, proxy-free, direct JSON)
+      return self.fetchGdeltNews(cleanCity, cleanCountry)
+        .catch(function(gdeltErr) {
+          // 2. Fall back to Google News RSS if GDELT fails or has no records
+          console.warn('[ApiService] GDELT news unavailable, attempting Google News RSS:', gdeltErr.message);
+          return requestXml(geoUrl)
+            .then(parseItems)
+            .catch(function() {
+              return requestXml(fallbackUrl).then(parseItems);
+            });
         })
         .catch(function(err) {
+          // 3. Fall back to curated telemetry news if both remote APIs fail
           console.warn('[ApiService] Regional news fetch error, using curated dispatch fallback:', err.message);
           return self.getCuratedNews(cleanCity);
         });

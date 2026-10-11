@@ -62,7 +62,7 @@
         </header>
 
         <!-- Main Temperature & Condition Summary -->
-        <section class="hud-temp-block">
+        <section id="hud-weather-card" class="hud-temp-block hud-card-interactive" tabindex="0" role="button" aria-haspopup="dialog" aria-label="Current Weather Conditions and Atmosphere Details">
           <div class="hud-temp-main">
             <span id="hud-temp-val" class="hud-temp-val">--</span>
             <span id="hud-temp-unit" class="hud-temp-unit">°C</span>
@@ -78,7 +78,7 @@
         </section>
 
         <!-- Environmental Metrics 3-Column Grid -->
-        <section id="hud-metrics-row" class="hud-metrics-grid">
+        <section id="hud-metrics-row" class="hud-metrics-grid hud-card-interactive" tabindex="0" role="button" aria-haspopup="dialog" aria-label="Environmental Metrics">
           <div class="metric-card" title="Relative Humidity">
             <svg class="bento-icon metric-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-6-1.5-1.6-3.2-3.8-4-6-.8 2.2-2.5 4.4-4 6-2 2.1-3 4-3 6a7 7 0 0 0 7 7Z"/></svg>
             <span id="metric-humidity" class="metric-val">--%</span>
@@ -97,7 +97,7 @@
         </section>
 
         <!-- Google-Style Space-Efficient Multi-Tab SVG Forecast Chart -->
-        <section id="hud-forecast-card" class="hud-forecast-card" aria-label="Hourly Forecast Telemetry">
+        <section id="hud-forecast-card" class="hud-forecast-card hud-card-interactive" aria-label="Hourly Forecast Telemetry" tabindex="0" role="button" aria-haspopup="dialog">
           <div class="forecast-tab-bar" role="tablist" aria-label="Forecast Metrics">
             <button class="forecast-tab is-active" data-tab="temp" role="tab" aria-selected="true" type="button" title="Temperature">Temp</button>
             <button class="forecast-tab" data-tab="feels_like" role="tab" aria-selected="false" type="button" title="Feels Like">Feels</button>
@@ -143,8 +143,9 @@
         </section>
 
         <!-- Solar & Lunar Ephemeris Block -->
-        <section id="hud-ephemeris-card" class="hud-celestial-block" aria-label="Solar and Lunar Ephemeris">
-          <div class="hud-ephemeris-sun">
+        <section id="hud-ephemeris-card" class="hud-celestial-block hud-card-interactive" aria-label="Solar and Lunar Ephemeris" tabindex="0" role="button" aria-haspopup="dialog">
+          <!-- Day Row: Sunrise | Solar Noon | Sunset -->
+          <div id="hud-ephemeris-sun-row" class="hud-ephemeris-sun">
             <div class="ephemeris-item" title="Sunrise">
               <svg class="bento-icon ephemeris-icon sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6"/><path d="m4.93 10.93 4.24-4.24"/><path d="m19.07 10.93-4.24-4.24"/><path d="M2 18h20"/><path d="M20 22H4"/><path d="m16 6-4-4-4 4"/></svg>
               <div class="ephemeris-meta">
@@ -167,6 +168,30 @@
               </div>
             </div>
           </div>
+          <!-- Night Row: Moonrise | Moon Phase | Moonset -->
+          <div id="hud-ephemeris-moon-row" class="hud-ephemeris-moon-row is-hidden">
+            <div class="ephemeris-item" title="Moonrise">
+              <svg class="bento-icon ephemeris-icon moonrise-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m16 6-4-4-4 4"/><path d="M12 2v6"/><path d="M2 18h20"/><path d="M20 22H4"/><path d="M12 10a4 4 0 0 1 4 4c0 1.25-.5 2.5-1.5 3.3"/></svg>
+              <div class="ephemeris-meta">
+                <span class="ephemeris-label">Moonrise</span>
+                <span id="ephemeris-moonrise" class="ephemeris-val">--:--</span>
+              </div>
+            </div>
+            <div class="ephemeris-item ephemeris-moon-phase-item" title="Moon Phase & Illumination">
+              <span id="ephemeris-night-moon-glyph" class="moon-glyph" aria-hidden="true">🌕</span>
+              <div class="ephemeris-meta">
+                <span id="ephemeris-night-moon-phase" class="ephemeris-label">Moon Phase</span>
+                <span id="ephemeris-night-moon-illum" class="ephemeris-val">--%</span>
+              </div>
+            </div>
+            <div class="ephemeris-item" title="Moonset">
+              <svg class="bento-icon ephemeris-icon moonset-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m16 14-4 4-4-4"/><path d="M12 10v8"/><path d="M2 18h20"/><path d="M20 22H4"/><path d="M12 2a4 4 0 0 0-4 4c0 1.25.5 2.5 1.5 3.3"/></svg>
+              <div class="ephemeris-meta">
+                <span class="ephemeris-label">Moonset</span>
+                <span id="ephemeris-moonset" class="ephemeris-val">--:--</span>
+              </div>
+            </div>
+          </div>
           <div class="hud-ephemeris-moon">
             <div class="moon-badge">
               <span id="ephemeris-moon-glyph" class="moon-glyph" aria-hidden="true">🌕</span>
@@ -179,7 +204,7 @@
         </section>
 
         <!-- Air Quality Index (AQI) Block -->
-        <section id="hud-aqi-card" class="hud-aqi-block" aria-label="Air Quality Index Telemetry">
+        <section id="hud-aqi-card" class="hud-aqi-block hud-card-interactive" aria-label="Air Quality Index Telemetry" tabindex="0" role="button" aria-haspopup="dialog">
           <div class="hud-aqi-row">
             <div class="hud-aqi-title">
               <svg class="bento-icon aqi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 12h12"/><path d="M4 16h10a2 2 0 1 0-2-2"/><path d="M2 8h14a3 3 0 1 1-3 3"/></svg>
@@ -203,7 +228,7 @@
       <!-- Column 2: Hardware Telemetry, Regional News & System Status -->
       <div class="bento-col bento-col-secondary">
         <!-- Hardware Telemetry Monitor Block -->
-        <section id="hud-hw-block" class="hud-hw-block" aria-label="Hardware System Telemetry">
+        <section id="hud-hw-block" class="hud-hw-block hud-card-interactive" aria-label="Hardware System Telemetry" tabindex="0" role="button" aria-haspopup="dialog">
           <div class="hud-hw-header">
             <div class="hud-hw-title-group">
               <svg class="bento-icon hw-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/></svg>
@@ -389,7 +414,7 @@
         </section>
 
         <!-- Regional News Dispatch Block -->
-        <section id="hud-news-block" class="hud-news-block" aria-label="Regional News Dispatch">
+        <section id="hud-news-block" class="hud-news-block hud-card-interactive" aria-label="Regional News Dispatch" tabindex="0" role="button" aria-haspopup="dialog">
           <div class="hud-news-header">
             <div class="hud-news-title-group">
               <svg class="bento-icon news-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8"/><path d="M15 18h-5"/><path d="M10 6h8v4h-8V6Z"/></svg>
@@ -425,12 +450,29 @@
           </button>
         </footer>
       </div>
+
+      <!-- Layer 3.8: Reusable Contextual Card Detail Drawer / Popover -->
+      <div id="hud-card-detail" class="hud-card-detail is-hidden" role="dialog" aria-modal="true" aria-labelledby="hud-detail-title" aria-hidden="true">
+        <div class="hud-detail-header">
+          <div class="hud-detail-title-group">
+            <span id="hud-detail-icon" class="hud-detail-icon" aria-hidden="true"></span>
+            <h3 id="hud-detail-title" class="hud-detail-title">Card Details</h3>
+          </div>
+          <button id="hud-detail-close" class="hud-detail-close-btn" type="button" aria-label="Close detail view">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+        </div>
+        <div id="hud-detail-body" class="hud-detail-body"></div>
+        <div class="hud-detail-footer">
+          <span class="hud-detail-hint">Press <kbd>Esc</kbd> to close</span>
+        </div>
+      </div>
     </aside>
 
     <!-- Layer 3.5: Companion Bento Dock - Media Player & Pomodoro Focus Timer -->
     <aside id="dock-media-focus" class="dock-media-focus top-right" aria-label="Media and Focus Productivity Dock">
       <!-- Left Card: Pomodoro Focus Timer -->
-      <section id="pomodoro-card" class="dock-card pomo-card" aria-label="Pomodoro Focus Timer">
+      <section id="pomodoro-card" class="dock-card pomo-card hud-card-interactive" aria-label="Pomodoro Focus Timer" tabindex="0" role="button" aria-haspopup="dialog">
         <div class="dock-card-header">
           <div class="dock-card-title-group">
             <svg class="bento-icon pomo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -459,7 +501,7 @@
       </section>
 
       <!-- Right Card: Universal Windows SMTC Media Player & Visualizer -->
-      <section id="media-card" class="dock-card media-card" aria-label="Windows Media Player">
+      <section id="media-card" class="dock-card media-card hud-card-interactive" aria-label="Windows Media Player" tabindex="0" role="button" aria-haspopup="dialog">
         <div class="dock-card-header">
           <div class="dock-card-title-group">
             <svg class="bento-icon media-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>

@@ -229,5 +229,70 @@
     };
   };
 
+  function hoursLater(date, h) {
+    return new Date(date.valueOf() + h * 3600000);
+  }
+
+  /**
+   * Calculates moon rise and set times for a given date and location
+   * @param {Date} date
+   * @param {number} lat Latitude
+   * @param {number} lng Longitude
+   * @param {boolean} [inUTC]
+   * @returns {{rise?: Date, set?: Date, alwaysUp?: boolean, alwaysDown?: boolean}}
+   */
+  SunCalc.getMoonTimes = function(date, lat, lng, inUTC) {
+    var t = new Date(date);
+    if (inUTC) t.setUTCHours(0, 0, 0, 0);
+    else t.setHours(0, 0, 0, 0);
+
+    var hc = 0.133 * rad,
+        h0 = SunCalc.getMoonPosition(t, lat, lng).altitude - hc,
+        h1, h2, rise, set, a, b, xe, ye, d, roots, x1, x2, dx;
+
+    // Go in 2-hour increments, parabolic interpolation between chunks
+    for (var i = 1; i <= 24; i += 2) {
+      h1 = SunCalc.getMoonPosition(hoursLater(t, i), lat, lng).altitude - hc;
+      h2 = SunCalc.getMoonPosition(hoursLater(t, i + 1), lat, lng).altitude - hc;
+
+      a = (h0 + h2) / 2 - h1;
+      b = (h2 - h0) / 2;
+      xe = -b / (2 * a);
+      ye = (a * xe + b) * xe + h1;
+      d = b * b - 4 * a * h1;
+      roots = 0;
+
+      if (d >= 0) {
+        dx = Math.sqrt(d) / (Math.abs(a) * 2);
+        x1 = xe - dx;
+        x2 = xe + dx;
+        if (Math.abs(x1) <= 1) roots++;
+        if (Math.abs(x2) <= 1) roots++;
+        if (x1 < -1) x1 = x2;
+      }
+
+      if (roots === 1) {
+        if (h0 < 0) rise = i + x1;
+        else set = i + x1;
+      } else if (roots === 2) {
+        rise = i + (ye < 0 ? x2 : x1);
+        set = i + (ye < 0 ? x1 : x2);
+      }
+
+      if (rise && set) break;
+
+      h0 = h2;
+    }
+
+    var result = {};
+
+    if (rise) result.rise = hoursLater(t, rise);
+    if (set) result.set = hoursLater(t, set);
+
+    if (!rise && !set) result[ye > 0 ? 'alwaysUp' : 'alwaysDown'] = true;
+
+    return result;
+  };
+
   global.SunCalc = SunCalc;
 })(typeof window !== 'undefined' ? window : this);
