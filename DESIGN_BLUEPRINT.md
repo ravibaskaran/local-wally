@@ -14,7 +14,7 @@
 4. **Resilient Network Ingestion**: Multi-tier zero-configuration geolocation (HTML5 GPS with 4s timeout $\to$ silent IP lookup $\to$ hardcoded astronomical fallback) feeding keyless Open-Meteo weather and AQI endpoints.
 5. **Caching Firewall**: Persistent client-side cache firewall with a configurable 5 to 30-minute Time-To-Live (TTL), strictly guarding against API rate-limiting, redundant network egress, and laptop battery drain.
 6. **Quiescent Host Lifecycle Parking**: Seamless Lively Wallpaper host IPC integration halts the animation loop (`cancelAnimationFrame`), suspends background tickers, and sleeps the visualizer/Pomodoro canvas whenever occluded, minimized, or when full-screen applications/games are active, bringing application-level JavaScript load to a complete standstill (~0% CPU).
-7. **Hardware Telemetry HUD & Text-Track Sparklines**: Direct host telemetry hook via Lively `--system-information` (`livelySystemInformation`), rendering rolling CPU, GPU 3D, RAM (used/total & %), and storage charts with zero-allocation Unicode sparklines (` ▂▃▄▅▆▇█`) and an automatic 10-second preview fallback ticker.
+7. **Hardware Telemetry HUD & SVG Sparklines**: Direct host telemetry hook via Lively `--system-information` (`livelySystemInformation`), rendering rolling CPU, GPU 3D, RAM (used/total & %), storage, and network throughput charts with zero-allocation hardware-accelerated SVG vector sparklines (`<svg viewBox="0 0 80 20">`) and an automatic fallback simulator when previewed outside Lively.
 8. **Zero-Key Regional News Feed Dispatch**: Proximity-targeted Google News RSS ingestion via CORS gateways and native browser XML `DOMParser()`, normalized, cached inside the 15-minute firewall, and rotated smoothly every 7 seconds with CSS opacity transitions.
 9. **Universal Windows Media SMTC Canvas & 60 FPS Visualizer**: Integrates native `livelyCurrentTrack(data)` and 60 FPS `livelyAudioListener(audioArray)` to extract live track/artist/artwork and render a 32-band downsampled frequency spectrum with automatic canvas clearing and sleep parking when silent.
 10. **Performant Pomodoro Countdown HUD**: Lightweight offline JavaScript interval state timer with native Canvas 2D radial countdown arc vector rendering and direct background mouse toggles (zero page reloads).
@@ -94,7 +94,7 @@
 | `js/particles.js` | Particle Simulation | Struct-of-Arrays | WebGL GPU profiling, Float32Array particle pools, ring-buffer splash simulation, batched draw calls, configured particle pool limits. |
 | `js/sky.js` | Celestial Gradient | Interpolation | SunCalc astronomical calculations, solar altitude gradient interpolation, celestial disc placement. |
 | `js/suncalc.js` | Astronomical Engine | Pure Math | Solar/lunar position, ephemeris times, and lunar illumination calculation library. |
-| `js/app.js` | Central Orchestrator | State Machine | 60 FPS `requestAnimationFrame` loop, Bento Grid DOM updates, hardware sparkline text tracks, news carousel, ephemeris syncing, config parameter binding. |
+| `js/app.js` | Central Orchestrator | State Machine | 60 FPS `requestAnimationFrame` loop, Bento Grid DOM updates, hardware SVG sparklines, news carousel, ephemeris syncing, config parameter binding. |
 
 ---
 
@@ -1000,6 +1000,34 @@ Following independent regression testing across simulated and live WebView2 envi
 5. **Visualizer Spectrum Zeroing on Sleep**: Updated `MediaVisualizerEngine.prototype.sleep()` to zero out all 32 bands in `rawSpectrum` and `dampedSpectrum` Float32Arrays, eliminating residual bar height flashes when the visualizer wakes up.
 6. **Paused SMTC Media Track Metadata Recovery**: Buffered Windows SMTC `livelyCurrentTrack` payloads received during host pause into `pendingTrack`. Upon unpausing, the buffered track is dispatched to `MediaVisualizerEngine.handleTrackUpdate()`, ensuring media cards never remain out-of-sync after returning from a maximized application.
 7. **Canonical Cache Snapshot Regression Testing**: Corrected `test_audit_hardening.js` to assert against the active `LIVELY_HUD_SNAPSHOT` localStorage key rather than obsolete historical key strings.
+
+---
+
+## 25. v0.6.3 Space-Efficient HUD Layout, High-Legibility SVG Vectors & Responsive Architecture
+
+Local Wally v0.6.3 addresses desktop ergonomics, typography hierarchy, and panel whitespace across multi-resolution Windows 11 displays (720p through 4K):
+
+### 25.1 Weather Header & Temperature Proximity Lockup
+- **Problem**: `.hud-temp-block` utilized `justify-content: space-between` inside a ~282px column, pushing the temperature number to the left and condition details to the far right. This created an awkward >110px empty void in the center, visually severing closely-coupled weather metrics.
+- **Architecture Fix**: Converted `.hud-temp-block` to an integrated flex lockup (`display: flex; align-items: center; justify-content: flex-start; gap: 16px;`). `.hud-condition-meta` is left-aligned (`align-items: flex-start; text-align: left;`) immediately adjacent to the 3.1rem tabular temperature value. Long condition strings wrap naturally (`line-height: 1.2; white-space: normal;`) without truncating or overflowing.
+
+### 25.2 High-Legibility SVG Forecast Chart & Tab Vector Scaling
+- **Problem**: The SVG chart's coordinate space (`viewBox="0 0 520 120"`) rendered inside a ~270px wide container (`~0.52x` horizontal scale), reducing 10px value labels and 9px time labels to ~5px physical height. Tab labels like "Precipitation" crammed into 45px slots and truncated.
+- **Architecture Fix**:
+  - **Concise Tab Tokens**: Button text in `index.html` was shortened to high-density tokens (`Temp`, `Feels`, `Precip`, `Wind`, `Humidity`, `AQI`) with full descriptive `title` attributes, allowing tab font size to scale up to `0.72rem` (11.5px) with `font-weight: 600`.
+  - **Scaled SVG Typography**: SVG value labels (`.forecast-val-label`) scaled to 16px font size with 3px high-contrast stroke outlines (`rgba(0, 0, 0, 0.75)` in dark theme, `rgba(255, 255, 255, 0.95)` in light theme). Time labels (`.forecast-time-label`) scaled to 14px with 2.5px stroke outline.
+  - **Headroom Expansion**: Chart container height expanded from 96px to 104px, with value label baseline at `y = ys[i] - 8` and time label baseline at `y = 114`, preventing vector collisions.
+
+### 25.3 Content-Fitting Regional Dispatch with Dynamic Pagination
+- **Problem**: `#hud-news-block` and `.hud-news-body` specified `flex-grow: 1; justify-content: space-between;`, forcing the panel to expand to match Column 1 height even when showing only 1 headline. This left a >70px blank glass void above the footer dots.
+- **Architecture Fix**: Removed artificial `flex-grow: 1;` so `#hud-news-block` derives its height from content. Expanded headline line clamp to 3 lines (`-webkit-line-clamp: 3; line-clamp: 3; font-size: 0.74rem; line-height: 1.35;`). Updated `renderNews()` and `displayNewsItem()` in `js/app.js` to dynamically hide pagination dots when news items $\le 1$ or unavailable, show matching active dots for multi-item feeds, and render a dedicated empty state message.
+
+### 25.4 Balanced Hardware Telemetry Proportions
+- **Problem**: Hardware telemetry rows (`.hw-row`) were excessively compressed (`padding: 2.5px 6px; gap: 2px;`) to fit alongside the artificially stretched news card.
+- **Architecture Fix**: Relaxed row padding to `4px 7px` and gap to `3px` (with `gap: 4px` on `.hw-metrics-container`). This provides comfortable breathing room for CPU, GPU 3D, RAM, Disk, and Network sparklines, balancing the vertical proportions of Column 1 and Column 2 naturally.
+
+### 25.5 Multi-Viewport Responsiveness & Verification
+- Verified across standard 720p (`1280×720`), 1080p (`1920×1080`), 1440p (`2560×1440`), and 4K (`3840×2160`) viewports via headless Chromium/Edge rasterization. Panels remain within viewport bounds with zero clipping, zero overlaps, and 100% desktop icon clearance.
 
 
 

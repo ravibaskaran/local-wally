@@ -969,21 +969,23 @@ html, body {
 /* Main Temperature & Condition Summary */
 .hud-temp-block {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  padding: 2px 0 5px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 16px;
+  padding: 4px 0 8px;
   border-bottom: 1px solid var(--divider-color);
 }
 
 .hud-temp-main {
   display: flex;
   align-items: flex-start;
+  flex-shrink: 0;
 }
 
 .hud-temp-val {
-  font-size: 2.95rem;
+  font-size: 3.1rem;
   font-weight: 200;
-  line-height: 0.95;
+  line-height: 0.92;
   letter-spacing: -0.05em;
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
@@ -1000,8 +1002,10 @@ html, body {
 .hud-condition-meta {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  text-align: right;
+  align-items: flex-start;
+  text-align: left;
+  min-width: 0;
+  flex: 1;
 }
 
 .hud-condition-text {
@@ -1009,10 +1013,11 @@ html, body {
   font-weight: 600;
   color: var(--text-primary);
   line-height: 1.2;
+  white-space: normal;
 }
 
 .hud-feels-like {
-  font-size: 0.725rem;
+  font-size: 0.75rem;
   font-weight: 400;
   color: var(--text-secondary);
   margin-top: 2px;
@@ -1020,9 +1025,9 @@ html, body {
 
 .hud-high-low {
   display: flex;
-  gap: 6px;
-  margin-top: 4px;
-  font-size: 0.725rem;
+  gap: 8px;
+  margin-top: 3px;
+  font-size: 0.75rem;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
@@ -1218,10 +1223,10 @@ html, body {
   flex: 1;
   background: transparent;
   border: none;
-  font-size: 0.58rem;
+  font-size: 0.72rem;
   font-weight: 600;
   color: var(--text-muted);
-  padding: 3px 1.5px;
+  padding: 4px 2px;
   border-radius: 7px;
   cursor: pointer;
   transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
@@ -1236,7 +1241,7 @@ html, body {
 
 .forecast-tab:hover {
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .forecast-tab:focus-visible {
@@ -1245,7 +1250,7 @@ html, body {
 }
 
 .forecast-tab.is-active {
-  background: var(--tag-bg, rgba(255, 255, 255, 0.14));
+  background: var(--tag-bg, rgba(255, 255, 255, 0.16));
   color: var(--text-primary);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
 }
@@ -1275,7 +1280,7 @@ html, body {
   contain: layout paint;
   position: relative;
   width: 100%;
-  height: 96px;
+  height: 104px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1305,24 +1310,28 @@ html, body {
 
 .forecast-val-label {
   font-family: "Segoe UI Variable Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  font-size: 10px;
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 700;
   fill: var(--text-primary);
   text-anchor: middle;
   font-variant-numeric: tabular-nums;
   paint-order: stroke;
-  stroke: rgba(0, 0, 0, 0.5);
-  stroke-width: 2.5px;
+  stroke: rgba(0, 0, 0, 0.75);
+  stroke-width: 3px;
   stroke-linejoin: round;
 }
 
 .forecast-time-label {
   font-family: "Segoe UI Variable Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  font-size: 9px;
-  font-weight: 500;
-  fill: var(--text-muted);
+  font-size: 14px;
+  font-weight: 600;
+  fill: var(--text-secondary);
   text-anchor: middle;
   font-variant-numeric: tabular-nums;
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.65);
+  stroke-width: 2.5px;
+  stroke-linejoin: round;
 }
 
 /* Light Theme Overrides for Forecast Card */
@@ -1360,12 +1369,15 @@ html, body {
 
 #hud.theme-light .forecast-val-label {
   fill: var(--text-primary);
-  stroke: rgba(255, 255, 255, 0.85);
-  stroke-width: 2.5px;
+  stroke: rgba(255, 255, 255, 0.95);
+  stroke-width: 3px;
 }
 
 #hud.theme-light .forecast-time-label {
-  fill: var(--text-muted);
+  fill: var(--text-secondary);
+  stroke: rgba(255, 255, 255, 0.9);
+  stroke-width: 2.5px;
+  paint-order: stroke;
 }
 
 /* Air Quality Index (AQI) Block */
@@ -1502,17 +1514,17 @@ html, body {
 .hw-metrics-container {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 
 .hw-row {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   background: var(--card-bg);
   border: 1px solid var(--card-border);
-  border-radius: 6px;
-  padding: 2.5px 6px;
+  border-radius: 7px;
+  padding: 4px 7px;
   transition: background 0.2s ease, border-color 0.2s ease;
 }
 
@@ -1702,18 +1714,16 @@ html, body {
 /* Regional News Dispatch Block */
 .hud-news-block {
   padding: 4px 0 2px;
-  flex-grow: 1;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
   border-bottom: 1px solid var(--divider-color);
+  gap: 4px;
 }
 
 .hud-news-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 4px;
 }
 
 .hud-news-title-group {
@@ -1731,10 +1741,10 @@ html, body {
 }
 
 .hud-news-source {
-  font-size: 0.6rem;
+  font-size: 0.625rem;
   font-weight: 500;
   color: var(--text-muted);
-  max-width: 105px;
+  max-width: 110px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1744,11 +1754,10 @@ html, body {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
   border-radius: 8px;
-  padding: 6px 8px;
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  flex-grow: 1;
+  gap: 6px;
   transition: background 0.2s ease, border-color 0.2s ease;
 }
 
@@ -1770,23 +1779,24 @@ html, body {
 }
 
 .hud-news-headline {
-  font-size: 0.71rem;
+  font-size: 0.74rem;
   font-weight: 500;
-  line-height: 1.25;
+  line-height: 1.35;
   color: var(--text-primary);
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  min-height: 27px;
+  margin: 0;
+  min-height: auto;
 }
 
 .hud-news-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 3px;
-  padding-top: 3px;
+  padding-top: 4px;
   border-top: 1px solid var(--divider-color);
 }
 

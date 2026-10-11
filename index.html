@@ -99,12 +99,12 @@
         <!-- Google-Style Space-Efficient Multi-Tab SVG Forecast Chart -->
         <section id="hud-forecast-card" class="hud-forecast-card" aria-label="Hourly Forecast Telemetry">
           <div class="forecast-tab-bar" role="tablist" aria-label="Forecast Metrics">
-            <button class="forecast-tab is-active" data-tab="temp" role="tab" aria-selected="true" type="button">Temperature</button>
-            <button class="forecast-tab" data-tab="feels_like" role="tab" aria-selected="false" type="button">Feels Like</button>
-            <button class="forecast-tab" data-tab="precip" role="tab" aria-selected="false" type="button">Precipitation</button>
-            <button class="forecast-tab" data-tab="wind" role="tab" aria-selected="false" type="button">Wind</button>
-            <button class="forecast-tab" data-tab="humidity" role="tab" aria-selected="false" type="button">Humidity</button>
-            <button class="forecast-tab" data-tab="aqi" role="tab" aria-selected="false" type="button">AQI</button>
+            <button class="forecast-tab is-active" data-tab="temp" role="tab" aria-selected="true" type="button" title="Temperature">Temp</button>
+            <button class="forecast-tab" data-tab="feels_like" role="tab" aria-selected="false" type="button" title="Feels Like">Feels</button>
+            <button class="forecast-tab" data-tab="precip" role="tab" aria-selected="false" type="button" title="Precipitation Probability">Precip</button>
+            <button class="forecast-tab" data-tab="wind" role="tab" aria-selected="false" type="button" title="Wind Speed">Wind</button>
+            <button class="forecast-tab" data-tab="humidity" role="tab" aria-selected="false" type="button" title="Relative Humidity">Humidity</button>
+            <button class="forecast-tab" data-tab="aqi" role="tab" aria-selected="false" type="button" title="Air Quality Index">AQI</button>
           </div>
           <div id="forecast-chart-container" class="forecast-chart-container">
             <svg id="forecast-svg" class="forecast-svg" viewBox="0 0 520 120" preserveAspectRatio="none">
@@ -403,7 +403,7 @@
             </a>
             <div class="hud-news-footer">
               <span class="hud-news-indicator-label">Live Dispatch</span>
-              <div id="hud-news-dots" class="hud-news-dots" aria-hidden="true">
+              <div id="hud-news-dots" class="hud-news-dots" aria-hidden="true" style="display: none;">
                 <span class="news-dot is-active"></span>
                 <span class="news-dot"></span>
                 <span class="news-dot"></span>
