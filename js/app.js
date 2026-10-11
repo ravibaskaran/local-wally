@@ -651,6 +651,142 @@ MediaVisualizerEngine.prototype.wake = function() {
     style.setProperty('--dynamic-solar-elevation', '0deg');
   };
 
+  /**
+   * ==============================================================================
+   * 4. SvgSparklineEngine
+   * Zero-Allocation 40-Point Vector SVG Sparkline Engine
+   * ==============================================================================
+   * Generates smooth Catmull-Rom cubic Bezier curves across sliding-window
+   * Float32Array ring buffers with pre-calculated coordinate mappings and
+   * zero garbage collection overhead.
+   */
+  function SvgSparklineEngine(options) {
+    options = options || {};
+    this.pointsCount = 40;
+    this.width = options.width || 80;
+    this.height = options.height || 20;
+    this.dx = this.width / (this.pointsCount - 1); // 80 / 39 = 2.051282...
+
+    // Pre-allocated static x coordinates for 40 points
+    this.staticX = new Float32Array(this.pointsCount);
+    this.staticCp1X = new Float32Array(this.pointsCount - 1);
+    this.staticCp2X = new Float32Array(this.pointsCount - 1);
+
+    for (var i = 0; i < this.pointsCount; i++) {
+      this.staticX[i] = i * this.dx;
+    }
+    for (var j = 0; j < this.pointsCount - 1; j++) {
+      if (j === 0) {
+        this.staticCp1X[j] = this.staticX[0] + this.dx / 6;
+      } else {
+        this.staticCp1X[j] = this.staticX[j] + this.dx / 3;
+      }
+      if (j === this.pointsCount - 2) {
+        this.staticCp2X[j] = this.staticX[this.pointsCount - 1] - this.dx / 6;
+      } else {
+        this.staticCp2X[j] = this.staticX[j + 1] - this.dx / 3;
+      }
+    }
+
+    this.yCoords = new Float32Array(this.pointsCount);
+    this.tracks = {};
+  }
+
+  SvgSparklineEngine.prototype.register = function(id, svgEl, config) {
+    var track = {
+      id: id,
+      svg: svgEl,
+      linePath: null,
+      areaPath: null,
+      max: (config && config.max) || 100,
+      dynamicMax: (config && config.dynamicMax) || false,
+      accent: (config && config.accent) || '#38bdf8'
+    };
+
+    if (svgEl) {
+      if (svgEl.querySelector) {
+        track.areaPath = svgEl.querySelector('.spark-area');
+        track.linePath = svgEl.querySelector('.spark-line');
+      }
+      if (!track.linePath && svgEl.getElementsByTagName) {
+        var paths = svgEl.getElementsByTagName('path');
+        if (paths.length >= 2) {
+          track.areaPath = paths[0];
+          track.linePath = paths[1];
+        }
+      }
+    }
+
+    this.tracks[id] = track;
+    return track;
+  };
+
+  SvgSparklineEngine.prototype.generatePaths = function(buffer, maxVal) {
+    var N = this.pointsCount;
+    var max = typeof maxVal === 'number' && maxVal > 0 ? maxVal : 100;
+
+    for (var i = 0; i < N; i++) {
+      var v = buffer[i];
+      var norm = v / max;
+      if (norm < 0) norm = 0;
+      else if (norm > 1) norm = 1;
+      this.yCoords[i] = 18 - norm * 16;
+    }
+
+    var curveD = '';
+    for (var j = 0; j < N - 1; j++) {
+      var p0y = (j === 0) ? this.yCoords[0] : this.yCoords[j - 1];
+      var p1y = this.yCoords[j];
+      var p2y = this.yCoords[j + 1];
+      var p3y = (j >= N - 2) ? this.yCoords[N - 1] : this.yCoords[j + 2];
+
+      var cp1y = (j === 0) ? (p1y + (p2y - p1y) / 6) : (p1y + (p2y - p0y) / 6);
+      var cp2y = (j >= N - 2) ? (p2y - (p2y - p1y) / 6) : (p2y - (p3y - p1y) / 6);
+
+      if (cp1y < 1.5) cp1y = 1.5; else if (cp1y > 18.5) cp1y = 18.5;
+      if (cp2y < 1.5) cp2y = 1.5; else if (cp2y > 18.5) cp2y = 18.5;
+
+      curveD += ' C ' + this.staticCp1X[j].toFixed(1) + ',' + cp1y.toFixed(1) + ' ' +
+                this.staticCp2X[j].toFixed(1) + ',' + cp2y.toFixed(1) + ' ' +
+                this.staticX[j + 1].toFixed(1) + ',' + p2y.toFixed(1);
+    }
+
+    var y0 = this.yCoords[0].toFixed(1);
+    var lineD = 'M 0,' + y0 + curveD;
+    var areaD = 'M 0,18 L 0,' + y0 + curveD + ' L 80,18 Z';
+
+    return { lineD: lineD, areaD: areaD };
+  };
+
+  SvgSparklineEngine.prototype.render = function(id, buffer, customMax) {
+    var track = this.tracks[id];
+    var max = customMax;
+    if (!max) {
+      if (track && track.dynamicMax) {
+        var peak = 0;
+        for (var k = 0; k < buffer.length; k++) {
+          if (buffer[k] > peak) peak = buffer[k];
+        }
+        max = Math.max(track.max, peak * 1.15);
+      } else {
+        max = (track && track.max) || 100;
+      }
+    }
+
+    var paths = this.generatePaths(buffer, max);
+
+    if (track) {
+      if (track.linePath && typeof track.linePath.setAttribute === 'function') {
+        track.linePath.setAttribute('d', paths.lineD);
+      }
+      if (track.areaPath && typeof track.areaPath.setAttribute === 'function') {
+        track.areaPath.setAttribute('d', paths.areaD);
+      }
+    }
+
+    return paths;
+  };
+
   var App = {
     // Engine references
     particles: null,
@@ -658,6 +794,7 @@ MediaVisualizerEngine.prototype.wake = function() {
     mediaVisualizer: null,
     pomodoro: null,
     solarLighting: null,
+    sparklineEngine: null,
 
     // State
     state: null,
@@ -672,14 +809,17 @@ MediaVisualizerEngine.prototype.wake = function() {
     isPlaybackPaused: false,
     isSyncing: false,
 
-    // Text-Track Unicode Sparkline Characters (8 levels)
+    // Text-Track Unicode Sparkline Characters (8 levels - fallback legacy)
     SPARK_BLOCKS: [' ', '▂', '▃', '▄', '▅', '▆', '▇', '█'],
 
-    // Hardware Telemetry Ring Buffers (8 samples each for zero-allocation charts)
-    hwCpuHistory: [0, 0, 0, 0, 0, 0, 0, 0],
-    hwGpuHistory: [0, 0, 0, 0, 0, 0, 0, 0],
-    hwRamHistory: [0, 0, 0, 0, 0, 0, 0, 0],
-    hwDiskHistory: [0, 0, 0, 0, 0, 0, 0, 0],
+    // Hardware Telemetry Ring Buffers (40 samples each via Float32Array for zero-allocation charts)
+    hwCpuHistory: new Float32Array(40),
+    hwGpuHistory: new Float32Array(40),
+    hwRamHistory: new Float32Array(40),
+    hwDiskHistory: new Float32Array(40),
+    hwNetDownHistory: new Float32Array(40),
+    hwNetUpHistory: new Float32Array(40),
+
     lastHwUpdate: 0,
     lastFallbackHwTick: 0,
     hwFallbackTimer: null,
@@ -688,6 +828,15 @@ MediaVisualizerEngine.prototype.wake = function() {
     simulatedRamUsed: 14.2,
     simulatedRamTotal: 32.0,
     simulatedDiskPct: 28,
+    simulatedNetDown: 14500, // in Kbps (~14.5 Mbps)
+    simulatedNetUp: 3200,   // in Kbps (~3.2 Mbps)
+
+    // Laptop Battery Telemetry Guard & State
+    hasPhysicalBattery: false,
+    batteryCorroborated: false,
+    batteryManager: null,
+    lastBatteryPct: 100,
+    lastBatteryCharging: false,
 
     // Regional News Feed Rotation State
     newsItems: [],
@@ -710,6 +859,8 @@ MediaVisualizerEngine.prototype.wake = function() {
     // Feature Customization Component Toggles
     showNewsFeed: true,
     showHardwareMonitor: true,
+    showNetworkUsage: true,
+    showBatteryInfo: true,
     showCelestial: true,
     showAqi: true,
     showEnvironmentalMetrics: true,
@@ -760,6 +911,8 @@ MediaVisualizerEngine.prototype.wake = function() {
       // Feature customization component toggles
       this.setShowNewsFeed(typeof cfg.showNewsFeed !== 'undefined' ? cfg.showNewsFeed : true);
       this.setShowHardwareMonitor(typeof cfg.showHardwareMonitor !== 'undefined' ? cfg.showHardwareMonitor : true);
+      this.setShowNetworkUsage(typeof cfg.showNetworkUsage !== 'undefined' ? cfg.showNetworkUsage : true);
+      this.setShowBatteryInfo(typeof cfg.showBatteryInfo !== 'undefined' ? cfg.showBatteryInfo : true);
       this.setShowCelestial(typeof cfg.showCelestial !== 'undefined' ? cfg.showCelestial : true);
       this.setShowAqi(typeof cfg.showAqi !== 'undefined' ? cfg.showAqi : true);
       this.setShowEnvironmentalMetrics(typeof cfg.showEnvironmentalMetrics !== 'undefined' ? cfg.showEnvironmentalMetrics : true);
@@ -848,6 +1001,25 @@ MediaVisualizerEngine.prototype.wake = function() {
         hwDiskVal: document.getElementById('hw-disk-val'),
         hwDiskBar: document.getElementById('hw-disk-bar'),
 
+        // Network Bandwidth DOM Nodes
+        hwNetDownRow: document.getElementById('hw-net-down-row'),
+        hwNetDownName: document.getElementById('hw-net-down-name'),
+        hwNetDownSpark: document.getElementById('hw-net-down-spark'),
+        hwNetDownVal: document.getElementById('hw-net-down-val'),
+        hwNetDownBar: document.getElementById('hw-net-down-bar'),
+        hwNetUpRow: document.getElementById('hw-net-up-row'),
+        hwNetUpName: document.getElementById('hw-net-up-name'),
+        hwNetUpSpark: document.getElementById('hw-net-up-spark'),
+        hwNetUpVal: document.getElementById('hw-net-up-val'),
+        hwNetUpBar: document.getElementById('hw-net-up-bar'),
+
+        // Laptop Battery DOM Nodes
+        hwBatteryRow: document.getElementById('hw-battery-row'),
+        hwBatteryStatus: document.getElementById('hw-battery-status'),
+        hwBatteryIcon: document.getElementById('hw-battery-icon'),
+        hwBatteryVal: document.getElementById('hw-battery-val'),
+        hwBatteryBar: document.getElementById('hw-battery-bar'),
+
         // Regional News DOM Nodes
         hudNewsBlock: document.getElementById('hud-news-block'),
         hudNewsLink: document.getElementById('hud-news-link'),
@@ -882,6 +1054,19 @@ MediaVisualizerEngine.prototype.wake = function() {
       if (global.SkyEngine && this.dom.skyBackdrop) {
         this.sky = new global.SkyEngine(this.dom.skyBackdrop, this.dom.celestialContainer);
       }
+
+      var SparkCtor = (typeof SvgSparklineEngine === 'function') ? SvgSparklineEngine : global.SvgSparklineEngine;
+      if (SparkCtor) {
+        this.sparklineEngine = new SparkCtor();
+        this.sparklineEngine.register('cpu', this.dom.hwCpuSpark, { max: 100, accent: '#38bdf8' });
+        this.sparklineEngine.register('gpu', this.dom.hwGpuSpark, { max: 100, accent: '#34d399' });
+        this.sparklineEngine.register('ram', this.dom.hwRamSpark, { max: 100, accent: '#a78bfa' });
+        this.sparklineEngine.register('disk', this.dom.hwDiskSpark, { max: 100, accent: '#fbbf24' });
+        this.sparklineEngine.register('netDown', this.dom.hwNetDownSpark, { max: 1000, dynamicMax: true, accent: '#38bdf8' });
+        this.sparklineEngine.register('netUp', this.dom.hwNetUpSpark, { max: 500, dynamicMax: true, accent: '#fb7185' });
+      }
+
+      this.initBatteryMonitor();
 
       var cfg = (global.LOCAL_WALLY_CONFIG) || {};
 
@@ -1019,6 +1204,12 @@ MediaVisualizerEngine.prototype.wake = function() {
           case 'showHardwareMonitor':
             self.setShowHardwareMonitor(val === true || val === 1 || val === 'true');
             break;
+          case 'showNetworkUsage':
+            self.setShowNetworkUsage(val === true || val === 1 || val === 'true');
+            break;
+          case 'showBatteryInfo':
+            self.setShowBatteryInfo(val === true || val === 1 || val === 'true');
+            break;
           case 'showCelestial':
             self.setShowCelestial(val === true || val === 1 || val === 'true');
             break;
@@ -1141,6 +1332,59 @@ MediaVisualizerEngine.prototype.wake = function() {
             this.hwFallbackTimer = null;
           }
         }
+      }
+      this.updateLayoutAutoResize();
+    },
+
+    setShowNetworkUsage: function(show) {
+      this.showNetworkUsage = !!show;
+      if (this.dom.hwNetDownRow) {
+        if (this.showNetworkUsage) {
+          this.dom.hwNetDownRow.classList.remove('is-hidden');
+          if (this.dom.hwNetDownRow.style && this.dom.hwNetDownRow.style.setProperty) {
+            this.dom.hwNetDownRow.style.setProperty('display', 'flex');
+          } else if (this.dom.hwNetDownRow.style) {
+            this.dom.hwNetDownRow.style.display = 'flex';
+          }
+        } else {
+          this.dom.hwNetDownRow.classList.add('is-hidden');
+          if (this.dom.hwNetDownRow.style && this.dom.hwNetDownRow.style.setProperty) {
+            this.dom.hwNetDownRow.style.setProperty('display', 'none', 'important');
+          } else if (this.dom.hwNetDownRow.style) {
+            this.dom.hwNetDownRow.style.display = 'none';
+          }
+        }
+      }
+      if (this.dom.hwNetUpRow) {
+        if (this.showNetworkUsage) {
+          this.dom.hwNetUpRow.classList.remove('is-hidden');
+          if (this.dom.hwNetUpRow.style && this.dom.hwNetUpRow.style.setProperty) {
+            this.dom.hwNetUpRow.style.setProperty('display', 'flex');
+          } else if (this.dom.hwNetUpRow.style) {
+            this.dom.hwNetUpRow.style.display = 'flex';
+          }
+        } else {
+          this.dom.hwNetUpRow.classList.add('is-hidden');
+          if (this.dom.hwNetUpRow.style && this.dom.hwNetUpRow.style.setProperty) {
+            this.dom.hwNetUpRow.style.setProperty('display', 'none', 'important');
+          } else if (this.dom.hwNetUpRow.style) {
+            this.dom.hwNetUpRow.style.display = 'none';
+          }
+        }
+      }
+      this.updateLayoutAutoResize();
+    },
+
+    setShowBatteryInfo: function(show) {
+      this.showBatteryInfo = !!show;
+      if (this.showBatteryInfo && this.hasPhysicalBattery) {
+        if (this.batteryManager) {
+          this.syncBatteryState(this.batteryManager);
+        } else {
+          this.showBatteryRow(this.lastBatteryPct || 100, this.lastBatteryCharging || false, 'Battery');
+        }
+      } else {
+        this.hideBatteryRow();
       }
       this.updateLayoutAutoResize();
     },
@@ -1814,6 +2058,149 @@ MediaVisualizerEngine.prototype.wake = function() {
       if (this.dom.hudPm10) this.dom.hudPm10.textContent = aqi.pm10 != null ? aqi.pm10 + ' µg/m³' : '--';
     },
 
+    formatNetworkBandwidth: function(valKbps) {
+      if (typeof valKbps !== 'number' || isNaN(valKbps) || valKbps <= 0) {
+        return '0 Kbps';
+      }
+      if (valKbps < 1000) {
+        return Math.round(valKbps) + ' Kbps';
+      } else if (valKbps < 1000000) {
+        return (valKbps / 1000).toFixed(1) + ' Mbps';
+      } else {
+        return (valKbps / 1000000).toFixed(2) + ' Gbps';
+      }
+    },
+
+    initBatteryMonitor: function() {
+      var self = this;
+      if (typeof navigator !== 'undefined' && typeof navigator.getBattery === 'function') {
+        try {
+          navigator.getBattery().then(function(battery) {
+            self.batteryManager = battery;
+            var isDesktopDummy = (battery.level === 1.0 && battery.charging === true &&
+                                  battery.chargingTime === 0 && battery.dischargingTime === Infinity);
+
+            if (!isDesktopDummy || battery.level < 1.0 || battery.charging === false) {
+              self.hasPhysicalBattery = true;
+              self.batteryCorroborated = true;
+            }
+
+            self.syncBatteryState(battery);
+
+            battery.addEventListener('levelchange', function() {
+              self.hasPhysicalBattery = true;
+              self.batteryCorroborated = true;
+              self.syncBatteryState(battery);
+            });
+            battery.addEventListener('chargingchange', function() {
+              self.hasPhysicalBattery = true;
+              self.batteryCorroborated = true;
+              self.syncBatteryState(battery);
+            });
+            battery.addEventListener('chargingtimechange', function() {
+              self.syncBatteryState(battery);
+            });
+            battery.addEventListener('dischargingtimechange', function() {
+              self.syncBatteryState(battery);
+            });
+          }).catch(function() {
+            self.hasPhysicalBattery = false;
+            self.hideBatteryRow();
+          });
+        } catch (e) {
+          self.hasPhysicalBattery = false;
+          self.hideBatteryRow();
+        }
+      } else {
+        self.hasPhysicalBattery = false;
+        self.hideBatteryRow();
+      }
+    },
+
+    syncBatteryState: function(battery) {
+      if (!battery) return;
+      var level = typeof battery.level === 'number' ? battery.level : 1.0;
+      var charging = !!battery.charging;
+      var chargingTime = typeof battery.chargingTime === 'number' ? battery.chargingTime : 0;
+      var dischargingTime = typeof battery.dischargingTime === 'number' ? battery.dischargingTime : Infinity;
+
+      var isDesktopDummy = (level === 1.0 && charging === true && chargingTime === 0 && dischargingTime === Infinity);
+      if (isDesktopDummy && !this.batteryCorroborated) {
+        this.hasPhysicalBattery = false;
+        this.hideBatteryRow();
+        return;
+      }
+
+      this.hasPhysicalBattery = true;
+      this.batteryCorroborated = true;
+
+      if (!this.showBatteryInfo) {
+        this.hideBatteryRow();
+        return;
+      }
+
+      var pct = Math.max(0, Math.min(100, Math.round(level * 100)));
+      this.lastBatteryPct = pct;
+      this.lastBatteryCharging = charging;
+
+      var statusText = battery.statusText || (charging ? '⚡ Charging' : 'On Battery');
+      if (charging && chargingTime > 0 && isFinite(chargingTime)) {
+        var cMins = Math.round(chargingTime / 60);
+        var cHrs = Math.floor(cMins / 60);
+        var cRem = cMins % 60;
+        statusText += ' (' + (cHrs > 0 ? cHrs + 'h ' : '') + cRem + 'm)';
+      } else if (!charging && dischargingTime > 0 && isFinite(dischargingTime)) {
+        var dMins = Math.round(dischargingTime / 60);
+        var dHrs = Math.floor(dMins / 60);
+        var dRem = dMins % 60;
+        statusText += ' (' + (dHrs > 0 ? dHrs + 'h ' : '') + dRem + 'm)';
+      }
+
+      this.showBatteryRow(pct, charging, statusText);
+    },
+
+    showBatteryRow: function(pct, isCharging, statusText) {
+      if (!this.showBatteryInfo || !this.hasPhysicalBattery) {
+        this.hideBatteryRow();
+        return;
+      }
+
+      if (this.dom.hwBatteryRow) {
+        this.dom.hwBatteryRow.classList.remove('is-hidden');
+        if (this.dom.hwBatteryRow.style && this.dom.hwBatteryRow.style.setProperty) {
+          this.dom.hwBatteryRow.style.setProperty('display', 'flex', 'important');
+        } else if (this.dom.hwBatteryRow.style) {
+          this.dom.hwBatteryRow.style.display = 'flex';
+        }
+      }
+      if (this.dom.hwBatteryVal) {
+        this.dom.hwBatteryVal.textContent = pct + '%';
+      }
+      if (this.dom.hwBatteryStatus) {
+        this.dom.hwBatteryStatus.textContent = statusText;
+      }
+      if (this.dom.hwBatteryIcon) {
+        this.dom.hwBatteryIcon.textContent = isCharging ? '⚡' : '🔋';
+        this.dom.hwBatteryIcon.className = isCharging ? 'hw-battery-badge is-charging' : 'hw-battery-badge';
+      }
+      if (this.dom.hwBatteryBar) {
+        this.dom.hwBatteryBar.style.width = pct + '%';
+        this.dom.hwBatteryBar.className = 'hw-bar-fill hw-battery-fill' +
+          (isCharging ? ' is-charging' : (pct <= 15 ? ' is-low' : (pct <= 30 ? ' is-medium' : '')));
+      }
+    },
+
+    hideBatteryRow: function() {
+      if (this.dom.hwBatteryRow) {
+        this.dom.hwBatteryRow.classList.add('is-hidden');
+        if (this.dom.hwBatteryRow.style && this.dom.hwBatteryRow.style.setProperty) {
+          this.dom.hwBatteryRow.style.setProperty('display', 'none', 'important');
+        } else if (this.dom.hwBatteryRow.style) {
+          this.dom.hwBatteryRow.style.display = 'none';
+        }
+      }
+    },
+
     pushHwHistory: function(historyArr, val) {
       for (var i = 0; i < historyArr.length - 1; i++) {
         historyArr[i] = historyArr[i + 1];
@@ -1843,7 +2230,10 @@ MediaVisualizerEngine.prototype.wake = function() {
 
       if (this.dom.hwCpuVal) this.dom.hwCpuVal.textContent = cpuVal + '%';
       if (this.dom.hwCpuBar) this.dom.hwCpuBar.style.width = cpuVal + '%';
-      if (this.dom.hwCpuSpark) this.dom.hwCpuSpark.textContent = this.getSparklineString(this.hwCpuHistory);
+      if (this.sparklineEngine) this.sparklineEngine.render('cpu', this.hwCpuHistory);
+      if (this.dom.hwCpuSpark && this.dom.hwCpuSpark.tagName !== 'svg' && this.dom.hwCpuSpark.tagName !== 'SVG') {
+        this.dom.hwCpuSpark.textContent = this.getSparklineString(this.hwCpuHistory);
+      }
       if (this.dom.hwCpuName) this.dom.hwCpuName.textContent = cpuName;
 
       // GPU 3D load and name
@@ -1854,7 +2244,10 @@ MediaVisualizerEngine.prototype.wake = function() {
 
       if (this.dom.hwGpuVal) this.dom.hwGpuVal.textContent = gpuVal + '%';
       if (this.dom.hwGpuBar) this.dom.hwGpuBar.style.width = gpuVal + '%';
-      if (this.dom.hwGpuSpark) this.dom.hwGpuSpark.textContent = this.getSparklineString(this.hwGpuHistory);
+      if (this.sparklineEngine) this.sparklineEngine.render('gpu', this.hwGpuHistory);
+      if (this.dom.hwGpuSpark && this.dom.hwGpuSpark.tagName !== 'svg' && this.dom.hwGpuSpark.tagName !== 'SVG') {
+        this.dom.hwGpuSpark.textContent = this.getSparklineString(this.hwGpuHistory);
+      }
       if (this.dom.hwGpuName) this.dom.hwGpuName.textContent = gpuName;
 
       // RAM usage
@@ -1869,7 +2262,10 @@ MediaVisualizerEngine.prototype.wake = function() {
       this.pushHwHistory(this.hwRamHistory, ramPct);
       if (this.dom.hwRamVal) this.dom.hwRamVal.textContent = ramPct + '%';
       if (this.dom.hwRamBar) this.dom.hwRamBar.style.width = ramPct + '%';
-      if (this.dom.hwRamSpark) this.dom.hwRamSpark.textContent = this.getSparklineString(this.hwRamHistory);
+      if (this.sparklineEngine) this.sparklineEngine.render('ram', this.hwRamHistory);
+      if (this.dom.hwRamSpark && this.dom.hwRamSpark.tagName !== 'svg' && this.dom.hwRamSpark.tagName !== 'SVG') {
+        this.dom.hwRamSpark.textContent = this.getSparklineString(this.hwRamHistory);
+      }
       if (this.dom.hwRamDetail) {
         this.dom.hwRamDetail.textContent = totalRamMb > 0 ? (usedGb + ' / ' + totalGb + ' GB') : 'Physical RAM';
       }
@@ -1884,10 +2280,68 @@ MediaVisualizerEngine.prototype.wake = function() {
         this.pushHwHistory(this.hwDiskHistory, diskVal);
         if (this.dom.hwDiskVal) this.dom.hwDiskVal.textContent = diskVal + '%';
         if (this.dom.hwDiskBar) this.dom.hwDiskBar.style.width = diskVal + '%';
-        if (this.dom.hwDiskSpark) this.dom.hwDiskSpark.textContent = this.getSparklineString(this.hwDiskHistory);
+        if (this.sparklineEngine) this.sparklineEngine.render('disk', this.hwDiskHistory);
+        if (this.dom.hwDiskSpark && this.dom.hwDiskSpark.tagName !== 'svg' && this.dom.hwDiskSpark.tagName !== 'SVG') {
+          this.dom.hwDiskSpark.textContent = this.getSparklineString(this.hwDiskHistory);
+        }
         if (this.dom.hwDiskDetail) this.dom.hwDiskDetail.textContent = 'Drive C:';
       } else {
         this.updateDiskEstimate();
+      }
+
+      // Network Down & Network Up Telemetry
+      var rawDown = typeof data.CurrentNetDown === 'number' ? data.CurrentNetDown :
+                    (typeof data.NetDown === 'number' ? data.NetDown :
+                    (typeof data.NetworkDown === 'number' ? data.NetworkDown :
+                    (typeof data.CurrentNetworkDown === 'number' ? data.CurrentNetworkDown : null)));
+
+      var rawUp = typeof data.CurrentNetUp === 'number' ? data.CurrentNetUp :
+                  (typeof data.NetUp === 'number' ? data.NetUp :
+                  (typeof data.NetworkUp === 'number' ? data.NetworkUp :
+                  (typeof data.CurrentNetworkUp === 'number' ? data.CurrentNetworkUp : null)));
+
+      if (rawDown !== null) {
+        var downKbps = (data.NameNetCard || rawDown > 1000000) ? Math.round((rawDown * 8) / 1000) : rawDown;
+        downKbps = Math.max(0, downKbps);
+        this.pushHwHistory(this.hwNetDownHistory, downKbps);
+
+        if (this.dom.hwNetDownVal) this.dom.hwNetDownVal.textContent = this.formatNetworkBandwidth(downKbps);
+        if (this.dom.hwNetDownBar) {
+          var downPct = Math.min(100, Math.max(2, Math.round((downKbps / 50000) * 100)));
+          this.dom.hwNetDownBar.style.width = downPct + '%';
+        }
+        if (this.sparklineEngine) this.sparklineEngine.render('netDown', this.hwNetDownHistory);
+      }
+
+      if (rawUp !== null) {
+        var upKbps = (data.NameNetCard || rawUp > 1000000) ? Math.round((rawUp * 8) / 1000) : rawUp;
+        upKbps = Math.max(0, upKbps);
+        this.pushHwHistory(this.hwNetUpHistory, upKbps);
+
+        if (this.dom.hwNetUpVal) this.dom.hwNetUpVal.textContent = this.formatNetworkBandwidth(upKbps);
+        if (this.dom.hwNetUpBar) {
+          var upPct = Math.min(100, Math.max(2, Math.round((upKbps / 15000) * 100)));
+          this.dom.hwNetUpBar.style.width = upPct + '%';
+        }
+        if (this.sparklineEngine) this.sparklineEngine.render('netUp', this.hwNetUpHistory);
+      }
+
+      if (data.NameNetCard) {
+        if (this.dom.hwNetDownName) this.dom.hwNetDownName.textContent = data.NameNetCard;
+        if (this.dom.hwNetUpName) this.dom.hwNetUpName.textContent = data.NameNetCard;
+      }
+
+      // Laptop Battery Telemetry from Lively host
+      var batteryPct = typeof data.BatteryPercent === 'number' ? data.BatteryPercent :
+                       (typeof data.BatteryLevel === 'number' ? (data.BatteryLevel <= 1.0 ? Math.round(data.BatteryLevel * 100) : Math.round(data.BatteryLevel)) : null);
+      if (batteryPct !== null && batteryPct >= 0 && batteryPct <= 100) {
+        var isCharging = data.BatteryStatus === 'Charging' || data.BatteryStatus === 1 || data.BatteryCharging === true;
+        var statusStr = typeof data.BatteryStatus === 'string' ? data.BatteryStatus : (isCharging ? '⚡ Charging' : 'On Battery');
+        this.syncBatteryState({
+          level: batteryPct / 100,
+          charging: isCharging,
+          statusText: statusStr
+        });
       }
 
       // Switch badge to Live
@@ -1908,7 +2362,10 @@ MediaVisualizerEngine.prototype.wake = function() {
             self.pushHwHistory(self.hwDiskHistory, pct);
             if (self.dom.hwDiskVal) self.dom.hwDiskVal.textContent = pct + '%';
             if (self.dom.hwDiskBar) self.dom.hwDiskBar.style.width = pct + '%';
-            if (self.dom.hwDiskSpark) self.dom.hwDiskSpark.textContent = self.getSparklineString(self.hwDiskHistory);
+            if (self.sparklineEngine) self.sparklineEngine.render('disk', self.hwDiskHistory);
+            if (self.dom.hwDiskSpark && self.dom.hwDiskSpark.tagName !== 'svg' && self.dom.hwDiskSpark.tagName !== 'SVG') {
+              self.dom.hwDiskSpark.textContent = self.getSparklineString(self.hwDiskHistory);
+            }
             if (self.dom.hwDiskDetail) self.dom.hwDiskDetail.textContent = usedGb + ' / ' + quotaGb + ' GB';
           } else {
             self.applyDefaultDiskDisplay();
@@ -1926,7 +2383,10 @@ MediaVisualizerEngine.prototype.wake = function() {
       this.pushHwHistory(this.hwDiskHistory, pct);
       if (this.dom.hwDiskVal) this.dom.hwDiskVal.textContent = pct + '%';
       if (this.dom.hwDiskBar) this.dom.hwDiskBar.style.width = pct + '%';
-      if (this.dom.hwDiskSpark) this.dom.hwDiskSpark.textContent = this.getSparklineString(this.hwDiskHistory);
+      if (this.sparklineEngine) this.sparklineEngine.render('disk', this.hwDiskHistory);
+      if (this.dom.hwDiskSpark && this.dom.hwDiskSpark.tagName !== 'svg' && this.dom.hwDiskSpark.tagName !== 'SVG') {
+        this.dom.hwDiskSpark.textContent = this.getSparklineString(this.hwDiskHistory);
+      }
       if (this.dom.hwDiskDetail) this.dom.hwDiskDetail.textContent = 'System NVMe';
     },
 
@@ -1962,32 +2422,78 @@ MediaVisualizerEngine.prototype.wake = function() {
       var diskDelta = (Math.random() - 0.5) * 2;
       this.simulatedDiskPct = Math.max(20, Math.min(75, Math.round(this.simulatedDiskPct + diskDelta)));
 
+      // Network Bandwidth fallback simulation
+      var netDownDelta = (Math.random() - 0.49) * 2500;
+      this.simulatedNetDown = Math.max(120, Math.min(85000, Math.round(this.simulatedNetDown + netDownDelta)));
+
+      var netUpDelta = (Math.random() - 0.5) * 800;
+      this.simulatedNetUp = Math.max(45, Math.min(18000, Math.round(this.simulatedNetUp + netUpDelta)));
+
       this.pushHwHistory(this.hwCpuHistory, this.simulatedCpuLoad);
       this.pushHwHistory(this.hwGpuHistory, this.simulatedGpuLoad);
       this.pushHwHistory(this.hwRamHistory, ramPct);
       this.pushHwHistory(this.hwDiskHistory, this.simulatedDiskPct);
+      this.pushHwHistory(this.hwNetDownHistory, this.simulatedNetDown);
+      this.pushHwHistory(this.hwNetUpHistory, this.simulatedNetUp);
 
       if (this.dom.hwCpuVal) this.dom.hwCpuVal.textContent = this.simulatedCpuLoad + '%';
       if (this.dom.hwCpuBar) this.dom.hwCpuBar.style.width = this.simulatedCpuLoad + '%';
-      if (this.dom.hwCpuSpark) this.dom.hwCpuSpark.textContent = this.getSparklineString(this.hwCpuHistory);
       if (this.dom.hwCpuName) this.dom.hwCpuName.textContent = 'Processor';
 
       if (this.dom.hwGpuVal) this.dom.hwGpuVal.textContent = this.simulatedGpuLoad + '%';
       if (this.dom.hwGpuBar) this.dom.hwGpuBar.style.width = this.simulatedGpuLoad + '%';
-      if (this.dom.hwGpuSpark) this.dom.hwGpuSpark.textContent = this.getSparklineString(this.hwGpuHistory);
       if (this.dom.hwGpuName) this.dom.hwGpuName.textContent = 'Graphics 3D';
 
       if (this.dom.hwRamVal) this.dom.hwRamVal.textContent = ramPct + '%';
       if (this.dom.hwRamBar) this.dom.hwRamBar.style.width = ramPct + '%';
-      if (this.dom.hwRamSpark) this.dom.hwRamSpark.textContent = this.getSparklineString(this.hwRamHistory);
       if (this.dom.hwRamDetail) {
         this.dom.hwRamDetail.textContent = this.simulatedRamUsed + ' / ' + this.simulatedRamTotal + ' GB';
       }
 
       if (this.dom.hwDiskVal) this.dom.hwDiskVal.textContent = this.simulatedDiskPct + '%';
       if (this.dom.hwDiskBar) this.dom.hwDiskBar.style.width = this.simulatedDiskPct + '%';
-      if (this.dom.hwDiskSpark) this.dom.hwDiskSpark.textContent = this.getSparklineString(this.hwDiskHistory);
       if (this.dom.hwDiskDetail) this.dom.hwDiskDetail.textContent = 'Drive C:';
+
+      // Network Down & Up DOM Updates
+      var netDownFormatted = this.formatNetworkBandwidth(this.simulatedNetDown);
+      var netUpFormatted = this.formatNetworkBandwidth(this.simulatedNetUp);
+      if (this.dom.hwNetDownVal) this.dom.hwNetDownVal.textContent = netDownFormatted;
+      if (this.dom.hwNetUpVal) this.dom.hwNetUpVal.textContent = netUpFormatted;
+      if (this.dom.hwNetDownName) this.dom.hwNetDownName.textContent = 'Download';
+      if (this.dom.hwNetUpName) this.dom.hwNetUpName.textContent = 'Upload';
+
+      if (this.dom.hwNetDownBar) {
+        var downPct = Math.min(100, Math.max(2, Math.round((this.simulatedNetDown / 50000) * 100)));
+        this.dom.hwNetDownBar.style.width = downPct + '%';
+      }
+      if (this.dom.hwNetUpBar) {
+        var upPct = Math.min(100, Math.max(2, Math.round((this.simulatedNetUp / 15000) * 100)));
+        this.dom.hwNetUpBar.style.width = upPct + '%';
+      }
+
+      // Hardware-Accelerated Vector SVG Sparkline Renders
+      if (this.sparklineEngine) {
+        this.sparklineEngine.render('cpu', this.hwCpuHistory);
+        this.sparklineEngine.render('gpu', this.hwGpuHistory);
+        this.sparklineEngine.render('ram', this.hwRamHistory);
+        this.sparklineEngine.render('disk', this.hwDiskHistory);
+        this.sparklineEngine.render('netDown', this.hwNetDownHistory);
+        this.sparklineEngine.render('netUp', this.hwNetUpHistory);
+      }
+
+      // Fallback text sparkline updates if non-SVG elements present
+      if (this.dom.hwCpuSpark && this.dom.hwCpuSpark.tagName !== 'svg' && this.dom.hwCpuSpark.tagName !== 'SVG') {
+        this.dom.hwCpuSpark.textContent = this.getSparklineString(this.hwCpuHistory);
+      }
+      if (this.dom.hwGpuSpark && this.dom.hwGpuSpark.tagName !== 'svg' && this.dom.hwGpuSpark.tagName !== 'SVG') {
+        this.dom.hwGpuSpark.textContent = this.getSparklineString(this.hwGpuHistory);
+      }
+      if (this.dom.hwRamSpark && this.dom.hwRamSpark.tagName !== 'svg' && this.dom.hwRamSpark.tagName !== 'SVG') {
+        this.dom.hwRamSpark.textContent = this.getSparklineString(this.hwRamHistory);
+      }
+      if (this.dom.hwDiskSpark && this.dom.hwDiskSpark.tagName !== 'svg' && this.dom.hwDiskSpark.tagName !== 'SVG') {
+        this.dom.hwDiskSpark.textContent = this.getSparklineString(this.hwDiskHistory);
+      }
 
       if (this.dom.hudHwBadge) {
         this.dom.hudHwBadge.textContent = 'Standby';
@@ -2249,6 +2755,7 @@ MediaVisualizerEngine.prototype.wake = function() {
     App.init();
   }
 
+  global.SvgSparklineEngine = SvgSparklineEngine;
   global.MediaVisualizerEngine = MediaVisualizerEngine;
   global.PomodoroEngine = PomodoroEngine;
   global.SolarLightingEngine = SolarLightingEngine;

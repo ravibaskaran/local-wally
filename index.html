@@ -162,14 +162,23 @@
 
           <div class="hw-metrics-container">
             <!-- CPU Row -->
-            <div class="hw-row" title="CPU Utilization & Sparkline Track">
+            <div id="hw-cpu-row" class="hw-row" title="CPU Utilization & Sparkline Track">
               <div class="hw-row-info">
                 <div class="hw-label-col">
                   <span class="hw-tag">CPU</span>
                   <span id="hw-cpu-name" class="hw-device-name">Processor</span>
                 </div>
                 <div class="hw-stats-col">
-                  <span id="hw-cpu-spark" class="hw-sparkline">        </span>
+                  <svg id="hw-cpu-spark" class="hw-sparkline-svg" viewBox="0 0 80 20" preserveAspectRatio="none">
+                    <defs>
+                      <linearGradient id="spark-grad-cpu" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.35"/>
+                        <stop offset="100%" stop-color="#38bdf8" stop-opacity="0.0"/>
+                      </linearGradient>
+                    </defs>
+                    <path id="hw-cpu-spark-area" class="spark-area" fill="url(#spark-grad-cpu)" d="" />
+                    <path id="hw-cpu-spark-line" class="spark-line" fill="none" stroke="#38bdf8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="" />
+                  </svg>
                   <span id="hw-cpu-val" class="hw-pct-val">--%</span>
                 </div>
               </div>
@@ -179,14 +188,23 @@
             </div>
 
             <!-- GPU 3D Row -->
-            <div class="hw-row" title="GPU 3D Engine Utilization">
+            <div id="hw-gpu-row" class="hw-row" title="GPU 3D Engine Utilization">
               <div class="hw-row-info">
                 <div class="hw-label-col">
                   <span class="hw-tag">GPU</span>
                   <span id="hw-gpu-name" class="hw-device-name">Graphics 3D</span>
                 </div>
                 <div class="hw-stats-col">
-                  <span id="hw-gpu-spark" class="hw-sparkline">        </span>
+                  <svg id="hw-gpu-spark" class="hw-sparkline-svg" viewBox="0 0 80 20" preserveAspectRatio="none">
+                    <defs>
+                      <linearGradient id="spark-grad-gpu" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#34d399" stop-opacity="0.35"/>
+                        <stop offset="100%" stop-color="#34d399" stop-opacity="0.0"/>
+                      </linearGradient>
+                    </defs>
+                    <path id="hw-gpu-spark-area" class="spark-area" fill="url(#spark-grad-gpu)" d="" />
+                    <path id="hw-gpu-spark-line" class="spark-line" fill="none" stroke="#34d399" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="" />
+                  </svg>
                   <span id="hw-gpu-val" class="hw-pct-val">--%</span>
                 </div>
               </div>
@@ -196,14 +214,23 @@
             </div>
 
             <!-- RAM Memory Row -->
-            <div class="hw-row" title="Physical Memory Usage">
+            <div id="hw-ram-row" class="hw-row" title="Physical Memory Usage">
               <div class="hw-row-info">
                 <div class="hw-label-col">
                   <span class="hw-tag">RAM</span>
                   <span id="hw-ram-detail" class="hw-device-name">-- / -- GB</span>
                 </div>
                 <div class="hw-stats-col">
-                  <span id="hw-ram-spark" class="hw-sparkline">        </span>
+                  <svg id="hw-ram-spark" class="hw-sparkline-svg" viewBox="0 0 80 20" preserveAspectRatio="none">
+                    <defs>
+                      <linearGradient id="spark-grad-ram" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#a78bfa" stop-opacity="0.35"/>
+                        <stop offset="100%" stop-color="#a78bfa" stop-opacity="0.0"/>
+                      </linearGradient>
+                    </defs>
+                    <path id="hw-ram-spark-area" class="spark-area" fill="url(#spark-grad-ram)" d="" />
+                    <path id="hw-ram-spark-line" class="spark-line" fill="none" stroke="#a78bfa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="" />
+                  </svg>
                   <span id="hw-ram-val" class="hw-pct-val">--%</span>
                 </div>
               </div>
@@ -213,19 +240,97 @@
             </div>
 
             <!-- Disk / Storage Row -->
-            <div class="hw-row" title="Disk Storage Activity & Capacity">
+            <div id="hw-disk-row" class="hw-row" title="Disk Storage Activity & Capacity">
               <div class="hw-row-info">
                 <div class="hw-label-col">
                   <span class="hw-tag">DSK</span>
                   <span id="hw-disk-detail" class="hw-device-name">Storage</span>
                 </div>
                 <div class="hw-stats-col">
-                  <span id="hw-disk-spark" class="hw-sparkline">        </span>
+                  <svg id="hw-disk-spark" class="hw-sparkline-svg" viewBox="0 0 80 20" preserveAspectRatio="none">
+                    <defs>
+                      <linearGradient id="spark-grad-disk" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#fbbf24" stop-opacity="0.35"/>
+                        <stop offset="100%" stop-color="#fbbf24" stop-opacity="0.0"/>
+                      </linearGradient>
+                    </defs>
+                    <path id="hw-disk-spark-area" class="spark-area" fill="url(#spark-grad-disk)" d="" />
+                    <path id="hw-disk-spark-line" class="spark-line" fill="none" stroke="#fbbf24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="" />
+                  </svg>
                   <span id="hw-disk-val" class="hw-pct-val">--%</span>
                 </div>
               </div>
               <div class="hw-bar-track">
                 <div id="hw-disk-bar" class="hw-bar-fill hw-disk-fill" style="width: 0%"></div>
+              </div>
+            </div>
+
+            <!-- Network Down Row -->
+            <div id="hw-net-down-row" class="hw-row" title="Network Download Bandwidth">
+              <div class="hw-row-info">
+                <div class="hw-label-col">
+                  <span class="hw-tag">NET ↓</span>
+                  <span id="hw-net-down-name" class="hw-device-name">Download</span>
+                </div>
+                <div class="hw-stats-col">
+                  <svg id="hw-net-down-spark" class="hw-sparkline-svg" viewBox="0 0 80 20" preserveAspectRatio="none">
+                    <defs>
+                      <linearGradient id="spark-grad-net-down" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.35"/>
+                        <stop offset="100%" stop-color="#38bdf8" stop-opacity="0.0"/>
+                      </linearGradient>
+                    </defs>
+                    <path id="hw-net-down-spark-area" class="spark-area" fill="url(#spark-grad-net-down)" d="" />
+                    <path id="hw-net-down-spark-line" class="spark-line" fill="none" stroke="#38bdf8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="" />
+                  </svg>
+                  <span id="hw-net-down-val" class="hw-pct-val">0 Kbps</span>
+                </div>
+              </div>
+              <div class="hw-bar-track">
+                <div id="hw-net-down-bar" class="hw-bar-fill hw-net-down-fill" style="width: 0%"></div>
+              </div>
+            </div>
+
+            <!-- Network Up Row -->
+            <div id="hw-net-up-row" class="hw-row" title="Network Upload Bandwidth">
+              <div class="hw-row-info">
+                <div class="hw-label-col">
+                  <span class="hw-tag">NET ↑</span>
+                  <span id="hw-net-up-name" class="hw-device-name">Upload</span>
+                </div>
+                <div class="hw-stats-col">
+                  <svg id="hw-net-up-spark" class="hw-sparkline-svg" viewBox="0 0 80 20" preserveAspectRatio="none">
+                    <defs>
+                      <linearGradient id="spark-grad-net-up" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#fb7185" stop-opacity="0.35"/>
+                        <stop offset="100%" stop-color="#fb7185" stop-opacity="0.0"/>
+                      </linearGradient>
+                    </defs>
+                    <path id="hw-net-up-spark-area" class="spark-area" fill="url(#spark-grad-net-up)" d="" />
+                    <path id="hw-net-up-spark-line" class="spark-line" fill="none" stroke="#fb7185" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="" />
+                  </svg>
+                  <span id="hw-net-up-val" class="hw-pct-val">0 Kbps</span>
+                </div>
+              </div>
+              <div class="hw-bar-track">
+                <div id="hw-net-up-bar" class="hw-bar-fill hw-net-up-fill" style="width: 0%"></div>
+              </div>
+            </div>
+
+            <!-- Laptop Battery Row (Auto-guarded: hidden on desktops without battery hardware) -->
+            <div id="hw-battery-row" class="hw-row is-hidden" title="Laptop Battery Telemetry" style="display: none !important;">
+              <div class="hw-row-info">
+                <div class="hw-label-col">
+                  <span class="hw-tag">BAT</span>
+                  <span id="hw-battery-status" class="hw-device-name">Battery</span>
+                </div>
+                <div class="hw-stats-col">
+                  <span id="hw-battery-icon" class="hw-battery-badge" aria-hidden="true">⚡</span>
+                  <span id="hw-battery-val" class="hw-pct-val">--%</span>
+                </div>
+              </div>
+              <div class="hw-bar-track">
+                <div id="hw-battery-bar" class="hw-bar-fill hw-battery-fill" style="width: 0%"></div>
               </div>
             </div>
           </div>

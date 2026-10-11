@@ -222,6 +222,22 @@
     // If BOTH showPomodoro and showMediaPlayer are false, the entire companion dock
     // is cleanly hidden from view.
     // Default: true | Options: true, false
-    showMediaPlayer: true
+    showMediaPlayer: true,
+
+    // --------------------------------------------------------------------------
+    // 27. NETWORK BANDWIDTH USAGE TELEMETRY DISPLAY (NET DOWN & NET UP)
+    // --------------------------------------------------------------------------
+    // Toggles the Download and Upload network bandwidth rows in the hardware monitor.
+    // Includes auto-scaling human-relatable units (Kbps, Mbps, Gbps) and 40-point SVG sparklines.
+    // Default: true | Options: true, false
+    showNetworkUsage: true,
+
+    // --------------------------------------------------------------------------
+    // 28. LAPTOP BATTERY TELEMETRY DISPLAY
+    // --------------------------------------------------------------------------
+    // Toggles the laptop battery telemetry row (percentage, charging state, remaining time).
+    // Automatically guarded: completely hidden on desktop PCs without battery hardware (0% DOM footprint).
+    // Default: true | Options: true, false
+    showBatteryInfo: true
   };
 })(typeof window !== 'undefined' ? window : this);

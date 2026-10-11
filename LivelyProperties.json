@@ -117,5 +117,15 @@
     "type": "checkbox",
     "value": true,
     "text": "Show Media Player & Visualizer"
+  },
+  "showNetworkUsage": {
+    "type": "checkbox",
+    "value": true,
+    "text": "Show Network Bandwidth (Upload/Download)"
+  },
+  "showBatteryInfo": {
+    "type": "checkbox",
+    "value": true,
+    "text": "Show Laptop Battery Telemetry (If Present)"
   }
 }
