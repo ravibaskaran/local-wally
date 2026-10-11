@@ -1068,11 +1068,37 @@ Local Wally v0.6.4 introduces proxy-free regional news ingestion via GDELT DOC 2
 
 ### 26.5 Windows SMTC Host Media Identity & AUMID Specification
 - **Media Source Parsing**: Parses `Source` and `AppId` properties from Windows System Media Transport Controls (`livelyCurrentTrack`) to label players (Spotify, Apple Music, Edge, Chrome, etc.), with neutral `SMTC` fallback when omitted.
-- **Host AUMID Pass-Through**: Documents requirements for Lively Wallpaper host C# code (`GlobalSystemMediaTransportControlsSession.SourceAppUserModelId`) to forward application identifiers directly to WebView2 wallpaper scripts.
 
+---
 
+## 27. v0.7 Targeted Hardening, Correctness & Performance Architecture
 
+### 27.1 Zero-Allocation Scope & Lifecycle Contract
+- **Continuous 60 FPS Hot Loop**: The strict zero-heap-allocation guarantee (`0 new Object()`, `0 Array.push()`, `0 Array.splice()`) applies to continuous per-frame rendering:
+  - `ParticleEngine`: Struct-of-Arrays (SoA) pre-allocated Float32Array buffers (`pX`, `pY`, `pVx`, `pVy`, `pSize`, `pAlpha`, `pAux`, `sX`, `sY`, `sRadius`, etc.) and ring-buffer splashes.
+  - `MediaVisualizerEngine`: Pre-allocated typed arrays (`rawSpectrum`, `dampedSpectrum`, `bandRanges`) and frozen immutable radii constant (`MediaVisualizerEngine.BAR_RADII = Object.freeze([2, 2, 0, 0])`).
+  - `PomodoroEngine`: Static trigonometric canvas arc rendering without intermediate allocations.
+- **Throttled Discrete Cycles**: Higher-level operations perform small, bounded allocations during scheduled discrete passes:
+  - 15-minute background weather/AQI/news JSON parsing and caching.
+  - Throttled 1000ms clock ephemeris updates and 2000ms hardware telemetry ticks.
+  - User-invoked card detail modal opening and theme changes.
 
+### 27.2 Canonical HUD Geometry
+- **Dimensions**: `#hud` enforces `width: 580px; min-height: 395px; height: auto; max-height: calc(100vh - 48px);`.
+- **Secondary Column Collapse**: When both Regional News and Hardware Monitor are hidden, `#hud` collapses from 580px to a single-column layout (`~290px`).
+- **Compact Viewport Adaptations**: Under `@media (max-height: 600px)` and `@media (max-height: 420px)`, typography scales progressively (`1.4rem` / `1.2rem` clock, `2.0rem` / `1.7rem` temp), padding tightens, and `#dock-media-focus` splits horizontally to opposite display edges when `vh < 600px` to prevent vertical collisions across all 9 HUD positions.
 
-
+### 27.3 Data Integrity & Lifecycle Hardening
+- **Stale News Cache Merging**: When background news promises settle, articles are merged into the live cached snapshot (`currentCached.news = newsArticles`) without overwriting newer weather data.
+- **Grounded Air Quality Telemetry**: European AQI never invents fallback readings (no synthetic `20`, `22`, or `Good`). Missing readings propagate as `null` and `Unavailable`, and charts render neutral `--` points.
+- **Credential Redaction**: `ApiService.fetchWithTimeout` sanitizes error logs and timeout rejections, stripping query strings (`?[redacted]`) so OWM appids and WAQI tokens never leak into diagnostics.
+- **Strict Cache Isolation**: `CacheManager.get` rejects untagged legacy cache entries when specific weather or AQI providers are requested.
+- **Browser-Honest MET Norway Routing**: Because browser WebView2 sandboxes cannot send mandatory custom User-Agent headers, `WeatherAdapter['met-norway']` routes cleanly to Open-Meteo with honest diagnostic logging, and unsupported options are removed from the Lively dropdown.
+- **Occluded Audio Visualizer Sleep**: `onAudioData` is gated when the companion dock or media player is hidden, preventing silent background wakeups, and disabling the visualizer clears canvas frames cleanly.
+- **Hidden Document Initialization**: `App.init` checks `document.hidden` and `LivelyBridge.isPaused` on startup, preventing animation loop startup until the wallpaper becomes visible.
+- **Safe Particle Transitions**: Mode changes smoothly lerp velocity and size parameters over a 0.5s transition window without object allocation, and newly activated slots initialize with proper snow parameters on density increases.
+- **Static Scene RAF Parking**: The `requestAnimationFrame` loop completely parks (0% CPU/GPU) when scene is static (no active precipitation, splashes, or audio), waking immediately on audio packets or weather changes, and capping at 60 FPS.
+- **Coalesced Resizing**: Window resize events coalesce via RAF, skip unchanged canvas backing-store resets, and debounce offscreen contrast pixel sampling by 150ms.
+- **Atomic Release Packaging**: `package_release.js` creates a failure-safe `.bak` archive with automatic rollback if replacement fails, preserving existing distribution archives.
+- **Accessible Detail Drawer**: Modal traps keyboard focus (Tab / Shift+Tab), closes on Escape, and restores focus to triggering cards.
 

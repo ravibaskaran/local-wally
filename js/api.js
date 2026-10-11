@@ -268,15 +268,29 @@
     /**
      * Interprets European AQI index into rating & hex color
      */
+    /**
+     * Interprets European AQI index into rating & hex color.
+     * Non-finite or missing AQI strictly returns unavailable state (never fabricated ratings).
+     */
     interpretEuropeanAqi: function(val) {
-      if (typeof val !== 'number') {
-        return { value: 20, category: 'Good', color: '#10b981' };
+      if (typeof val !== 'number' || !Number.isFinite(val)) {
+        return { value: null, category: 'Unavailable', color: '#94a3b8', available: false };
       }
-      if (val <= 20) return { value: Math.round(val), category: 'Good', color: '#10b981' };
-      if (val <= 40) return { value: Math.round(val), category: 'Fair', color: '#3b82f6' };
-      if (val <= 60) return { value: Math.round(val), category: 'Moderate', color: '#f59e0b' };
-      if (val <= 80) return { value: Math.round(val), category: 'Poor', color: '#ef4444' };
-      return { value: Math.round(val), category: 'Very Poor', color: '#8b5cf6' };
+      if (val <= 20) return { value: Math.round(val), category: 'Good', color: '#10b981', available: true };
+      if (val <= 40) return { value: Math.round(val), category: 'Fair', color: '#3b82f6', available: true };
+      if (val <= 60) return { value: Math.round(val), category: 'Moderate', color: '#f59e0b', available: true };
+      if (val <= 80) return { value: Math.round(val), category: 'Poor', color: '#ef4444', available: true };
+      return { value: Math.round(val), category: 'Very Poor', color: '#8b5cf6', available: true };
+    },
+
+    /**
+     * Strips query strings from URLs to prevent API keys or tokens from leaking in error messages and logs.
+     */
+    sanitizeUrl: function(rawUrl) {
+      if (typeof rawUrl !== 'string') return '';
+      var qIdx = rawUrl.indexOf('?');
+      if (qIdx === -1) return rawUrl;
+      return rawUrl.substring(0, qIdx) + '?[redacted]';
     },
 
     /**
@@ -286,6 +300,11 @@
      * and honors caller-provided AbortSignal options.
      */
     fetchWithTimeout: function(url, timeoutMs, options) {
+      var self = this;
+      var safeUrl = (this && typeof this.sanitizeUrl === 'function')
+        ? this.sanitizeUrl(url)
+        : (function(u) { var q = (u || '').indexOf('?'); return q === -1 ? u : u.substring(0, q) + '?[redacted]'; })(url);
+
       return new Promise(function(resolve, reject) {
         options = options || {};
         var timeout = timeoutMs || 5000;
@@ -312,7 +331,7 @@
             try { controller.abort(); } catch (e) {}
           }
           if (!headersResolved) {
-            reject(new Error('Network request timed out: ' + url));
+            reject(new Error('Network request timed out: ' + safeUrl));
           }
         }, timeout);
 
@@ -340,7 +359,7 @@
             if (timedOut) {
               clearTimeout(timer);
               cleanupSignal();
-              reject(new Error('Network request timed out: ' + url));
+              reject(new Error('Network request timed out: ' + safeUrl));
               return;
             }
 
@@ -352,7 +371,7 @@
                   if (timedOut) {
                     clearTimeout(timer);
                     cleanupSignal();
-                    return Promise.reject(new Error('Network request timed out: ' + url));
+                    return Promise.reject(new Error('Network request timed out: ' + safeUrl));
                   }
                   return origMethod()
                     .then(function(data) {
@@ -364,7 +383,7 @@
                       clearTimeout(timer);
                       cleanupSignal();
                       if (timedOut) {
-                        throw new Error('Network request timed out: ' + url);
+                        throw new Error('Network request timed out: ' + safeUrl);
                       }
                       throw err;
                     });
@@ -454,7 +473,8 @@
       var baseHum = (weather && typeof weather.humidity === 'number') ? weather.humidity : 55;
       var baseWind = (weather && typeof weather.windSpeedKm === 'number') ? weather.windSpeedKm : 10.0;
       var basePrecip = (weather && typeof weather.precipitationMm === 'number') ? weather.precipitationMm : 0.0;
-      var baseAqi = (aqi && typeof aqi.europeanAqi === 'number') ? aqi.europeanAqi : 22;
+      var hasValidAqi = (aqi && aqi.available !== false && typeof aqi.europeanAqi === 'number' && Number.isFinite(aqi.europeanAqi));
+      var baseAqi = hasValidAqi ? aqi.europeanAqi : null;
       var cond = (weather && weather.conditionText) || 'Partly Cloudy';
 
       for (var i = 0; i < 8; i++) {
@@ -464,7 +484,7 @@
         var tC = Math.round((baseTemp + offset) * 10) / 10;
         var tF = Math.round(((tC * 9 / 5) + 32) * 10) / 10;
         var windK = Math.round((baseWind + Math.cos(i) * 2.0) * 10) / 10;
-        var aqiVal = Math.max(5, Math.min(100, Math.round(baseAqi + Math.sin(i) * 4)));
+        var aqiVal = hasValidAqi ? Math.max(5, Math.min(100, Math.round(baseAqi + Math.sin(i) * 4))) : null;
         var aqiMeta = this.interpretEuropeanAqi(aqiVal);
 
         pts.push({
@@ -519,7 +539,8 @@
       var baseWindM = safeNum(weather && weather.windSpeedMph, Math.round(baseWindK * 0.621371 * 10) / 10);
       var baseHum = safeNum(weather && weather.humidity, 55);
       var basePrecip = safeNum(weather && weather.precipitationMm, 0.0);
-      var baseAqi = safeNum(aqi && aqi.europeanAqi, 22);
+      var hasValidAqi = (aqi && aqi.available !== false && typeof aqi.europeanAqi === 'number' && Number.isFinite(aqi.europeanAqi));
+      var baseAqi = hasValidAqi ? aqi.europeanAqi : null;
 
       for (var i = 0; i < points.length; i++) {
         var pt = points[i];
@@ -542,15 +563,15 @@
         // Sanitize humidity (bounded [0, 100])
         pt.humidity = Math.max(0, Math.min(100, Math.round(safeNum(pt.humidity, baseHum))));
 
-        // Bind & sanitize AQI
+        // Bind & sanitize AQI (never invent fallback 22 or Good)
         var ptAqiVal = baseAqi;
         if (hourlyAqi) {
           if (Array.isArray(hourlyAqi)) {
             if (hourlyAqi.length >= points.length) {
               var aqiStep = Math.floor(hourlyAqi.length / points.length);
               var aqiIdx = Math.min(i * aqiStep, hourlyAqi.length - 1);
-              if (hourlyAqi[aqiIdx] != null) ptAqiVal = hourlyAqi[aqiIdx];
-            } else if (hourlyAqi[i] != null) {
+              if (hourlyAqi[aqiIdx] != null && Number.isFinite(hourlyAqi[aqiIdx])) ptAqiVal = hourlyAqi[aqiIdx];
+            } else if (hourlyAqi[i] != null && Number.isFinite(hourlyAqi[i])) {
               ptAqiVal = hourlyAqi[i];
             }
           } else if (hourlyAqi.values && Array.isArray(hourlyAqi.values)) {
@@ -559,21 +580,24 @@
             if (hourlyAqi.times && Array.isArray(hourlyAqi.times) && pt.isoTime) {
               for (var t = 0; t < hourlyAqi.times.length; t++) {
                 if (hourlyAqi.times[t] === pt.isoTime || (hourlyAqi.times[t] && pt.isoTime && hourlyAqi.times[t].indexOf(pt.isoTime.substring(0, 13)) === 0)) {
-                  ptAqiVal = valArr[t];
-                  matched = true;
-                  break;
+                  if (valArr[t] != null && Number.isFinite(valArr[t])) {
+                    ptAqiVal = valArr[t];
+                    matched = true;
+                    break;
+                  }
                 }
               }
             }
             if (!matched) {
               var aqiStep2 = Math.floor(valArr.length / points.length);
               var aqiIdx2 = Math.min(i * aqiStep2, valArr.length - 1);
-              if (valArr[aqiIdx2] != null) ptAqiVal = valArr[aqiIdx2];
+              if (valArr[aqiIdx2] != null && Number.isFinite(valArr[aqiIdx2])) ptAqiVal = valArr[aqiIdx2];
             }
           }
         }
-        var safeAqi = Math.max(0, safeNum(ptAqiVal, baseAqi));
-        var meta = this.interpretEuropeanAqi(safeAqi);
+        var meta = (typeof ptAqiVal === 'number' && Number.isFinite(ptAqiVal))
+          ? this.interpretEuropeanAqi(Math.max(0, ptAqiVal))
+          : { value: null, category: 'Unavailable', color: '#94a3b8', available: false };
         pt.aqi = meta.value;
         pt.aqiColor = meta.color;
         pt.aqiCategory = meta.category;
@@ -651,9 +675,9 @@
               windSpeedKm: Math.round(ptWindKm * 10) / 10,
               windSpeedMph: Math.round((ptWindKm * 0.621371) * 10) / 10,
               humidity: Math.round(ptHum),
-              aqi: 20,
-              aqiColor: '#10b981',
-              aqiCategory: 'Good',
+              aqi: null,
+              aqiColor: '#94a3b8',
+              aqiCategory: 'Unavailable',
               conditionText: ApiService.interpretWmoCode(ptWmo).text
             });
           }
@@ -750,9 +774,9 @@
               windSpeedKm: ptWind,
               windSpeedMph: Math.round(ptWind * 0.621371 * 10) / 10,
               humidity: Math.round(ptHum),
-              aqi: 20,
-              aqiColor: '#10b981',
-              aqiCategory: 'Good',
+              aqi: null,
+              aqiColor: '#94a3b8',
+              aqiCategory: 'Unavailable',
               conditionText: ApiService.interpretWmoCode(ptWmo).text
             });
           }
@@ -786,40 +810,8 @@
       },
 
       'met-norway': function(lat, lon, options) {
-        var directUrl = 'https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=' + encodeURIComponent(lat) + '&lon=' + encodeURIComponent(lon);
-        var primaryProxy = (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.primaryCorsProxy) || 'https://api.allorigins.win/raw?url=';
-        var fallbackProxy = (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.fallbackCorsProxy) || 'https://corsproxy.io/?url=';
-
-        function requestMet() {
-          return ApiService.fetchWithTimeout(directUrl, 4000)
-            .then(function(res) {
-              if (!res.ok) throw new Error('HTTP ' + res.status);
-              return res.json();
-            })
-            .catch(function() {
-              return ApiService.fetchWithTimeout(primaryProxy + encodeURIComponent(directUrl), 4500)
-                .then(function(res) {
-                  if (!res.ok) throw new Error('HTTP ' + res.status);
-                  return res.json();
-                })
-                .catch(function() {
-                  return ApiService.fetchWithTimeout(fallbackProxy + encodeURIComponent(directUrl), 4500)
-                    .then(function(res) {
-                      if (!res.ok) throw new Error('HTTP ' + res.status);
-                      return res.json();
-                    });
-                });
-            });
-        }
-
-        return requestMet()
-          .then(function(data) {
-            return ApiService.WeatherAdapter.normalizeMetNorway(data);
-          })
-          .catch(function(err) {
-            console.warn('[ApiService] MET Norway fetch failed, falling back to open-meteo:', err.message);
-            return ApiService.WeatherAdapter['open-meteo'](lat, lon, options);
-          });
+        console.warn('[ApiService] MET Norway direct browser queries require custom User-Agent headers unsupported in browser context; routing cleanly to Open-Meteo.');
+        return ApiService.WeatherAdapter['open-meteo'](lat, lon, options);
       },
 
       normalizeOpenWeatherMap: function(data) {
@@ -920,9 +912,9 @@
               windSpeedKm: ptWind,
               windSpeedMph: Math.round(ptWind * 0.621371 * 10) / 10,
               humidity: Math.round(ptHum),
-              aqi: 20,
-              aqiColor: '#10b981',
-              aqiCategory: 'Good',
+              aqi: null,
+              aqiColor: '#94a3b8',
+              aqiCategory: 'Unavailable',
               conditionText: ApiService.interpretWmoCode(iWmo).text
             });
           }
@@ -1585,12 +1577,18 @@
                 global.CacheManager.set(payload, providerContext);
               }
 
-              // When background news settles, attach to payload, persist, and update UI
+              // When background news settles, attach to payload, persist, and update UI without overwriting newer weather
               newsPromise.then(function(newsArticles) {
                 if (newsArticles && newsArticles.length) {
                   payload.news = newsArticles;
                   if (global.CacheManager) {
-                    global.CacheManager.set(payload, providerContext);
+                    var currentCached = global.CacheManager.get(providerContext);
+                    if (currentCached) {
+                      currentCached.news = newsArticles;
+                      global.CacheManager.set(currentCached, providerContext);
+                    } else {
+                      global.CacheManager.set(payload, providerContext);
+                    }
                   }
                   var appInstance = global.App || global.app;
                   if (appInstance) {

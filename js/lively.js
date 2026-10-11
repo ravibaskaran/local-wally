@@ -9,8 +9,10 @@
 (function(global) {
   'use strict';
 
+  var initialDocHidden = (typeof document !== 'undefined' && document.hidden) ? true : false;
+
   var LivelyBridge = {
-    isPaused: false,
+    isPaused: initialDocHidden,
     listeners: {
       playback: [],
       property: [],
@@ -30,12 +32,18 @@
     },
 
     /**
-     * Registers a callback for playback state changes (pause / resume)
+     * Registers a callback for playback state changes (pause / resume).
+     * Immediately dispatches current paused state to the newly registered subscriber.
      * @param {function(boolean)} cb Called with isPaused flag
      */
     onPlaybackChange: function(cb) {
       if (typeof cb === 'function') {
         this.listeners.playback.push(cb);
+        try {
+          cb(this.isPaused);
+        } catch (e) {
+          console.error('[LivelyBridge] Error in initial playback listener:', e);
+        }
       }
     },
 

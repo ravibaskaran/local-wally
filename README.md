@@ -66,7 +66,7 @@ Most animated wallpapers are notorious resource hogs. They run heavy video loops
 ### 🌦️ Live Local Weather & Air Quality
 - **Accurate Multi-Source Weather**: Choose between three free global weather providers:
   - **Open-Meteo** (Default): Keyless, high-precision global weather models.
-  - **MET Norway / Yr.no**: Keyless European meteorological service.
+  - **MET Norway / Yr.no**: European meteorological service (client-side queries route reliably via Open-Meteo).
   - **OpenWeatherMap**: Keyed integration with automatic free fallbacks.
 - **Air Quality Monitoring**: Real-time European Air Quality Index (AQI) with pollutant levels (PM2.5 / PM10) via Open-Meteo or WAQI ground stations.
 - **Sun & Moon Tracker**: Real-time sunrise, solar noon, and sunset times, plus current moon phase glyphs (🌑 to 🌘) with exact illumination percentages.
@@ -138,7 +138,7 @@ Right-click the wallpaper in your Lively Wallpaper library and choose **Customis
 | Setting | What It Does | Default |
 |---|---|---|
 | **HUD Position** | Move dashboard: Top Right, Top Left, Bottom Right, Bottom Left, Middle Right, Middle Left, Middle Top, Middle Bottom, or Center | Top Right |
-| **Weather Provider** | Choose between Open-Meteo (free), MET Norway (free), or OpenWeatherMap | Open-Meteo |
+| **Weather Provider** | Choose between Open-Meteo (free) or OpenWeatherMap (key optional) | Open-Meteo |
 | **OpenWeatherMap API Key** | Optional personal API key if using OpenWeatherMap | *(Empty)* |
 | **Air Quality Provider** | Choose between Open-Meteo (free) or WAQI ground stations | Open-Meteo |
 | **WAQI API Key / Token** | Optional token if using WAQI air quality | *(Empty)* |
@@ -156,6 +156,7 @@ Right-click the wallpaper in your Lively Wallpaper library and choose **Customis
 | **Show Media Player & Visualizer** | Toggle the Windows music player card and sound visualizer | On |
 | **Pomodoro Focus Duration** | Set focus timer length (5 to 60 minutes) | 25 min |
 | **Pomodoro Break Duration** | Set break timer length (1 to 15 minutes) | 5 min |
+| **Pomodoro Long Break Duration** | Set extended break timer length (5 to 30 minutes) | 15 min |
 | **Enable Audio Visualizer** | Toggle the 32-bar sound visualizer | On |
 | **Dynamic Solar Lighting & Shadows** | Enable realistic daytime sunlight, sunset glow, and shadows | On |
 | **Glass Blur** | Adjust background blur intensity (0px to 40px) | 14px |
@@ -260,6 +261,17 @@ local-wally/
 ---
 
 ## 🛡️ Recent Updates & Quality Improvements
+
+### Version 0.7 — Targeted Hardening, Lifecycle & Performance
+- **Static Scene RAF Parking & 60 FPS Cap**: The 60 FPS animation loop halts completely (0% CPU/GPU load) when the scene is static (no active precipitation, splashes, or audio), waking immediately on music or weather events, and strictly caps frame rates at 60 FPS.
+- **Data Integrity & Stale News Isolation**: Delayed regional news responses merge into active snapshots without overwriting newer weather data. Missing air quality data is never fabricated (strictly displays `--` / `Unavailable`).
+- **Privacy & Security Protection**: All API keys, tokens, and query parameters are automatically redacted (`?[redacted]`) from error logs and timeout rejections.
+- **Occluded Audio Visualizer Sleep**: Sound spectrum processing sleeps immediately when the companion dock or media player is hidden, eliminating wasted CPU cycles.
+- **Responsive Viewport Collision Clearance**: Prevents HUD and media dock collisions on compact laptop displays (< 600px height) across all 9 HUD positions with responsive media queries.
+- **Smooth Particle Dynamics**: Precipitation transitions smoothly lerp velocity and sizing without garbage collection pauses, and newly activated particle slots initialize cleanly on snow density increases.
+- **Coalesced Resizing & Backing-Store Protection**: Window resizing coalesces via requestAnimationFrame, debounces contrast sampling, and avoids unnecessary canvas backing store allocations.
+- **Accessible Detail Drawer**: Modal dialog traps keyboard focus (Tab / Shift+Tab), dismisses cleanly on Escape, and returns focus to the triggering card.
+- **Failure-Safe Release Packaging**: Release packager uses atomic backup (`.bak`) and automatic rollback to prevent corrupted archive distributions.
 
 ### Version 0.6.6 — Night Wallpaper Illumination & Clean Presentation
 - **Night Wallpaper Illumination**: Re-engineered the deep night solar lighting profile to keep background wallpaper photography bright, clear, and visible after dark. Replaced shadow-crushing `multiply` blending with non-destructive `soft-light` (opacity `0.40`), raised night wallpaper baseline brightness to `0.86`, normalized contrast to `1.02`, and eliminated unnatural 185° color hue distortion.

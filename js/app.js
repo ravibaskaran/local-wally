@@ -217,6 +217,19 @@ MediaVisualizerEngine.prototype.sleep = function() {
 MediaVisualizerEngine.prototype.wake = function() {
   this.isSleeping = false;
   this.silenceFrames = 0;
+  var appInstance = global.App || global.app;
+  if (appInstance && typeof appInstance.wakeAnimationLoop === 'function') {
+    appInstance.wakeAnimationLoop();
+  }
+};
+
+MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
+  if (!this.enabled || this.isSleeping) return false;
+  if (this.demoMode > 0) return true;
+  for (var i = 0; i < 32; i++) {
+    if (this.dampedSpectrum[i] > 0.005 || this.rawSpectrum[i] > 0.005) return true;
+  }
+  return false;
 };
 
   MediaVisualizerEngine.prototype.synthesizeDemoAudio = function() {
@@ -1128,7 +1141,13 @@ MediaVisualizerEngine.prototype.wake = function() {
       else if (tab === 'precip') v = p.precipProb != null ? p.precipProb : 0;
       else if (tab === 'wind') v = isF ? p.windSpeedMph : p.windSpeedKm;
       else if (tab === 'humidity') v = p.humidity != null ? p.humidity : 50;
-      else if (tab === 'aqi') v = p.aqi != null ? p.aqi : 20;
+      else if (tab === 'aqi') {
+        if (p.aqi != null && Number.isFinite(p.aqi)) {
+          v = p.aqi;
+        } else {
+          continue;
+        }
+      }
 
       if (typeof v !== 'number' || !Number.isFinite(v)) {
         continue;
@@ -1233,9 +1252,13 @@ MediaVisualizerEngine.prototype.wake = function() {
         if (typeof v !== 'number' || !Number.isFinite(v)) v = 50;
         label = Math.round(v) + '%';
       } else if (tab === 'aqi') {
-        v = p.aqi != null ? p.aqi : 20;
-        if (typeof v !== 'number' || !Number.isFinite(v)) v = 20;
-        label = 'AQI ' + Math.round(v);
+        if (p.aqi != null && Number.isFinite(p.aqi)) {
+          v = p.aqi;
+          label = 'AQI ' + Math.round(v);
+        } else {
+          v = minB;
+          label = '--';
+        }
       }
 
       var norm = (range > 0) ? Math.max(0, Math.min(1, (v - minB) / range)) : 0.5;
@@ -1246,8 +1269,8 @@ MediaVisualizerEngine.prototype.wake = function() {
       ys[i] = Number.isFinite(yVal) ? yVal : yBottom;
 
       var dotColor = colors.dot;
-      if (tab === 'aqi' && p.aqiColor) {
-        dotColor = p.aqiColor;
+      if (tab === 'aqi') {
+        dotColor = (p.aqi != null && p.aqiColor) ? p.aqiColor : '#94a3b8';
       }
 
       // Update dot
@@ -1416,6 +1439,10 @@ MediaVisualizerEngine.prototype.wake = function() {
 
     init: function() {
       console.log('[App] Initializing Local Wally HUD...');
+      var docHidden = (typeof document !== 'undefined' && document.hidden) ? true : false;
+      var livelyPaused = (global.LivelyBridge && global.LivelyBridge.isPaused) ? true : false;
+      this.isPlaybackPaused = docHidden || livelyPaused;
+
       this.cacheDom();
       this.restoreCachedWallpaper();
       this.initEngines();
@@ -1434,8 +1461,12 @@ MediaVisualizerEngine.prototype.wake = function() {
       // Initial data load
       this.loadAtmosphere(false);
 
-      // Start 60 FPS render loop & active timers
-      this.startLoop();
+      // Start 60 FPS render loop & active timers if not paused
+      if (!this.isPlaybackPaused) {
+        this.startLoop();
+      } else {
+        console.log('[App] Initial document hidden or Lively paused; render loop parked.');
+      }
     },
 
     applyInitialConfig: function() {
@@ -1742,15 +1773,29 @@ MediaVisualizerEngine.prototype.wake = function() {
     bindEvents: function() {
       var self = this;
 
-      // Handle window resize
+      // Handle window resize (coalesced via RAF with debounced contrast sampling)
+      var resizeRaf = null;
+      var contrastDebounceTimer = null;
       window.addEventListener('resize', function() {
-        if (self.particles) self.particles.resize();
-        self.updateSky();
-        self.updateGpuDiagnostics();
-        if (self.contrastMode === 'auto' && self.lastLoadedImage) {
-          self.adaptContrastToBackground(self.lastLoadedImage);
-        }
-        self.updateLayoutAutoResize();
+        if (resizeRaf) cancelAnimationFrame(resizeRaf);
+        resizeRaf = requestAnimationFrame(function() {
+          resizeRaf = null;
+          if (self.particles) self.particles.resize();
+          self.updateSky();
+          self.updateGpuDiagnostics();
+          self.updateLayoutAutoResize();
+          self.wakeAnimationLoop();
+
+          if (self.contrastMode === 'auto' && self.lastLoadedImage) {
+            if (contrastDebounceTimer) clearTimeout(contrastDebounceTimer);
+            contrastDebounceTimer = setTimeout(function() {
+              contrastDebounceTimer = null;
+              if (self.contrastMode === 'auto' && self.lastLoadedImage) {
+                self.adaptContrastToBackground(self.lastLoadedImage);
+              }
+            }, 150);
+          }
+        });
       });
 
       // Refresh button click
@@ -1763,6 +1808,26 @@ MediaVisualizerEngine.prototype.wake = function() {
       // Keyboard shortcuts
       window.addEventListener('keydown', function(e) {
         if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) return;
+
+        // Fix 12: Trap Tab focus inside open detail modal
+        if (e.key === 'Tab' && self.isDetailOpen && self.dom.hudCardDetail) {
+          var focusable = self.dom.hudCardDetail.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+          if (focusable && focusable.length > 0) {
+            var firstEl = focusable[0];
+            var lastEl = focusable[focusable.length - 1];
+            if (e.shiftKey) {
+              if (document.activeElement === firstEl || !self.dom.hudCardDetail.contains(document.activeElement)) {
+                e.preventDefault();
+                lastEl.focus();
+              }
+            } else {
+              if (document.activeElement === lastEl || !self.dom.hudCardDetail.contains(document.activeElement)) {
+                e.preventDefault();
+                firstEl.focus();
+              }
+            }
+          }
+        }
 
         if (e.key === 'd' || e.key === 'D') {
           self.toggleDiagnostics();
@@ -1982,6 +2047,9 @@ MediaVisualizerEngine.prototype.wake = function() {
           case 'pomodoroBreakMinutes':
             if (self.pomodoro) self.pomodoro.setDurations(null, typeof val === 'number' ? val : parseInt(val, 10), null);
             break;
+          case 'pomodoroLongBreakMinutes':
+            if (self.pomodoro) self.pomodoro.setDurations(null, null, typeof val === 'number' ? val : parseInt(val, 10));
+            break;
           case 'enableAudioVisualizer':
             if (self.mediaVisualizer) self.mediaVisualizer.setEnabled(!!val);
             break;
@@ -2013,7 +2081,9 @@ MediaVisualizerEngine.prototype.wake = function() {
       // Real-time Audio Spectrum telemetry (128 normalized float bins)
       global.LivelyBridge.onAudioData(function(audioArray) {
         if (self.isPlaybackPaused) return;
-        if (self.mediaVisualizer) {
+        // Fix 6: Gate audio processing when companion dock or media player is hidden
+        if (!self.showMediaFocusDock || !self.showMediaPlayer) return;
+        if (self.mediaVisualizer && self.mediaVisualizer.enabled) {
           self.mediaVisualizer.processAudioData(audioArray);
         }
       });
@@ -2232,7 +2302,7 @@ MediaVisualizerEngine.prototype.wake = function() {
       if (this.dom.mediaCard) {
         if (this.showMediaPlayer) {
           this.dom.mediaCard.classList.remove('is-hidden');
-          if (this.mediaVisualizer && !this.isPlaybackPaused) {
+          if (this.mediaVisualizer && !this.isPlaybackPaused && this.showMediaFocusDock) {
             this.mediaVisualizer.wake();
           }
         } else {
@@ -2324,19 +2394,57 @@ MediaVisualizerEngine.prototype.wake = function() {
           }
         }
 
-        // Dynamically compute companion dock vertical positioning offset
-        if (this.dom.hud) {
+        // Dynamically compute companion dock vertical positioning offset and collision avoidance
+        if (this.dom.hud && this.dom.dockMediaFocus) {
           var hudHeight = this.dom.hud.offsetHeight || 395;
-          var dockHeight = (this.dom.dockMediaFocus && this.dom.dockMediaFocus.offsetHeight) || 124;
+          var dockHeight = this.dom.dockMediaFocus.offsetHeight || 124;
           var offsetGap = 14;
           var vh = (typeof window !== 'undefined' && window.innerHeight) ? window.innerHeight : 1080;
-          var topOffsetNum = 32 + hudHeight + offsetGap;
-          if (topOffsetNum + dockHeight > vh - 10) {
-            topOffsetNum = Math.max(16, vh - 10 - dockHeight);
+          var vw = (typeof window !== 'undefined' && window.innerWidth) ? window.innerWidth : 1920;
+
+          // Check if HUD and companion dock would collide vertically
+          var isShortViewport = (vh < 600);
+          var hudClass = this.dom.hud.className || '';
+          var isRight = hudClass.indexOf('right') !== -1;
+          var isLeft = hudClass.indexOf('left') !== -1;
+
+          if (this.dom.dockMediaFocus.style) {
+            if (isShortViewport && vw >= 700) {
+              // When vertical space is insufficient (<600px), split horizontally if screen is wide enough
+              if (isRight) {
+                this.dom.dockMediaFocus.style.left = '20px';
+                this.dom.dockMediaFocus.style.right = 'auto';
+                this.dom.dockMediaFocus.style.bottom = '16px';
+                this.dom.dockMediaFocus.style.top = 'auto';
+              } else if (isLeft) {
+                this.dom.dockMediaFocus.style.right = '20px';
+                this.dom.dockMediaFocus.style.left = 'auto';
+                this.dom.dockMediaFocus.style.bottom = '16px';
+                this.dom.dockMediaFocus.style.top = 'auto';
+              } else {
+                this.dom.dockMediaFocus.style.left = '';
+                this.dom.dockMediaFocus.style.right = '';
+                this.dom.dockMediaFocus.style.top = '';
+                this.dom.dockMediaFocus.style.bottom = '';
+              }
+            } else {
+              // Reset inline horizontal overrides for standard viewports
+              this.dom.dockMediaFocus.style.left = '';
+              this.dom.dockMediaFocus.style.right = '';
+              this.dom.dockMediaFocus.style.top = '';
+              this.dom.dockMediaFocus.style.bottom = '';
+            }
           }
+
+          var topOffsetNum = 32 + hudHeight + offsetGap;
           var bottomOffsetNum = 32 + hudHeight + offsetGap;
-          if (bottomOffsetNum + dockHeight > vh - 10) {
-            bottomOffsetNum = Math.max(16, vh - 10 - dockHeight);
+          if (!isShortViewport) {
+            if (topOffsetNum + dockHeight > vh - 10) {
+              topOffsetNum = Math.max(16, vh - 10 - dockHeight);
+            }
+            if (bottomOffsetNum + dockHeight > vh - 10) {
+              bottomOffsetNum = Math.max(16, vh - 10 - dockHeight);
+            }
           }
           var topOffset = topOffsetNum + 'px';
           var bottomOffset = bottomOffsetNum + 'px';
@@ -4103,6 +4211,7 @@ MediaVisualizerEngine.prototype.wake = function() {
       if (this.particles) {
         var sunAlt = this.sky ? this.sky.lastAltitude : null;
         this.particles.setWeather(w.category, w.windSpeedKm, w.isDay, sunAlt);
+        this.wakeAnimationLoop();
       }
     },
 
@@ -4111,6 +4220,27 @@ MediaVisualizerEngine.prototype.wake = function() {
       var now = new Date();
       var loc = this.state.location || { latitude: 35.6762, longitude: 139.6503 };
       this.sky.update(now, loc.latitude, loc.longitude);
+    },
+
+    hasActiveAnimation: function() {
+      if (this.particles && typeof this.particles.hasActiveAnimation === 'function' && this.particles.hasActiveAnimation()) {
+        return true;
+      }
+      if (this.mediaVisualizer && typeof this.mediaVisualizer.hasActiveAnimation === 'function' && this.mediaVisualizer.hasActiveAnimation()) {
+        return true;
+      }
+      return false;
+    },
+
+    wakeAnimationLoop: function() {
+      if (this.isPlaybackPaused || !this.isRunning) return;
+      if (!this.animationFrameId) {
+        this.lastFrameTime = performance.now();
+        if (!this._boundLoop) {
+          this._boundLoop = this.loop.bind(this);
+        }
+        this.animationFrameId = requestAnimationFrame(this._boundLoop);
+      }
     },
 
     startLoop: function() {
@@ -4195,9 +4325,19 @@ MediaVisualizerEngine.prototype.wake = function() {
     },
 
     loop: function(currentTime) {
-      if (!this.isRunning) return;
+      if (!this.isRunning || this.isPlaybackPaused) return;
 
-      var dt = (currentTime - this.lastFrameTime) * 0.001; // Seconds
+      var elapsed = currentTime - this.lastFrameTime;
+      // Cap at 60 FPS (skip frames if called faster than ~16ms on 120Hz/144Hz/240Hz monitors)
+      if (elapsed < 16.0) {
+        if (!this._boundLoop) {
+          this._boundLoop = this.loop.bind(this);
+        }
+        this.animationFrameId = requestAnimationFrame(this._boundLoop);
+        return;
+      }
+
+      var dt = elapsed * 0.001; // Seconds
       this.lastFrameTime = currentTime;
 
       // 1. Update & Render Particles (Canvas 2D SoA)
@@ -4226,6 +4366,12 @@ MediaVisualizerEngine.prototype.wake = function() {
           }
           this.updateGpuDiagnostics();
         }
+      }
+
+      // Check if scene has active continuous animations
+      if (!this.hasActiveAnimation()) {
+        this.animationFrameId = null;
+        return; // Park RAF render loop until wakeAnimationLoop() is invoked
       }
 
       // Next frame with zero-allocation pre-bound callback

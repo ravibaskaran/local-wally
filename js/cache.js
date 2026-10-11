@@ -94,10 +94,10 @@
           var cachedWeather = envelope.weatherProvider || (envelope.data && envelope.data.weatherProvider);
           var cachedAqi = envelope.aqiProvider || (envelope.data && envelope.data.aqiProvider);
 
-          if (expectedWeather && cachedWeather && expectedWeather !== cachedWeather) {
+          if (expectedWeather && (!cachedWeather || expectedWeather !== cachedWeather)) {
             return null;
           }
-          if (expectedAqi && cachedAqi && expectedAqi !== cachedAqi) {
+          if (expectedAqi && (!cachedAqi || expectedAqi !== cachedAqi)) {
             return null;
           }
         }

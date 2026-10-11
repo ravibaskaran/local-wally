@@ -98,6 +98,7 @@
     defaultLocation: {
       city: 'Tokyo',
       country: 'Japan',
+      countryCode: 'JP',
       latitude: 35.6762,
       longitude: 139.6503
     },

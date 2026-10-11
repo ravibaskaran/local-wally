@@ -141,6 +141,8 @@
     this.pAlpha = new Float32Array(MAX_PRECIP);
     this.pAux = new Float32Array(MAX_PRECIP); // Snow phase oscillation or rain length
     this.activePrecipCount = 0;
+    this.transitionTime = 0.0;
+    this.isCanvasParkedClean = false;
 
     // Pre-allocated Ring-Buffer for Surface Splashes
     this.sX = new Float32Array(MAX_SPLASHES);
@@ -229,11 +231,18 @@
 
     // Adaptive DPR (1.0 on iGPU / UMA to protect fill-rate; up to 1.5 on dGPU)
     this.dpr = (this.gpuProfile && typeof this.gpuProfile.dpr === 'number') ? this.gpuProfile.dpr : 1.0;
+    var targetW = Math.floor(w * this.dpr);
+    var targetH = Math.floor(h * this.dpr);
+
+    if (this.canvas.width === targetW && this.canvas.height === targetH && this.width === w && this.height === h) {
+      return;
+    }
+
     this.width = w;
     this.height = h;
 
-    this.canvas.width = Math.floor(w * this.dpr);
-    this.canvas.height = Math.floor(h * this.dpr);
+    this.canvas.width = targetW;
+    this.canvas.height = targetH;
 
     if (this.ctx) {
       this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -249,6 +258,7 @@
   ParticleEngine.prototype.setWeather = function(category, windSpeedKm, isDay, sunAltitude) {
     var oldMode = this.mode;
     var oldWind = this.windSpeed;
+    var oldCount = this.activePrecipCount;
 
     this.mode = category || 'CLEAR';
     this.windSpeed = windSpeedKm != null ? windSpeedKm : 10;
@@ -277,34 +287,43 @@
     if (targetCount > MAX_PRECIP) targetCount = MAX_PRECIP;
     this.activePrecipCount = targetCount;
 
+    // Fix 9: Initialize newly activated particle slots on density increase
+    if (targetCount > oldCount) {
+      for (var k = oldCount; k < targetCount; k++) {
+        this.resetPrecipParticle(k, true);
+      }
+    }
+
     // Reconfigure active particle velocities and physics on mode/wind transition
     var modeChanged = (this.mode !== oldMode);
     var windChanged = Math.abs(this.windSpeed - oldWind) > 1.5;
 
-    if (modeChanged || windChanged) {
+    if (modeChanged) {
+      // Fix 13: trigger smooth velocity & parameter interpolation without allocations
+      this.transitionTime = 0.5;
       var isHeavy = (this.mode === 'THUNDERSTORM' || this.mode === 'RAIN');
       var speedMultiplier = isHeavy ? 1.0 : 0.6;
-      for (var i = 0; i < this.activePrecipCount; i++) {
-        if (modeChanged) {
-          if (this.mode === 'SNOW') {
-            this.pVx[i] = (random() - 0.5) * 0.6 + (this.windFactor * 0.4);
-            this.pVy[i] = 0.8 + random() * 1.6;
-            this.pSize[i] = 1.2 + random() * 2.8;
-            this.pAlpha[i] = 0.4 + random() * 0.55;
-            this.pAux[i] = random() * TWO_PI;
-          } else {
-            this.pVx[i] = (this.windFactor * 3.5) + (random() - 0.5) * 0.5;
-            this.pVy[i] = (16.0 + random() * 12.0) * speedMultiplier;
-            this.pSize[i] = 8.0 + random() * 14.0;
-            this.pAlpha[i] = 0.25 + random() * 0.4;
-            this.pAux[i] = 0.0;
-          }
-        } else if (windChanged) {
-          if (this.mode === 'SNOW') {
-            this.pVx[i] = (random() - 0.5) * 0.6 + (this.windFactor * 0.4);
-          } else {
-            this.pVx[i] = (this.windFactor * 3.5) + (random() - 0.5) * 0.5;
-          }
+      for (var pIdx = 0; pIdx < this.activePrecipCount; pIdx++) {
+        if (this.mode === 'SNOW') {
+          this.pVx[pIdx] = (random() - 0.5) * 0.6 + (this.windFactor * 0.4);
+          this.pVy[pIdx] = 0.8 + random() * 1.6;
+          this.pSize[pIdx] = 1.2 + random() * 2.8;
+          this.pAlpha[pIdx] = 0.4 + random() * 0.55;
+          this.pAux[pIdx] = random() * TWO_PI;
+        } else {
+          this.pVx[pIdx] = (this.windFactor * 3.5) + (random() - 0.5) * 0.5;
+          this.pVy[pIdx] = (16.0 + random() * 12.0) * speedMultiplier;
+          this.pSize[pIdx] = 8.0 + random() * 14.0;
+          this.pAlpha[pIdx] = 0.25 + random() * 0.4;
+          this.pAux[pIdx] = 0.0;
+        }
+      }
+    } else if (windChanged) {
+      for (var wIdx = 0; wIdx < this.activePrecipCount; wIdx++) {
+        if (this.mode === 'SNOW') {
+          this.pVx[wIdx] = (random() - 0.5) * 0.6 + (this.windFactor * 0.4);
+        } else {
+          this.pVx[wIdx] = (this.windFactor * 3.5) + (random() - 0.5) * 0.5;
         }
       }
     }
@@ -317,8 +336,40 @@
     var w = this.width;
     var h = this.height;
     var groundY = h * 0.94; // Surface splash horizon
-
     var i;
+
+    // Fix 13: Smooth particle parameter interpolation on mode transitions
+    if (this.transitionTime > 0) {
+      this.transitionTime -= step;
+      if (this.transitionTime < 0) this.transitionTime = 0;
+      var isSnowMode = (this.mode === 'SNOW');
+      var isHeavyPrecip = (this.mode === 'THUNDERSTORM' || this.mode === 'RAIN');
+      var spdMult = isHeavyPrecip ? 1.0 : 0.6;
+      var blend = step * 6.0;
+      if (blend > 0.35) blend = 0.35;
+
+      for (var tIdx = 0; tIdx < this.activePrecipCount; tIdx++) {
+        if (isSnowMode) {
+          var targetVx = (random() - 0.5) * 0.6 + (this.windFactor * 0.4);
+          var targetVy = 0.8 + random() * 1.6;
+          var targetSize = 1.2 + random() * 2.8;
+          var targetAlpha = 0.4 + random() * 0.55;
+          this.pVx[tIdx] += (targetVx - this.pVx[tIdx]) * blend;
+          this.pVy[tIdx] += (targetVy - this.pVy[tIdx]) * blend;
+          this.pSize[tIdx] += (targetSize - this.pSize[tIdx]) * blend;
+          this.pAlpha[tIdx] += (targetAlpha - this.pAlpha[tIdx]) * blend;
+        } else {
+          var targetRainVx = (this.windFactor * 3.5) + (random() - 0.5) * 0.5;
+          var targetRainVy = (16.0 + random() * 12.0) * spdMult;
+          var targetRainSize = 8.0 + random() * 14.0;
+          var targetRainAlpha = 0.25 + random() * 0.4;
+          this.pVx[tIdx] += (targetRainVx - this.pVx[tIdx]) * blend;
+          this.pVy[tIdx] += (targetRainVy - this.pVy[tIdx]) * blend;
+          this.pSize[tIdx] += (targetRainSize - this.pSize[tIdx]) * blend;
+          this.pAlpha[tIdx] += (targetRainAlpha - this.pAlpha[tIdx]) * blend;
+        }
+      }
+    }
 
     // 1. Update Starfield
     if (this.showStars) {
@@ -402,10 +453,30 @@
     }
   };
 
+  ParticleEngine.prototype.hasActiveAnimation = function() {
+    if (this.showStars) return true;
+    if (this.activePrecipCount > 0) return true;
+    if (this.lightningAlpha > 0.005) return true;
+    for (var i = 0; i < MAX_SPLASHES; i++) {
+      if (this.sActive[i] === 1) return true;
+    }
+    return false;
+  };
+
   ParticleEngine.prototype.render = function() {
     var ctx = this.ctx;
     var w = this.width;
     var h = this.height;
+
+    // Fast clear and early return if static scene
+    if (!this.hasActiveAnimation()) {
+      if (!this.isCanvasParkedClean) {
+        ctx.clearRect(0, 0, w, h);
+        this.isCanvasParkedClean = true;
+      }
+      return;
+    }
+    this.isCanvasParkedClean = false;
 
     // Fast clear
     ctx.clearRect(0, 0, w, h);

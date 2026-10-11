@@ -83,6 +83,14 @@
     "step": 1,
     "text": "Pomodoro Break Duration (Minutes)"
   },
+  "pomodoroLongBreakMinutes": {
+    "type": "slider",
+    "value": 15,
+    "min": 5,
+    "max": 30,
+    "step": 1,
+    "text": "Pomodoro Long Break Duration (Minutes)"
+  },
   "enableAudioVisualizer": {
     "type": "checkbox",
     "value": true,
@@ -142,7 +150,7 @@
     "type": "dropdown",
     "value": 0,
     "text": "Weather Telemetry Provider",
-    "items": ["Open-Meteo (Keyless)", "Yr.no / MET Norway (Keyless)", "OpenWeatherMap (Key Optional)"]
+    "items": ["Open-Meteo (Keyless)", "OpenWeatherMap (Key Optional)"]
   },
   "openweathermapApiKey": {
     "type": "textbox",
