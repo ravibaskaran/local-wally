@@ -61,11 +61,27 @@ Incoming wallpapers vary dramatically in tonal range—from dark starry nights t
 ### 📐 Dynamic 1:1 Pixel Native Resolution Matching
 Automatically derives the display's native physical resolution (`screen.width * dpr`, `screen.height * dpr`) and requests resolution-tailored wallpaper imagery (`&w=${width}&h=${height}&fit=crop&q=85`), eliminating texture scaling blur and unnecessary GPU memory consumption.
 
-### 🌦️ Comprehensive Atmospheric & Ephemeris Telemetry
+### 🌦️ Multi-Provider Atmospheric Telemetry & Adapters
+- **Pluggable Multi-Provider Weather Engine**: Switch seamlessly between:
+  - **Open-Meteo (`open-meteo`)** - Default, keyless, high-precision global models.
+  - **MET Norway / Yr.no (`met-norway`)** - Keyless European model with strict User-Agent headers and CORS fallbacks.
+  - **OpenWeatherMap (`openweathermap`)** - Optional user API key with automatic fallback to Open-Meteo on missing or invalid keys.
+- **Multi-Provider Air Quality Engine**:
+  - **Open-Meteo AQI (`open-meteo`)** - Keyless European AQI & PM2.5/PM10 timeseries.
+  - **WAQI / AQICN (`waqi`)** - Metropolitan ground-station sensors with automatic US EPA-to-European AQI index conversion.
 - **Zero-Config Geolocation**: HTML5 GPS with a 4s timeout $\to$ silent IP geolocation fallback $\to$ offline astronomical default.
-- **Open-Meteo Weather Forecast**: Current temperature, apparent "feels like", daily high/low, WMO weather interpretation, relative humidity, wind speed, and precipitation.
-- **European Air Quality Index (AQI)**: Continuous AQI level rating, chromatic status badge, gradient progress bar, and PM2.5 / PM10 density readouts.
 - **SunCalc Ephemeris**: Real-time solar altitudes (Sunrise, Solar Noon, Sunset) and lunar phase calculation with moon glyphs (🌑 to 🌘) and exact illumination percentages.
+
+### 📊 Google-Style Space-Efficient Multi-Tab SVG Forecast Chart HUD
+- **Zero-Reflow Layout Containment**: Strict `contain: layout paint;` containment guarantees that forecast updates and tab toggling never trigger layout reflows across the Bento grid.
+- **5 Switchable Telemetry Tabs**:
+  - 🌡️ **Temperature (`temp`)**: Amber gradient curve with high/low bounds padding.
+  - 🌧️ **Precipitation (`precip`)**: Sky blue probability curve (0–100%).
+  - 💨 **Wind Speed (`wind`)**: Emerald wind velocity trajectory in km/h or mph.
+  - 💧 **Humidity (`humidity`)**: Purple relative humidity curve (0–100%).
+  - 🍃 **Air Quality (`aqi`)**: Color-coded categorical risk points (Good, Fair, Moderate, Poor, Very Poor).
+- **Catmull-Rom Cubic Bezier Splines**: Smooth vector paths rendered in an inline `<svg viewBox="0 0 520 120">` with clamped control points preventing clipping.
+- **Zero-GC Pre-Allocated Element Pool**: Dots, labels, and axes are pre-allocated in SVG object pools, mutating existing attributes on tab transitions with **0.0 bytes GC allocation**.
 
 ### 💻 Host Hardware Telemetry & High-Fidelity SVG Sparklines
 - **Minimalist Hardware-Accelerated SVG Sparklines**: Replaces unicode text-track sparklines with crisp 1.5px anti-aliased inline vector paths (`<svg viewBox="0 0 80 20">`) featuring smooth cubic Bezier / Catmull-Rom interpolation across a 40-point ring buffer (`Float32Array(40)`) and subtle vertical gradient area fills. Operates at **0.0% noticeable CPU overhead** with zero memory allocations during rendering.
@@ -102,6 +118,12 @@ Automatically derives the display's native physical resolution (`screen.width * 
 3. **Customize via Lively Settings**:
    - Right-click the wallpaper in Lively and choose **Customise Wallpaper**:
      - **HUD Position**: Top Right (default), Top Left, Bottom Right, Bottom Left.
+     - **Weather Provider**: Open-Meteo (default, keyless), MET Norway (keyless), OpenWeatherMap (keyed).
+     - **OpenWeatherMap API Key**: Optional API key for OpenWeatherMap integration.
+     - **Air Quality Provider**: Open-Meteo (default, European AQI), WAQI (World Air Quality Index, keyed).
+     - **WAQI API Key / Token**: Optional token for WAQI integration.
+     - **Show 24-Hour Forecast Chart**: Toggles the Google-style multi-tab SVG forecast chart HUD.
+     - **Default Forecast Tab**: Temperature, Precipitation, Wind, Humidity, or Air Quality.
      - **Show Regional News Feed**: Toggles the regional Google News RSS block.
      - **Show Hardware Monitor**: Toggles CPU/GPU/RAM/Disk telemetry monitor.
      - **Show Network Bandwidth (Upload/Download)**: Toggles live network telemetry rows.
@@ -175,6 +197,12 @@ window.LOCAL_WALLY_CONFIG = {
   showCelestial: true,                  // Toggles SunCalc Solar & Lunar Ephemeris card
   showAqi: true,                        // Toggles European Air Quality Index (AQI) card
   showEnvironmentalMetrics: true,       // Toggles Humidity/Wind/Precip 3-card row
+  weatherProvider: 'open-meteo',        // 'open-meteo', 'met-norway', 'openweathermap'
+  openweathermapApiKey: '',             // Optional API key for OpenWeatherMap
+  aqiProvider: 'open-meteo',            // 'open-meteo', 'waqi'
+  waqiApiKey: '',                       // Optional API token for WAQI (AQICN)
+  showForecastChart: true,              // Toggles 24-hour SVG forecast chart HUD
+  defaultForecastTab: 'temp',           // 'temp', 'precip', 'wind', 'humidity', 'aqi'
   showMediaFocusDock: true,             // Companion Bento Dock toggle
   showPomodoro: true,                   // Toggles Pomodoro Focus Timer card
   showMediaPlayer: true,                // Toggles Windows SMTC Media Player card

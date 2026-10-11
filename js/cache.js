@@ -229,6 +229,37 @@
           pm2_5: 8.4,
           pm10: 14.2
         },
+        hourlyForecast: (function() {
+          var pts = [];
+          var bTemp = 21.5;
+          for (var f = 0; f < 8; f++) {
+            var h = (hours + f * 3) % 24;
+            var lbl = (f === 0) ? 'Now' : ((h % 12 || 12) + (h >= 12 ? ' PM' : ' AM'));
+            var tStr = (h < 10 ? '0' : '') + h + ':00';
+            var offset = Math.sin((h - 8) / 24 * Math.PI * 2) * 3.5;
+            var tC = Math.round((bTemp + offset) * 10) / 10;
+            var tF = Math.round(((tC * 9 / 5) + 32) * 10) / 10;
+            pts.push({
+              time: tStr,
+              label: lbl,
+              hour: h,
+              tempC: tC,
+              tempF: tF,
+              apparentC: Math.round((tC - 0.5) * 10) / 10,
+              apparentF: Math.round((((tC - 0.5) * 9 / 5) + 32) * 10) / 10,
+              precipProb: Math.round(Math.max(0, 10 + Math.sin(f) * 8)),
+              precipMm: 0.0,
+              windSpeedKm: Math.round((12.4 + Math.cos(f) * 2.5) * 10) / 10,
+              windSpeedMph: Math.round(((12.4 + Math.cos(f) * 2.5) * 0.621371) * 10) / 10,
+              humidity: Math.round(58 - offset * 2),
+              aqi: 22,
+              aqiColor: '#10b981',
+              aqiCategory: 'Good',
+              conditionText: 'Mainly Clear'
+            });
+          }
+          return pts;
+        })(),
         news: [
           { title: 'Global Tech & Atmospheric Science Summit Convenes', source: 'Reuters', link: 'https://news.google.com' },
           { title: 'Local Clean Energy Grid Expansion Begins Ahead of Schedule', source: 'Associated Press', link: 'https://news.google.com' },

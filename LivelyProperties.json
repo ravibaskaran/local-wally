@@ -127,5 +127,38 @@
     "type": "checkbox",
     "value": true,
     "text": "Show Laptop Battery Telemetry (If Present)"
+  },
+  "weatherProvider": {
+    "type": "dropdown",
+    "value": 0,
+    "text": "Weather Telemetry Provider",
+    "items": ["Open-Meteo (Keyless)", "Yr.no / MET Norway (Keyless)", "OpenWeatherMap (Key Optional)"]
+  },
+  "openweathermapApiKey": {
+    "type": "textbox",
+    "value": "",
+    "text": "OpenWeatherMap API Key (Optional)"
+  },
+  "aqiProvider": {
+    "type": "dropdown",
+    "value": 0,
+    "text": "Air Quality Provider",
+    "items": ["Open-Meteo AQI (Keyless)", "WAQI / AQICN (Token Optional)"]
+  },
+  "waqiApiKey": {
+    "type": "textbox",
+    "value": "",
+    "text": "WAQI API Token (Optional)"
+  },
+  "showForecastChart": {
+    "type": "checkbox",
+    "value": true,
+    "text": "Show Forecast Chart"
+  },
+  "defaultForecastTab": {
+    "type": "dropdown",
+    "value": 0,
+    "text": "Default Forecast Tab",
+    "items": ["Temperature", "Precipitation", "Wind", "Humidity", "AQI"]
   }
 }

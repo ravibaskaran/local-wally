@@ -883,6 +883,306 @@ MediaVisualizerEngine.prototype.wake = function() {
     return paths;
   };
 
+  /**
+   * ==============================================================================
+   * 5. SvgForecastChartEngine
+   * Google-Style Space-Efficient Multi-Tab SVG Forecast Chart Engine
+   * ==============================================================================
+   * Features:
+   *  - Zero-reflow layout containment (contain: layout paint;)
+   *  - Catmull-Rom cubic Bezier vector curves across 24-hour forecast telemetry
+   *  - 5 switchable metric modes: Temperature, Precipitation, Wind, Humidity, AQI
+   *  - Zero GC allocation: pre-allocates and mutates SVG element pools
+   */
+  function SvgForecastChartEngine(options) {
+    options = options || {};
+    this.dom = {
+      card: options.card,
+      tabBar: options.tabBar,
+      tabs: options.tabs || [],
+      svg: options.svg,
+      linePath: options.linePath,
+      areaPath: options.areaPath,
+      pointsGroup: options.pointsGroup,
+      xAxisGroup: options.xAxisGroup
+    };
+
+    this.tempUnit = options.tempUnit || 'C';
+    this.activeTab = options.defaultTab || 'temp';
+    this.points = [];
+
+    // Pre-allocated DOM element caches
+    this.dotPool = [];
+    this.valLabelPool = [];
+    this.timeLabelPool = [];
+
+    this.colorMap = {
+      temp: { stroke: '#f59e0b', fill: 'url(#forecast-grad-temp)', dot: '#fbbf24' },
+      precip: { stroke: '#38bdf8', fill: 'url(#forecast-grad-precip)', dot: '#38bdf8' },
+      wind: { stroke: '#34d399', fill: 'url(#forecast-grad-wind)', dot: '#34d399' },
+      humidity: { stroke: '#a78bfa', fill: 'url(#forecast-grad-humidity)', dot: '#c084fc' },
+      aqi: { stroke: '#10b981', fill: 'url(#forecast-grad-aqi)', dot: '#10b981' }
+    };
+
+    this.init();
+  }
+
+  SvgForecastChartEngine.prototype.init = function() {
+    var self = this;
+    if (this.dom.tabs && this.dom.tabs.length) {
+      for (var i = 0; i < this.dom.tabs.length; i++) {
+        (function(btn) {
+          btn.addEventListener('click', function() {
+            var tab = btn.getAttribute('data-tab') || 'temp';
+            self.setTab(tab);
+          });
+        })(this.dom.tabs[i]);
+      }
+    }
+  };
+
+  SvgForecastChartEngine.prototype.setTab = function(tabName) {
+    if (!tabName) return;
+    this.activeTab = tabName;
+    if (this.dom.tabs && this.dom.tabs.length) {
+      for (var i = 0; i < this.dom.tabs.length; i++) {
+        var btn = this.dom.tabs[i];
+        var isThis = (btn.getAttribute('data-tab') === tabName);
+        if (isThis) {
+          btn.classList.add('is-active');
+          btn.setAttribute('aria-selected', 'true');
+        } else {
+          btn.classList.remove('is-active');
+          btn.setAttribute('aria-selected', 'false');
+        }
+      }
+    }
+    this.render();
+  };
+
+  SvgForecastChartEngine.prototype.setTempUnit = function(unit) {
+    this.tempUnit = (unit === 'F') ? 'F' : 'C';
+    this.render();
+  };
+
+  SvgForecastChartEngine.prototype.setForecast = function(points) {
+    this.points = Array.isArray(points) ? points : [];
+    this.render();
+  };
+
+  SvgForecastChartEngine.prototype.ensureElementPool = function(count) {
+    var svgNS = 'http://www.w3.org/2000/svg';
+    if (!this.dom.pointsGroup || !this.dom.xAxisGroup) return;
+
+    // Dots
+    while (this.dotPool.length < count) {
+      var dot = document.createElementNS(svgNS, 'circle');
+      dot.setAttribute('r', '3');
+      dot.setAttribute('class', 'forecast-dot');
+      this.dom.pointsGroup.appendChild(dot);
+      this.dotPool.push(dot);
+    }
+    // Value labels
+    while (this.valLabelPool.length < count) {
+      var valText = document.createElementNS(svgNS, 'text');
+      valText.setAttribute('class', 'forecast-val-label');
+      this.dom.pointsGroup.appendChild(valText);
+      this.valLabelPool.push(valText);
+    }
+    // Time labels
+    while (this.timeLabelPool.length < count) {
+      var timeText = document.createElementNS(svgNS, 'text');
+      timeText.setAttribute('class', 'forecast-time-label');
+      this.dom.xAxisGroup.appendChild(timeText);
+      this.timeLabelPool.push(timeText);
+    }
+
+    // Toggle visibility for pool items beyond count
+    for (var i = 0; i < this.dotPool.length; i++) {
+      var vis = (i < count) ? 'visible' : 'hidden';
+      this.dotPool[i].style.visibility = vis;
+      this.valLabelPool[i].style.visibility = vis;
+      this.timeLabelPool[i].style.visibility = vis;
+    }
+  };
+
+  SvgForecastChartEngine.prototype.computeBounds = function(tab) {
+    var pts = this.points;
+    var minVal = Infinity;
+    var maxVal = -Infinity;
+    var isF = (this.tempUnit === 'F');
+
+    for (var i = 0; i < pts.length; i++) {
+      var p = pts[i];
+      var v = 0;
+      if (tab === 'temp') v = isF ? p.tempF : p.tempC;
+      else if (tab === 'precip') v = p.precipProb != null ? p.precipProb : 0;
+      else if (tab === 'wind') v = isF ? p.windSpeedMph : p.windSpeedKm;
+      else if (tab === 'humidity') v = p.humidity != null ? p.humidity : 50;
+      else if (tab === 'aqi') v = p.aqi != null ? p.aqi : 20;
+
+      if (v < minVal) minVal = v;
+      if (v > maxVal) maxVal = v;
+    }
+
+    if (minVal === Infinity) {
+      return { min: 0, max: 100 };
+    }
+
+    if (tab === 'temp') {
+      var range = Math.max(2, maxVal - minVal);
+      return {
+        min: minVal - range * 0.25,
+        max: maxVal + range * 0.25
+      };
+    } else if (tab === 'precip') {
+      return {
+        min: 0,
+        max: Math.max(50, Math.min(100, Math.max(10, maxVal * 1.25)))
+      };
+    } else if (tab === 'wind') {
+      return {
+        min: 0,
+        max: Math.max(15, maxVal * 1.25)
+      };
+    } else if (tab === 'humidity') {
+      return {
+        min: Math.max(0, minVal - 12),
+        max: Math.min(100, maxVal + 12)
+      };
+    } else if (tab === 'aqi') {
+      return {
+        min: 0,
+        max: Math.max(40, maxVal * 1.25)
+      };
+    }
+    return { min: 0, max: 100 };
+  };
+
+  SvgForecastChartEngine.prototype.render = function() {
+    if (!this.dom.svg || !this.points || !this.points.length) return;
+
+    var pts = this.points;
+    var N = pts.length;
+    this.ensureElementPool(N);
+
+    var tab = this.activeTab || 'temp';
+    var bounds = this.computeBounds(tab);
+    var minB = bounds.min;
+    var maxB = bounds.max;
+    var range = (maxB - minB) || 1;
+
+    // Coordinate system: viewBox="0 0 520 120"
+    var xStart = 26;
+    var xEnd = 494;
+    var dx = (xEnd - xStart) / (N - 1);
+    var yTop = 26;
+    var yBottom = 88;
+    var yBase = 95;
+    var isF = (this.tempUnit === 'F');
+
+    var xs = new Float32Array(N);
+    var ys = new Float32Array(N);
+    var colors = this.colorMap[tab] || this.colorMap.temp;
+
+    for (var i = 0; i < N; i++) {
+      var p = pts[i];
+      var v = 0;
+      var label = '';
+      if (tab === 'temp') {
+        v = isF ? p.tempF : p.tempC;
+        label = Math.round(v) + '°';
+      } else if (tab === 'precip') {
+        v = p.precipProb != null ? p.precipProb : 0;
+        label = Math.round(v) + '%';
+      } else if (tab === 'wind') {
+        v = isF ? p.windSpeedMph : p.windSpeedKm;
+        label = Math.round(v) + (isF ? ' mph' : ' km/h');
+      } else if (tab === 'humidity') {
+        v = p.humidity != null ? p.humidity : 50;
+        label = Math.round(v) + '%';
+      } else if (tab === 'aqi') {
+        v = p.aqi != null ? p.aqi : 20;
+        label = 'AQI ' + Math.round(v);
+      }
+
+      var norm = Math.max(0, Math.min(1, (v - minB) / range));
+      xs[i] = xStart + i * dx;
+      ys[i] = yBottom - norm * (yBottom - yTop);
+
+      var dotColor = colors.dot;
+      if (tab === 'aqi' && p.aqiColor) {
+        dotColor = p.aqiColor;
+      }
+
+      // Update dot
+      var dot = this.dotPool[i];
+      if (dot) {
+        dot.setAttribute('cx', xs[i].toFixed(1));
+        dot.setAttribute('cy', ys[i].toFixed(1));
+        dot.setAttribute('fill', dotColor);
+      }
+
+      // Update val text
+      var valEl = this.valLabelPool[i];
+      if (valEl) {
+        valEl.setAttribute('x', xs[i].toFixed(1));
+        valEl.setAttribute('y', (ys[i] - 7).toFixed(1));
+        valEl.textContent = label;
+      }
+
+      // Update time text
+      var timeEl = this.timeLabelPool[i];
+      if (timeEl) {
+        timeEl.setAttribute('x', xs[i].toFixed(1));
+        timeEl.setAttribute('y', '112');
+        timeEl.textContent = p.label || p.time || '';
+      }
+    }
+
+    // Catmull-Rom cubic Bezier path generation
+    var curveD = '';
+    for (var j = 0; j < N - 1; j++) {
+      var p0x = (j === 0) ? xs[0] : xs[j - 1];
+      var p0y = (j === 0) ? ys[0] : ys[j - 1];
+      var p1x = xs[j];
+      var p1y = ys[j];
+      var p2x = xs[j + 1];
+      var p2y = ys[j + 1];
+      var p3x = (j >= N - 2) ? xs[N - 1] : xs[j + 2];
+      var p3y = (j >= N - 2) ? ys[N - 1] : ys[j + 2];
+
+      var cp1x = (j === 0) ? (p1x + (p2x - p1x) / 6) : (p1x + (p2x - p0x) / 6);
+      var cp1y = (j === 0) ? (p1y + (p2y - p1y) / 6) : (p1y + (p2y - p0y) / 6);
+      var cp2x = (j >= N - 2) ? (p2x - (p2x - p1x) / 6) : (p2x - (p3x - p1x) / 6);
+      var cp2y = (j >= N - 2) ? (p2y - (p2y - p1y) / 6) : (p2y - (p3y - p1y) / 6);
+
+      if (cp1y < yTop - 4) cp1y = yTop - 4; else if (cp1y > yBottom + 4) cp1y = yBottom + 4;
+      if (cp2y < yTop - 4) cp2y = yTop - 4; else if (cp2y > yBottom + 4) cp2y = yBottom + 4;
+
+      curveD += ' C ' + cp1x.toFixed(1) + ',' + cp1y.toFixed(1) + ' ' +
+                cp2x.toFixed(1) + ',' + cp2y.toFixed(1) + ' ' +
+                p2x.toFixed(1) + ',' + p2y.toFixed(1);
+    }
+
+    var x0 = xs[0].toFixed(1);
+    var y0 = ys[0].toFixed(1);
+    var xLast = xs[N - 1].toFixed(1);
+    var lineD = 'M ' + x0 + ',' + y0 + curveD;
+    var areaD = 'M ' + x0 + ',' + yBase + ' L ' + x0 + ',' + y0 + curveD + ' L ' + xLast + ',' + yBase + ' Z';
+
+    if (this.dom.linePath) {
+      this.dom.linePath.setAttribute('d', lineD);
+      this.dom.linePath.setAttribute('stroke', colors.stroke);
+    }
+    if (this.dom.areaPath) {
+      this.dom.areaPath.setAttribute('d', areaD);
+      this.dom.areaPath.setAttribute('fill', colors.fill);
+    }
+  };
+
+  global.SvgForecastChartEngine = SvgForecastChartEngine;
+
   var App = {
     // Engine references
     particles: null,
@@ -891,6 +1191,7 @@ MediaVisualizerEngine.prototype.wake = function() {
     pomodoro: null,
     solarLighting: null,
     sparklineEngine: null,
+    forecastChart: null,
 
     // State
     state: null,
@@ -960,6 +1261,7 @@ MediaVisualizerEngine.prototype.wake = function() {
     showCelestial: true,
     showAqi: true,
     showEnvironmentalMetrics: true,
+    showForecastChart: true,
     showPomodoro: true,
     showMediaPlayer: true,
     showMediaFocusDock: true,
@@ -1013,8 +1315,13 @@ MediaVisualizerEngine.prototype.wake = function() {
       this.setShowCelestial(typeof cfg.showCelestial !== 'undefined' ? cfg.showCelestial : true);
       this.setShowAqi(typeof cfg.showAqi !== 'undefined' ? cfg.showAqi : true);
       this.setShowEnvironmentalMetrics(typeof cfg.showEnvironmentalMetrics !== 'undefined' ? cfg.showEnvironmentalMetrics : true);
+      this.setShowForecastChart(typeof cfg.showForecastChart !== 'undefined' ? cfg.showForecastChart : true);
       this.setShowPomodoro(typeof cfg.showPomodoro !== 'undefined' ? cfg.showPomodoro : true);
       this.setShowMediaPlayer(typeof cfg.showMediaPlayer !== 'undefined' ? cfg.showMediaPlayer : true);
+
+      if (cfg.defaultForecastTab && this.forecastChart) {
+        this.forecastChart.setTab(cfg.defaultForecastTab);
+      }
 
       if (typeof cfg.showMediaFocusDock !== 'undefined') {
         this.setShowMediaFocusDock(cfg.showMediaFocusDock);
@@ -1066,6 +1373,18 @@ MediaVisualizerEngine.prototype.wake = function() {
         hudAqiFill: document.getElementById('hud-aqi-fill'),
         hudPm25: document.getElementById('hud-pm25'),
         hudPm10: document.getElementById('hud-pm10'),
+
+        // Google-Style Multi-Tab SVG Forecast Chart DOM Nodes
+        hudForecastCard: document.getElementById('hud-forecast-card'),
+        forecastTabBar: (document.querySelector && document.querySelector('.forecast-tab-bar')) || null,
+        forecastTabs: (document.querySelectorAll) ? document.querySelectorAll('.forecast-tab') : [],
+        forecastChartContainer: document.getElementById('forecast-chart-container'),
+        forecastSvg: document.getElementById('forecast-svg'),
+        forecastLine: document.getElementById('forecast-line'),
+        forecastArea: document.getElementById('forecast-area'),
+        forecastPoints: document.getElementById('forecast-points'),
+        forecastXAxis: document.getElementById('forecast-x-axis'),
+
         syncDot: document.getElementById('sync-dot'),
         syncStatus: document.getElementById('sync-status'),
         btnRefresh: document.getElementById('btn-refresh'),
@@ -1204,6 +1523,23 @@ MediaVisualizerEngine.prototype.wake = function() {
         this.sparklineEngine.register('disk', this.dom.hwDiskSpark, { max: 100, accent: '#fbbf24' });
         this.sparklineEngine.register('netDown', this.dom.hwNetDownSpark, { max: 1000, dynamicMax: true, accent: '#38bdf8' });
         this.sparklineEngine.register('netUp', this.dom.hwNetUpSpark, { max: 500, dynamicMax: true, accent: '#fb7185' });
+      }
+
+      var ForecastCtor = (typeof SvgForecastChartEngine === 'function') ? SvgForecastChartEngine : global.SvgForecastChartEngine;
+      if (ForecastCtor && this.dom.forecastSvg) {
+        var cfgInit = (global.LOCAL_WALLY_CONFIG) || {};
+        this.forecastChart = new ForecastCtor({
+          card: this.dom.hudForecastCard,
+          tabBar: this.dom.forecastTabBar,
+          tabs: this.dom.forecastTabs,
+          svg: this.dom.forecastSvg,
+          linePath: this.dom.forecastLine,
+          areaPath: this.dom.forecastArea,
+          pointsGroup: this.dom.forecastPoints,
+          xAxisGroup: this.dom.forecastXAxis,
+          tempUnit: this.tempUnit,
+          defaultTab: cfgInit.defaultForecastTab || 'temp'
+        });
       }
 
       this.initBatteryMonitor();
@@ -1358,6 +1694,38 @@ MediaVisualizerEngine.prototype.wake = function() {
             break;
           case 'showEnvironmentalMetrics':
             self.setShowEnvironmentalMetrics(val === true || val === 1 || val === 'true');
+            break;
+          case 'weatherProvider':
+            var wProviders = ['open-meteo', 'met-norway', 'openweathermap'];
+            var wpVal = (typeof val === 'number') ? (wProviders[val] || 'open-meteo') : val;
+            if (global.ApiService) global.ApiService.weatherProvider = wpVal;
+            self.loadAtmosphere(true);
+            break;
+          case 'openweathermapApiKey':
+            if (global.ApiService) global.ApiService.openweathermapApiKey = val;
+            if (global.ApiService && global.ApiService.weatherProvider === 'openweathermap') {
+              self.loadAtmosphere(true);
+            }
+            break;
+          case 'aqiProvider':
+            var aProviders = ['open-meteo', 'waqi'];
+            var apVal = (typeof val === 'number') ? (aProviders[val] || 'open-meteo') : val;
+            if (global.ApiService) global.ApiService.aqiProvider = apVal;
+            self.loadAtmosphere(true);
+            break;
+          case 'waqiApiKey':
+            if (global.ApiService) global.ApiService.waqiApiKey = val;
+            if (global.ApiService && global.ApiService.aqiProvider === 'waqi') {
+              self.loadAtmosphere(true);
+            }
+            break;
+          case 'showForecastChart':
+            self.setShowForecastChart(val === true || val === 1 || val === 'true');
+            break;
+          case 'defaultForecastTab':
+            var tabs = ['temp', 'precip', 'wind', 'humidity', 'aqi'];
+            var tabVal = (typeof val === 'number') ? (tabs[val] || 'temp') : val;
+            if (self.forecastChart) self.forecastChart.setTab(tabVal);
             break;
           case 'showPomodoro':
             self.setShowPomodoro(val === true || val === 1 || val === 'true');
@@ -1560,6 +1928,19 @@ MediaVisualizerEngine.prototype.wake = function() {
           this.dom.hudMetricsRow.classList.remove('is-hidden');
         } else {
           this.dom.hudMetricsRow.classList.add('is-hidden');
+        }
+      }
+      this.updateLayoutAutoResize();
+    },
+
+    setShowForecastChart: function(show) {
+      this.showForecastChart = !!show;
+      if (this.dom.hudForecastCard) {
+        if (this.showForecastChart) {
+          this.dom.hudForecastCard.classList.remove('is-hidden');
+          if (this.forecastChart) this.forecastChart.render();
+        } else {
+          this.dom.hudForecastCard.classList.add('is-hidden');
         }
       }
       this.updateLayoutAutoResize();
@@ -1834,6 +2215,9 @@ MediaVisualizerEngine.prototype.wake = function() {
 
     setTempUnit: function(unit) {
       this.tempUnit = unit === 'F' ? 'F' : 'C';
+      if (this.forecastChart) {
+        this.forecastChart.setTempUnit(this.tempUnit);
+      }
       if (this.state) {
         this.renderWeather(this.state.weather);
       }
@@ -1907,6 +2291,11 @@ MediaVisualizerEngine.prototype.wake = function() {
         this.state = global.CacheManager.getMockData();
       }
       this.state.weather = simWeather;
+      if (global.ApiService && typeof global.ApiService.generateSyntheticForecast === 'function') {
+        var simHourly = global.ApiService.generateSyntheticForecast(simWeather, this.state.aqi);
+        this.state.hourlyForecast = simHourly;
+        this.renderForecast(simHourly);
+      }
       this.renderWeather(simWeather);
       this.updateAtmosphereEngines(this.state);
       if (this.contrastMode === 'auto') {
@@ -2139,9 +2528,19 @@ MediaVisualizerEngine.prototype.wake = function() {
       this.renderWeather(snapshot.weather);
       this.renderAqi(snapshot.aqi);
       this.renderNews(snapshot.news);
+      this.renderForecast(snapshot.hourlyForecast || (snapshot.weather && snapshot.weather.hourlyForecast));
       this.renderCelestial();
       this.updateBackground(snapshot.background);
       this.updateAtmosphereEngines(snapshot);
+    },
+
+    renderForecast: function(hourly) {
+      if (!this.forecastChart) return;
+      if (Array.isArray(hourly) && hourly.length > 0) {
+        this.forecastChart.setForecast(hourly);
+      } else if (this.state && this.state.weather && Array.isArray(this.state.weather.hourlyForecast)) {
+        this.forecastChart.setForecast(this.state.weather.hourlyForecast);
+      }
     },
 
     renderLocation: function(loc) {

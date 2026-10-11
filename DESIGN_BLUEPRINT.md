@@ -820,6 +820,119 @@ When a feature is disabled, its underlying JavaScript timers are immediately sto
 - Disabling Media Player halts the audio visualizer render loop and clears the canvas.
 Result: The application achieves absolute **0.0% idle CPU** on all configurations.
 
+---
+
+## 21. Multi-Provider Weather & Air Quality Integration Adapter Layer
+
+### 21.1 Architecture & Provider Decoupling
+To ensure high availability and resilient atmospheric telemetry worldwide without forcing end-users to register API keys, Local Wally implements a pluggable **Adapter Pattern** layer (`WeatherAdapter` and `AqiAdapter` in `js/api.js`):
+
+```
+                       +----------------------------------+
+                       |    ApiService.fetchAtmosphere    |
+                       +----------------------------------+
+                                        │
+                 ┌──────────────────────┴──────────────────────┐
+                 ▼ (Weather Provider)                          ▼ (AQI Provider)
+   +-----------------------------+               +-----------------------------+
+   |       WeatherAdapter        |               |         AqiAdapter          |
+   +-----------------------------+               +-----------------------------+
+     │             │            │                  │             │
+     ▼             ▼            ▼                  ▼             ▼
+[open-meteo]  [met-norway] [openweathermap]   [open-meteo]    [waqi (AQICN)]
+ (Default)     (Keyless)    (Optional Key)     (Default)      (Optional Token)
+     │             │            │                  │             │
+     └─────────────┬────────────┘                  └─────────────┬─────────────┘
+                   ▼                                             ▼
+       +───────────────────────+                     +───────────────────────+
+       | Unified Weather Data  |                     |   Unified AQI Data    |
+       +───────────────────────+                     +───────────────────────+
+                   │                                             │
+                   └──────────────────────┬──────────────────────┘
+                                          ▼
+                      +───────────────────────────────────────+
+                      | 24-Hour Unified Hourly Forecast Points|
+                      | (Catmull-Rom Bezier Normalized Schema)|
+                      +───────────────────────────────────────+
+```
+
+### 21.2 Weather Providers
+1. **Open-Meteo (`open-meteo`) - Default**:
+   - Zero API keys required; high global accuracy.
+   - Fetches hourly timeseries (`temperature_2m`, `precipitation_probability`, `wind_speed_10m`, `relative_humidity_2m`, `weather_code`).
+2. **MET Norway / Yr.no (`met-norway`) - Keyless Alternative**:
+   - High-precision Scandinavian meteorological model (`https://api.met.no/weatherapi/locationforecast/2.0/compact`).
+   - Complies with strict User-Agent identification policy.
+   - Automatically handles m/s to km/h conversion ($v_{\text{km/h}} = v_{\text{m/s}} \times 3.6$) and cross-origin CORS fallbacks.
+3. **OpenWeatherMap (`openweathermap`) - Keyed Fallback**:
+   - Activated when a user specifies an API key in `LivelyProperties` or `config.js`.
+   - Maps OpenWeatherMap icon IDs to standard WMO codes and normalizes POP ($0.0-1.0 \to 0-100\%$).
+   - Automatically falls back to Open-Meteo if the API key is missing or unauthorized.
+
+### 21.3 Air Quality Providers
+1. **Open-Meteo Air Quality (`open-meteo`) - Default**:
+   - Zero API key required. Queries European AQI (0–100+), PM2.5, and PM10 hourly timeseries.
+2. **World Air Quality Index / AQICN (`waqi`) - Keyed Alternative**:
+   - Ground-station sensor network covering global metropolitan stations.
+   - Normalizes US EPA AQI (0–500) into unified European AQI equivalents with consistent categorical tokens and colors.
+
+### 21.4 Unified 24-Hour Hourly Telemetry Schema
+All providers pass through `normalizeForecastPoints()`, yielding an immutable array of 24 hourly objects:
+```typescript
+interface HourlyForecastPoint {
+  time: string;           // ISO 8601 string or formatted time
+  label: string;          // Human-readable compact hour label (e.g., "14:00" or "2 PM")
+  tempC: number;          // Celsius temperature
+  tempF: number;          // Fahrenheit temperature
+  precipProb: number;     // 0 to 100%
+  precipitationMm: number;// Hourly liquid precipitation accumulation
+  windSpeedKm: number;    // Wind speed in km/h
+  windSpeedMph: number;   // Wind speed in mph
+  humidity: number;       // 0 to 100%
+  aqi: number;            // Normalized index
+  aqiCategory: string;    // 'Good' | 'Fair' | 'Moderate' | 'Poor' | 'Very Poor'
+  aqiColor: string;       // Hex color matching categorical severity
+  wmoCode: number;        // Standardized WMO condition code
+  conditionText: string;  // Textual weather description
+}
+```
+
+---
+
+## 22. Google-Style Space-Efficient SVG Forecast Chart HUD Engine
+
+### 22.1 Zero-Reflow Layout Containment
+The forecast HUD card `#hud-forecast-card` and chart container `.forecast-chart-container` enforce strict CSS containment:
+```css
+#hud-forecast-card,
+.forecast-chart-container {
+  contain: layout paint;
+}
+```
+This isolates internal SVG coordinate and label updates, guaranteeing that tab switches and path recomputations never trigger global reflows in the parent Bento grid.
+
+### 22.2 Multi-Tab Metric Telemetry
+Provides 5 switchable pill tabs with color-coded gradients and active indicators:
+- 🌡️ **Temperature (`temp`)**: Amber gradient (`#f59e0b` $\to$ `#fbbf24`), dynamic padding based on temperature delta.
+- 🌧️ **Precipitation (`precip`)**: Sky blue gradient (`#38bdf8`), normalized 0–100% scale.
+- 💨 **Wind Speed (`wind`)**: Emerald gradient (`#34d399`), auto-scaled with 15 km/h baseline padding.
+- 💧 **Humidity (`humidity`)**: Purple/violet gradient (`#a78bfa`), 0–100% relative range.
+- 🍃 **Air Quality (`aqi`)**: Green/emerald gradient (`#10b981`), dynamically colored dots matching categorical risk.
+
+### 22.3 Catmull-Rom Cubic Bezier Curve Math
+Curves are drawn across the coordinate space ($520 \times 120\text{ viewBox}$) using cubic Bezier approximations of Catmull-Rom splines:
+For control points between $P_1(x_1, y_1)$ and $P_2(x_2, y_2)$ given neighbors $P_0$ and $P_3$:
+$$CP_1 = \left(x_1 + \frac{x_2 - x_0}{6}, \; y_1 + \frac{y_2 - y_0}{6}\right)$$
+$$CP_2 = \left(x_2 - \frac{x_3 - x_1}{6}, \; y_2 - \frac{y_3 - y_1}{6}\right)$$
+Control point heights are strictly clamped between $y_{\text{top}} - 4$ and $y_{\text{bottom}} + 4$ to prevent vector clipping against SVG viewport boundaries.
+
+### 22.4 Zero-GC Pre-Allocated Element Pooling
+`SvgForecastChartEngine` completely avoids `innerHTML` resets or element destruction:
+- Pre-allocates `<circle>` and `<text>` nodes in SVG object pools (`dotPool`, `valLabelPool`, `timeLabelPool`).
+- Toggling tabs or receiving fresh telemetry simply mutates attributes (`cx`, `cy`, `textContent`, `d`, `fill`, `stroke`) on existing nodes in-place.
+- Elements beyond point length are set to `visibility: hidden` rather than removed from DOM, resulting in **0.0 bytes GC allocation per render**.
+
+
 
 
 

@@ -238,6 +238,49 @@
     // Toggles the laptop battery telemetry row (percentage, charging state, remaining time).
     // Automatically guarded: completely hidden on desktop PCs without battery hardware (0% DOM footprint).
     // Default: true | Options: true, false
-    showBatteryInfo: true
+    showBatteryInfo: true,
+
+    // --------------------------------------------------------------------------
+    // 29. WEATHER TELEMETRY PROVIDER
+    // --------------------------------------------------------------------------
+    // Provider used for atmospheric weather readings and hourly forecasts.
+    // Default: 'open-meteo' | Options: 'open-meteo', 'met-norway', 'openweathermap'
+    weatherProvider: 'open-meteo',
+
+    // --------------------------------------------------------------------------
+    // 30. OPENWEATHERMAP API KEY (OPTIONAL)
+    // --------------------------------------------------------------------------
+    // Custom OpenWeatherMap 2.5/3.0 API key for when 'openweathermap' provider is selected.
+    // Default: '' (Falls back gracefully to Open-Meteo when empty or invalid)
+    openweathermapApiKey: '',
+
+    // --------------------------------------------------------------------------
+    // 31. AIR QUALITY INDEX (AQI) PROVIDER
+    // --------------------------------------------------------------------------
+    // Provider used for air quality telemetry and particulate forecasts.
+    // Default: 'open-meteo' | Options: 'open-meteo', 'waqi'
+    aqiProvider: 'open-meteo',
+
+    // --------------------------------------------------------------------------
+    // 32. WAQI / AQICN API TOKEN (OPTIONAL)
+    // --------------------------------------------------------------------------
+    // Custom WAQI API token for when 'waqi' provider is selected.
+    // Default: '' (Free tier demo token is used when empty)
+    waqiApiKey: '',
+
+    // --------------------------------------------------------------------------
+    // 33. GOOGLE-STYLE MULTI-TAB SVG FORECAST CHART DISPLAY
+    // --------------------------------------------------------------------------
+    // Toggles the Google-style multi-tab SVG forecast chart HUD in the primary column.
+    // Features zero-reflow layout containment (contain: layout paint;) and Catmull-Rom cubic Bezier curves.
+    // Default: true | Options: true, false
+    showForecastChart: true,
+
+    // --------------------------------------------------------------------------
+    // 34. DEFAULT FORECAST TAB SELECTION
+    // --------------------------------------------------------------------------
+    // Active metric tab displayed upon wallpaper initialization.
+    // Default: 'temp' | Options: 'temp', 'precip', 'wind', 'humidity', 'aqi'
+    defaultForecastTab: 'temp'
   };
 })(typeof window !== 'undefined' ? window : this);

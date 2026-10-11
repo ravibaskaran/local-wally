@@ -96,6 +96,47 @@
           </div>
         </section>
 
+        <!-- Google-Style Space-Efficient Multi-Tab SVG Forecast Chart -->
+        <section id="hud-forecast-card" class="hud-forecast-card" aria-label="Hourly Forecast Telemetry">
+          <div class="forecast-tab-bar" role="tablist" aria-label="Forecast Metrics">
+            <button class="forecast-tab is-active" data-tab="temp" role="tab" aria-selected="true" type="button">Temperature</button>
+            <button class="forecast-tab" data-tab="precip" role="tab" aria-selected="false" type="button">Precipitation</button>
+            <button class="forecast-tab" data-tab="wind" role="tab" aria-selected="false" type="button">Wind</button>
+            <button class="forecast-tab" data-tab="humidity" role="tab" aria-selected="false" type="button">Humidity</button>
+            <button class="forecast-tab" data-tab="aqi" role="tab" aria-selected="false" type="button">AQI</button>
+          </div>
+          <div id="forecast-chart-container" class="forecast-chart-container">
+            <svg id="forecast-svg" class="forecast-svg" viewBox="0 0 520 120" preserveAspectRatio="none">
+              <defs>
+                <linearGradient id="forecast-grad-temp" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.38"/>
+                  <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.0"/>
+                </linearGradient>
+                <linearGradient id="forecast-grad-precip" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.38"/>
+                  <stop offset="100%" stop-color="#38bdf8" stop-opacity="0.0"/>
+                </linearGradient>
+                <linearGradient id="forecast-grad-wind" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#34d399" stop-opacity="0.38"/>
+                  <stop offset="100%" stop-color="#34d399" stop-opacity="0.0"/>
+                </linearGradient>
+                <linearGradient id="forecast-grad-humidity" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#a78bfa" stop-opacity="0.38"/>
+                  <stop offset="100%" stop-color="#a78bfa" stop-opacity="0.0"/>
+                </linearGradient>
+                <linearGradient id="forecast-grad-aqi" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#10b981" stop-opacity="0.38"/>
+                  <stop offset="100%" stop-color="#10b981" stop-opacity="0.0"/>
+                </linearGradient>
+              </defs>
+              <path id="forecast-area" class="forecast-area" fill="url(#forecast-grad-temp)" d="" />
+              <path id="forecast-line" class="forecast-line" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="" />
+              <g id="forecast-points" class="forecast-points"></g>
+              <g id="forecast-x-axis" class="forecast-x-axis"></g>
+            </svg>
+          </div>
+        </section>
+
         <!-- Solar & Lunar Ephemeris Block -->
         <section id="hud-ephemeris-card" class="hud-celestial-block" aria-label="Solar and Lunar Ephemeris">
           <div class="hud-ephemeris-sun">
