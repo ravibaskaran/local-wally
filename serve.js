@@ -15,23 +15,31 @@ const MIME_TYPES = {
 };
 
 const server = http.createServer((req, res) => {
-  let reqPath = req.url.split('?')[0];
-  if (reqPath === '/') reqPath = '/index.html';
+  let reqPath = '/';
+  try {
+    reqPath = decodeURIComponent(req.url.split('?')[0]);
+  } catch (e) {
+    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('400 Bad Request');
+    return;
+  }
+  if (reqPath === '/' || reqPath === '') reqPath = '/index.html';
 
-  const normalizedPath = path.normalize(path.join(__dirname, reqPath));
-  if (!normalizedPath.startsWith(__dirname)) {
+  const safePath = path.resolve(__dirname, '.' + path.sep + reqPath.replace(/^[/\\]+/, ''));
+  const rootWithSep = __dirname.endsWith(path.sep) ? __dirname : __dirname + path.sep;
+  if (!safePath.startsWith(rootWithSep) && safePath !== __dirname) {
     res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end('403 Forbidden');
     return;
   }
 
-  fs.readFile(normalizedPath, (err, data) => {
+  fs.readFile(safePath, (err, data) => {
     if (err) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
       res.end('404 Not Found');
       return;
     }
-    const ext = path.extname(normalizedPath).toLowerCase();
+    const ext = path.extname(safePath).toLowerCase();
     res.writeHead(200, {
       'Content-Type': MIME_TYPES[ext] || 'application/octet-stream',
       'Cache-Control': 'no-cache'

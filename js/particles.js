@@ -438,7 +438,8 @@
             var spx = this.sX[i];
             var spy = this.sY[i];
             var spr = this.sRadius[i];
-            // Render ripple as wide flat ellipse
+            // Render ripple as wide flat ellipse with disconnected subpaths
+            ctx.moveTo(spx + spr * 2.0, spy);
             ctx.ellipse(spx, spy, spr * 2.0, spr * 0.6, 0, 0, TWO_PI);
           }
         }

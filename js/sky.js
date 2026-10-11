@@ -116,10 +116,11 @@
    */
   SkyEngine.prototype.update = function(date, lat, lon) {
     if (!global.SunCalc) return;
+    if (typeof lat !== 'number' || !Number.isFinite(lat) || typeof lon !== 'number' || !Number.isFinite(lon)) return;
 
     var sunPos = global.SunCalc.getPosition(date, lat, lon);
-    var altitude = sunPos.altitude; // Radians (-PI/2 to PI/2)
-    var azimuth = sunPos.azimuth;
+    var altitude = (sunPos && typeof sunPos.altitude === 'number' && Number.isFinite(sunPos.altitude)) ? sunPos.altitude : 0;
+    var azimuth = (sunPos && typeof sunPos.azimuth === 'number' && Number.isFinite(sunPos.azimuth)) ? sunPos.azimuth : 0;
 
     this.lastAltitude = altitude;
     this.applySkyGradient(altitude);
@@ -177,16 +178,18 @@
     }
     if (!this.sunEl || !this.moonEl) return;
 
-    var isSunVisible = sunAlt > -0.08;
+    var safeSunAlt = (typeof sunAlt === 'number' && Number.isFinite(sunAlt)) ? sunAlt : 0;
+    var safeSunAzimuth = (typeof sunAzimuth === 'number' && Number.isFinite(sunAzimuth)) ? sunAzimuth : 0;
+    var isSunVisible = safeSunAlt > -0.08;
     var w = window.innerWidth || 1920;
     var h = window.innerHeight || 1080;
 
     if (isSunVisible) {
       // Map sun position to screen coordinates
       // Azimuth: -PI (South) to 0 (North) to PI. Map to width.
-      var sunX = Math.round(((sunAzimuth + Math.PI) / (Math.PI * 2)) * w - 40);
+      var sunX = Math.round(((safeSunAzimuth + Math.PI) / (Math.PI * 2)) * w - 40);
       // Altitude: 0 at horizon (75% height), PI/2 at zenith (15% height)
-      var normAlt = Math.max(0, Math.min(1.2, sunAlt / 1.1));
+      var normAlt = Math.max(0, Math.min(1.2, safeSunAlt / 1.1));
       var sunY = Math.round((h * 0.75) - (normAlt * (h * 0.60)) - 40);
 
       this.sunEl.style.transform = 'translate3d(' + sunX + 'px, ' + sunY + 'px, 0)';
@@ -199,11 +202,14 @@
       this.moonEl.classList.add('is-hidden');
     } else {
       // Render Moon
-      var moonPos = global.SunCalc.getMoonPosition(date, lat, lon);
-      var moonIllum = global.SunCalc.getMoonIllumination(date);
+      var moonPos = global.SunCalc.getMoonPosition(date, lat, lon) || {};
+      var moonIllum = global.SunCalc.getMoonIllumination(date) || {};
 
-      var moonX = Math.round(((moonPos.azimuth + Math.PI) / (Math.PI * 2)) * w - 30);
-      var normMoonAlt = Math.max(0, Math.min(1.2, moonPos.altitude / 1.1));
+      var safeMoonAzimuth = (typeof moonPos.azimuth === 'number' && Number.isFinite(moonPos.azimuth)) ? moonPos.azimuth : 0;
+      var safeMoonAltitude = (typeof moonPos.altitude === 'number' && Number.isFinite(moonPos.altitude)) ? moonPos.altitude : 0;
+
+      var moonX = Math.round(((safeMoonAzimuth + Math.PI) / (Math.PI * 2)) * w - 30);
+      var normMoonAlt = Math.max(0, Math.min(1.2, safeMoonAltitude / 1.1));
       var moonY = Math.round((h * 0.75) - (normMoonAlt * (h * 0.55)) - 30);
 
       // Visual phase text descriptor

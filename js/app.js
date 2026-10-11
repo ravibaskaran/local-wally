@@ -108,7 +108,8 @@
       var sum = 0;
       var count = e - s;
       for (var b = s; b < e; b++) {
-        sum += audioArray[b] || 0;
+        var sample = (typeof audioArray[b] === 'number' && Number.isFinite(audioArray[b])) ? audioArray[b] : 0;
+        sum += sample;
       }
       var avg = count > 0 ? (sum / count) : 0;
       var eq = 1.0 + (i / 31) * 0.75;
@@ -822,9 +823,9 @@ MediaVisualizerEngine.prototype.wake = function() {
     var max = typeof maxVal === 'number' && maxVal > 0 ? maxVal : 100;
 
     for (var i = 0; i < N; i++) {
-      var v = buffer[i];
-      var norm = v / max;
-      if (norm < 0) norm = 0;
+      var v = (buffer && typeof buffer[i] === 'number' && Number.isFinite(buffer[i])) ? buffer[i] : 0;
+      var norm = (max > 0) ? (v / max) : 0;
+      if (!Number.isFinite(norm) || norm < 0) norm = 0;
       else if (norm > 1) norm = 1;
       this.yCoords[i] = 18 - norm * 16;
     }
@@ -839,6 +840,8 @@ MediaVisualizerEngine.prototype.wake = function() {
       var cp1y = (j === 0) ? (p1y + (p2y - p1y) / 6) : (p1y + (p2y - p0y) / 6);
       var cp2y = (j >= N - 2) ? (p2y - (p2y - p1y) / 6) : (p2y - (p3y - p1y) / 6);
 
+      if (!Number.isFinite(cp1y)) cp1y = 18;
+      if (!Number.isFinite(cp2y)) cp2y = 18;
       if (cp1y < 1.5) cp1y = 1.5; else if (cp1y > 18.5) cp1y = 18.5;
       if (cp2y < 1.5) cp2y = 1.5; else if (cp2y > 18.5) cp2y = 18.5;
 
@@ -1087,7 +1090,7 @@ MediaVisualizerEngine.prototype.wake = function() {
     // Coordinate system: viewBox="0 0 520 120"
     var xStart = 26;
     var xEnd = 494;
-    var dx = (xEnd - xStart) / (N - 1);
+    var dx = (N > 1) ? ((xEnd - xStart) / (N - 1)) : 0;
     var yTop = 26;
     var yBottom = 88;
     var yBase = 95;

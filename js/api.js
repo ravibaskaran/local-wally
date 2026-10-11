@@ -378,6 +378,7 @@
      * Map OpenWeatherMap Condition ID to WMO Code
      */
     owmToWmo: function(id) {
+      id = (typeof id === 'number' && Number.isFinite(id)) ? id : parseInt(id, 10);
       if (id >= 200 && id < 300) return 95;
       if (id >= 300 && id < 400) return 53;
       if (id === 500) return 61;
@@ -1226,47 +1227,18 @@
         var primaryUrl = primaryProxy + encodeURIComponent(rssUrl);
         var fallbackProxyUrl = fallbackProxy + encodeURIComponent(rssUrl);
 
-        function fetchWithTimeout(url, timeoutMs) {
-          return new Promise(function(resolve, reject) {
-            var timeout = timeoutMs || 5000;
-            var controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-            var timedOut = false;
-
-            var timer = setTimeout(function() {
-              timedOut = true;
-              if (controller) {
-                try { controller.abort(); } catch (e) {}
-              }
-              reject(new Error('Gateway timeout'));
-            }, timeout);
-
-            var fetchOpts = controller ? { signal: controller.signal } : {};
-            fetch(url, fetchOpts)
+        return ApiService.fetchWithTimeout(primaryUrl, 5000)
+          .then(function(res) {
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            return res.text();
+          })
+          .catch(function() {
+            return ApiService.fetchWithTimeout(fallbackProxyUrl, 5000)
               .then(function(res) {
-                if (!res.ok) {
-                  clearTimeout(timer);
-                  throw new Error('HTTP ' + res.status);
-                }
+                if (!res.ok) throw new Error('HTTP ' + res.status);
                 return res.text();
-              })
-              .then(function(text) {
-                clearTimeout(timer);
-                resolve(text);
-              })
-              .catch(function(err) {
-                clearTimeout(timer);
-                if (timedOut) {
-                  reject(new Error('Gateway timeout'));
-                } else {
-                  reject(err);
-                }
               });
           });
-        }
-
-        return fetchWithTimeout(primaryUrl, 5000).catch(function() {
-          return fetchWithTimeout(fallbackProxyUrl, 5000);
-        });
       }
 
       function parseItems(xmlString) {
@@ -1276,7 +1248,10 @@
 
         var parser = new DOMParser();
         var xmlDoc = parser.parseFromString(xmlString, 'text/xml');
-        var parseError = xmlDoc.querySelector('parsererror');
+        if (!xmlDoc) {
+          throw new Error('XML parsing failed: document null');
+        }
+        var parseError = xmlDoc.querySelector ? xmlDoc.querySelector('parsererror') : (xmlDoc.getElementsByTagName ? xmlDoc.getElementsByTagName('parsererror')[0] : null);
         if (parseError) {
           throw new Error('XML parsing failed: ' + parseError.textContent);
         }
