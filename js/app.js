@@ -1007,25 +1007,30 @@ MediaVisualizerEngine.prototype.wake = function() {
   };
 
   SvgForecastChartEngine.prototype.computeBounds = function(tab) {
-    var pts = this.points;
+    var pts = this.points || [];
     var minVal = Infinity;
     var maxVal = -Infinity;
     var isF = (this.tempUnit === 'F');
 
     for (var i = 0; i < pts.length; i++) {
       var p = pts[i];
-      var v = 0;
+      if (!p) continue;
+      var v = NaN;
       if (tab === 'temp') v = isF ? p.tempF : p.tempC;
       else if (tab === 'precip') v = p.precipProb != null ? p.precipProb : 0;
       else if (tab === 'wind') v = isF ? p.windSpeedMph : p.windSpeedKm;
       else if (tab === 'humidity') v = p.humidity != null ? p.humidity : 50;
       else if (tab === 'aqi') v = p.aqi != null ? p.aqi : 20;
 
+      if (typeof v !== 'number' || !Number.isFinite(v)) {
+        continue;
+      }
+
       if (v < minVal) minVal = v;
       if (v > maxVal) maxVal = v;
     }
 
-    if (minVal === Infinity) {
+    if (!Number.isFinite(minVal) || !Number.isFinite(maxVal) || minVal === Infinity || maxVal === -Infinity) {
       return { min: 0, max: 100 };
     }
 
@@ -1086,29 +1091,37 @@ MediaVisualizerEngine.prototype.wake = function() {
     var colors = this.colorMap[tab] || this.colorMap.temp;
 
     for (var i = 0; i < N; i++) {
-      var p = pts[i];
+      var p = pts[i] || {};
       var v = 0;
       var label = '';
       if (tab === 'temp') {
         v = isF ? p.tempF : p.tempC;
+        if (typeof v !== 'number' || !Number.isFinite(v)) v = minB;
         label = Math.round(v) + '°';
       } else if (tab === 'precip') {
         v = p.precipProb != null ? p.precipProb : 0;
+        if (typeof v !== 'number' || !Number.isFinite(v)) v = 0;
         label = Math.round(v) + '%';
       } else if (tab === 'wind') {
         v = isF ? p.windSpeedMph : p.windSpeedKm;
+        if (typeof v !== 'number' || !Number.isFinite(v)) v = 0;
         label = Math.round(v) + (isF ? ' mph' : ' km/h');
       } else if (tab === 'humidity') {
         v = p.humidity != null ? p.humidity : 50;
+        if (typeof v !== 'number' || !Number.isFinite(v)) v = 50;
         label = Math.round(v) + '%';
       } else if (tab === 'aqi') {
         v = p.aqi != null ? p.aqi : 20;
+        if (typeof v !== 'number' || !Number.isFinite(v)) v = 20;
         label = 'AQI ' + Math.round(v);
       }
 
-      var norm = Math.max(0, Math.min(1, (v - minB) / range));
-      xs[i] = xStart + i * dx;
-      ys[i] = yBottom - norm * (yBottom - yTop);
+      var norm = (range > 0) ? Math.max(0, Math.min(1, (v - minB) / range)) : 0.5;
+      if (!Number.isFinite(norm)) norm = 0.5;
+      var xVal = xStart + i * dx;
+      var yVal = yBottom - norm * (yBottom - yTop);
+      xs[i] = Number.isFinite(xVal) ? xVal : xStart;
+      ys[i] = Number.isFinite(yVal) ? yVal : yBottom;
 
       var dotColor = colors.dot;
       if (tab === 'aqi' && p.aqiColor) {
@@ -1156,6 +1169,11 @@ MediaVisualizerEngine.prototype.wake = function() {
       var cp1y = (j === 0) ? (p1y + (p2y - p1y) / 6) : (p1y + (p2y - p0y) / 6);
       var cp2x = (j >= N - 2) ? (p2x - (p2x - p1x) / 6) : (p2x - (p3x - p1x) / 6);
       var cp2y = (j >= N - 2) ? (p2y - (p2y - p1y) / 6) : (p2y - (p3y - p1y) / 6);
+
+      if (!Number.isFinite(cp1x)) cp1x = p1x;
+      if (!Number.isFinite(cp1y)) cp1y = p1y;
+      if (!Number.isFinite(cp2x)) cp2x = p2x;
+      if (!Number.isFinite(cp2y)) cp2y = p2y;
 
       if (cp1y < yTop - 4) cp1y = yTop - 4; else if (cp1y > yBottom + 4) cp1y = yBottom + 4;
       if (cp2y < yTop - 4) cp2y = yTop - 4; else if (cp2y > yBottom + 4) cp2y = yBottom + 4;

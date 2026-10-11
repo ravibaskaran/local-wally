@@ -932,6 +932,22 @@ Control point heights are strictly clamped between $y_{\text{top}} - 4$ and $y_{
 - Toggling tabs or receiving fresh telemetry simply mutates attributes (`cx`, `cy`, `textContent`, `d`, `fill`, `stroke`) on existing nodes in-place.
 - Elements beyond point length are set to `visibility: hidden` rather than removed from DOM, resulting in **0.0 bytes GC allocation per render**.
 
+---
+
+## 23. v0.6.1 Production Hardening & Network Stream Defenses
+
+### 23.1 Stream-Aware Fetch Timeout & Cancellation
+Prior to v0.6.1, `fetchWithTimeout` and XML gateway timeout helpers cleared timers as soon as initial HTTP response headers arrived. If a server stalled during body consumption (`res.json()` or `res.text()`), requests could hang indefinitely.
+- **AbortController Integration**: `fetchWithTimeout`, `fetchJsonWithTimeout`, and `requestXml` bind an `AbortController` signal to the native `fetch()` call.
+- **Stream-Wrapped Body Methods**: `res.json()`, `res.text()`, `res.blob()`, and `res.arrayBuffer()` are wrapped to keep the deadline active across full stream consumption. If the deadline expires while reading bytes, the controller actively aborts the connection and rejects with a timeout error.
+- **Caller Signal Composition**: If the caller passes an existing `options.signal`, the helper observes its abort event and cascades cancellation immediately.
+
+### 23.2 Non-Finite Forecast Number Validation & Safe SVG Rendering
+In rare network degradation scenarios or API anomaly payloads, raw metrics can arrive as `NaN`, `Infinity`, `-Infinity`, or `null`.
+- **Pre-Render Normalization (`normalizeForecastPoints`)**: A strict `safeNum(val, fallback)` validator verifies `Number.isFinite`. Non-finite anomalies are safely normalized to base values while strictly preserving valid zero (`0`) and negative values (e.g. sub-zero temperatures like `-8.5°C`).
+- **Defensive Vector Bounds & Bezier Pathing (`SvgForecastChartEngine`)**: `computeBounds` skips non-finite values and guarantees finite, bounded ranges. Coordinate mapping and cubic Bezier control point calculations clamp non-finite values to fallback bounds, ensuring SVG `d` path strings never contain `"NaN"` or `"Infinity"`.
+
+
 
 
 

@@ -161,22 +161,39 @@
         // Helper: fetch with safety timeout to prevent hanging on dead networks
         function fetchJsonWithTimeout(url, timeoutMs) {
           return new Promise(function(resolveFetch, rejectFetch) {
-            var timer = setTimeout(function() {
-              rejectFetch(new Error('Fetch timeout: ' + url));
-            }, timeoutMs || 3500);
+            var timeout = timeoutMs || 3500;
+            var controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+            var timedOut = false;
 
-            fetch(url, { cache: 'no-store' })
+            var timer = setTimeout(function() {
+              timedOut = true;
+              if (controller) {
+                try { controller.abort(); } catch (e) {}
+              }
+              rejectFetch(new Error('Fetch timeout: ' + url));
+            }, timeout);
+
+            var fetchOpts = { cache: 'no-store' };
+            if (controller) {
+              fetchOpts.signal = controller.signal;
+            }
+
+            fetch(url, fetchOpts)
               .then(function(res) {
-                clearTimeout(timer);
                 if (!res.ok) throw new Error('HTTP ' + res.status);
                 return res.json();
               })
               .then(function(data) {
+                clearTimeout(timer);
                 resolveFetch(data);
               })
               .catch(function(err) {
                 clearTimeout(timer);
-                rejectFetch(err);
+                if (timedOut) {
+                  rejectFetch(new Error('Fetch timeout: ' + url));
+                } else {
+                  rejectFetch(err);
+                }
               });
           });
         }
@@ -293,22 +310,97 @@
     },
 
     /**
-     * Resilient fetch helper with timeout guard
+     * Resilient fetch helper with timeout guard.
+     * Ensures the timeout deadline covers body consumption (json/text/blob),
+     * aborts the underlying network request via AbortController on timeout,
+     * and honors caller-provided AbortSignal options.
      */
     fetchWithTimeout: function(url, timeoutMs, options) {
       return new Promise(function(resolve, reject) {
-        var timer = setTimeout(function() {
-          reject(new Error('Network request timed out: ' + url));
-        }, timeoutMs || 5000);
+        options = options || {};
+        var timeout = timeoutMs || 5000;
+        var controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+        var timedOut = false;
+        var headersResolved = false;
 
-        fetch(url, options)
+        var timer = setTimeout(function() {
+          timedOut = true;
+          if (controller) {
+            try { controller.abort(); } catch (e) {}
+          }
+          if (!headersResolved) {
+            reject(new Error('Network request timed out: ' + url));
+          }
+        }, timeout);
+
+        var fetchOptions = {};
+        for (var key in options) {
+          if (Object.prototype.hasOwnProperty.call(options, key)) {
+            fetchOptions[key] = options[key];
+          }
+        }
+
+        if (controller) {
+          fetchOptions.signal = controller.signal;
+          if (options.signal) {
+            if (options.signal.aborted) {
+              try { controller.abort(); } catch (e) {}
+            } else if (typeof options.signal.addEventListener === 'function') {
+              options.signal.addEventListener('abort', function() {
+                try { controller.abort(); } catch (e) {}
+              });
+            }
+          }
+        }
+
+        fetch(url, fetchOptions)
           .then(function(res) {
-            clearTimeout(timer);
+            headersResolved = true;
+            if (timedOut) {
+              clearTimeout(timer);
+              reject(new Error('Network request timed out: ' + url));
+              return;
+            }
+
+            // Wrap body consumption methods so the deadline covers full stream read
+            var wrapBodyMethod = function(methodName) {
+              if (typeof res[methodName] === 'function') {
+                var origMethod = res[methodName].bind(res);
+                res[methodName] = function() {
+                  if (timedOut) {
+                    clearTimeout(timer);
+                    return Promise.reject(new Error('Network request timed out: ' + url));
+                  }
+                  return origMethod()
+                    .then(function(data) {
+                      clearTimeout(timer);
+                      return data;
+                    })
+                    .catch(function(err) {
+                      clearTimeout(timer);
+                      if (timedOut) {
+                        throw new Error('Network request timed out: ' + url);
+                      }
+                      throw err;
+                    });
+                };
+              }
+            };
+
+            wrapBodyMethod('json');
+            wrapBodyMethod('text');
+            wrapBodyMethod('blob');
+            wrapBodyMethod('arrayBuffer');
+
             resolve(res);
           })
           .catch(function(err) {
             clearTimeout(timer);
-            reject(err);
+            if (timedOut) {
+              reject(new Error('Network request timed out: ' + url));
+            } else {
+              reject(err);
+            }
           });
       });
     },
@@ -412,16 +504,61 @@
 
     /**
      * Normalizes hourly series points and binds European AQI telemetry.
+     * Safely validates and sanitizes all numerical forecast metrics against
+     * non-finite values (NaN, Infinity, -Infinity, null, undefined) while
+     * strictly preserving legitimate zero and negative numbers.
      */
     normalizeForecastPoints: function(points, weather, aqi, hourlyAqi) {
       if (!points || !points.length || points.length < 8) {
         return this.generateSyntheticForecast(weather, aqi);
       }
-      var baseAqi = (aqi && typeof aqi.europeanAqi === 'number') ? aqi.europeanAqi : 22;
+
+      function safeNum(val, fallback) {
+        if (typeof val === 'number' && Number.isFinite(val)) {
+          return val;
+        }
+        if (typeof val === 'string' && val.trim() !== '') {
+          var num = Number(val);
+          if (Number.isFinite(num)) return num;
+        }
+        return fallback;
+      }
+
+      var baseTempC = safeNum(weather && weather.tempC, 20.0);
+      var baseTempF = safeNum(weather && weather.tempF, Math.round(((baseTempC * 9 / 5) + 32) * 10) / 10);
+      var baseAppC = safeNum(weather && weather.apparentC, baseTempC);
+      var baseAppF = safeNum(weather && weather.apparentF, baseTempF);
+      var baseWindK = safeNum(weather && weather.windSpeedKm, 10.0);
+      var baseWindM = safeNum(weather && weather.windSpeedMph, Math.round(baseWindK * 0.621371 * 10) / 10);
+      var baseHum = safeNum(weather && weather.humidity, 55);
+      var basePrecip = safeNum(weather && weather.precipitationMm, 0.0);
+      var baseAqi = safeNum(aqi && aqi.europeanAqi, 22);
+
       for (var i = 0; i < points.length; i++) {
         var pt = points[i];
+        if (!pt) continue;
+
+        // Sanitize temperatures (preserving sub-zero and 0 values)
+        pt.tempC = safeNum(pt.tempC, baseTempC);
+        pt.tempF = safeNum(pt.tempF, Math.round(((pt.tempC * 9 / 5) + 32) * 10) / 10);
+        pt.apparentC = safeNum(pt.apparentC, pt.tempC);
+        pt.apparentF = safeNum(pt.apparentF, pt.tempF);
+
+        // Sanitize precipitation probability and amount
+        pt.precipProb = Math.max(0, Math.min(100, Math.round(safeNum(pt.precipProb, 0))));
+        pt.precipMm = Math.max(0, safeNum(pt.precipMm, basePrecip));
+
+        // Sanitize wind speed
+        pt.windSpeedKm = Math.max(0, safeNum(pt.windSpeedKm, baseWindK));
+        pt.windSpeedMph = Math.max(0, safeNum(pt.windSpeedMph, Math.round(pt.windSpeedKm * 0.621371 * 10) / 10));
+
+        // Sanitize humidity (bounded [0, 100])
+        pt.humidity = Math.max(0, Math.min(100, Math.round(safeNum(pt.humidity, baseHum))));
+
+        // Bind & sanitize AQI
         var ptAqiVal = (hourlyAqi && hourlyAqi[pt.hour] != null) ? hourlyAqi[pt.hour] : baseAqi;
-        var meta = this.interpretEuropeanAqi(ptAqiVal);
+        var safeAqi = Math.max(0, safeNum(ptAqiVal, baseAqi));
+        var meta = this.interpretEuropeanAqi(safeAqi);
         pt.aqi = meta.value;
         pt.aqiColor = meta.color;
         pt.aqiCategory = meta.category;
@@ -1091,23 +1228,38 @@
 
         function fetchWithTimeout(url, timeoutMs) {
           return new Promise(function(resolve, reject) {
-            var isDone = false;
-            var timer = setTimeout(function() {
-              isDone = true;
-              reject(new Error('Gateway timeout'));
-            }, timeoutMs || 5000);
+            var timeout = timeoutMs || 5000;
+            var controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+            var timedOut = false;
 
-            fetch(url)
+            var timer = setTimeout(function() {
+              timedOut = true;
+              if (controller) {
+                try { controller.abort(); } catch (e) {}
+              }
+              reject(new Error('Gateway timeout'));
+            }, timeout);
+
+            var fetchOpts = controller ? { signal: controller.signal } : {};
+            fetch(url, fetchOpts)
               .then(function(res) {
-                clearTimeout(timer);
-                if (!isDone) {
-                  if (!res.ok) reject(new Error('HTTP ' + res.status));
-                  else resolve(res.text());
+                if (!res.ok) {
+                  clearTimeout(timer);
+                  throw new Error('HTTP ' + res.status);
                 }
+                return res.text();
+              })
+              .then(function(text) {
+                clearTimeout(timer);
+                resolve(text);
               })
               .catch(function(err) {
                 clearTimeout(timer);
-                if (!isDone) reject(err);
+                if (timedOut) {
+                  reject(new Error('Gateway timeout'));
+                } else {
+                  reject(err);
+                }
               });
           });
         }
