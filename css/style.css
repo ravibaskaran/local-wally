@@ -51,6 +51,17 @@
   --dynamic-card-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.52);
   --dynamic-vignette-gradient: radial-gradient(circle at center, transparent 40%, rgba(2, 6, 23, 0.45) 100%), linear-gradient(180deg, rgba(2, 6, 23, 0.2) 0%, transparent 40%, rgba(2, 6, 23, 0.5) 100%);
   --dynamic-solar-elevation: 0deg;
+
+  /* Layer 1.5 Procedural Solar Lighting Overlay Engine */
+  --solar-bloom-x: 50%;
+  --solar-bloom-y: 50%;
+  --solar-bloom-opacity: 0;
+  --solar-bloom-size: 65vmax;
+  --solar-bloom-inner: rgba(254, 240, 138, 0.45);
+  --solar-bloom-outer: transparent;
+  --solar-ambient-wash-bg: transparent;
+  --solar-ambient-wash-opacity: 0;
+  --solar-ambient-wash-blend: soft-light;
 }
 
 /* Wallpaper-Adaptive Light Glass Theme for High-Luminance / Bright Backgrounds */
@@ -259,11 +270,47 @@ html, body {
   pointer-events: none;
 }
 
+/* Layer 1.5: Procedural Solar Lighting Overlay Engine */
+#solar-lighting-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  contain: layout paint style;
+  transform: translate3d(0, 0, 0);
+}
+
+#solar-light-bloom,
+.solar-light-bloom {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle var(--solar-bloom-size, 65vmax) at var(--solar-bloom-x, 50%) var(--solar-bloom-y, 50%), var(--solar-bloom-inner, rgba(254, 240, 138, 0.45)) 0%, var(--solar-bloom-outer, transparent) 70%);
+  opacity: var(--solar-bloom-opacity, 0);
+  mix-blend-mode: screen;
+  will-change: transform, opacity;
+  transition: transform 3s cubic-bezier(0.4, 0, 0.2, 1), opacity 3s cubic-bezier(0.4, 0, 0.2, 1);
+  transform: translate3d(0, 0, 0);
+}
+
+#solar-ambient-wash,
+.solar-ambient-wash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--solar-ambient-wash-bg, transparent);
+  opacity: var(--solar-ambient-wash-opacity, 0);
+  mix-blend-mode: var(--solar-ambient-wash-blend, soft-light);
+  will-change: opacity, background;
+  transition: opacity 3s cubic-bezier(0.4, 0, 0.2, 1), background 3s cubic-bezier(0.4, 0, 0.2, 1);
+  transform: translate3d(0, 0, 0);
+}
+
 /* Layer 2: Particle Canvas */
 #canvas-container {
   position: absolute;
   inset: 0;
-  z-index: 2;
+  z-index: 3;
   contain: layout paint style;
   transform: translate3d(0, 0, 0);
   pointer-events: none;

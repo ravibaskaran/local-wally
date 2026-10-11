@@ -605,8 +605,73 @@ MediaVisualizerEngine.prototype.wake = function() {
       this.lastAltitude = alpha;
       this.lastAzimuth = theta;
 
-      // 1. Directional Shadow Vectors
+      // 1. Normalized Screen Coordinates (X, Y) for the Sun
+      // X = 50 + 42 * sin(theta)%, Y = 50 - 42 * sin(alpha)% (mapped smoothly into visible viewport bounds)
       var sinAlpha = Math.sin(alpha);
+      var sinTheta = Math.sin(theta);
+      var rawSunX = 50 + 42 * sinTheta;
+      var rawSunY = 50 - 42 * sinAlpha;
+      var sunX = Math.max(5, Math.min(95, rawSunX));
+      var sunY = Math.max(5, Math.min(95, rawSunY));
+
+      // 2. Solar Bloom Color Temperature, Opacity, and Size
+      var bloomInner = 'rgba(254, 240, 138, 0.45)';
+      var bloomOuter = 'transparent';
+      var bloomOpacity = 0;
+      var bloomSize = '65vmax';
+
+      // 3. Diurnal Atmospheric Ambient Wash
+      var ambientBg = 'transparent';
+      var ambientOpacity = 0;
+      var ambientBlend = 'soft-light';
+
+      if (alpha > 0) {
+        // Daytime / Sunrise / Sunset
+        if (alpha <= 0.10) {
+          // Sunrise / Sunset (alpha <= 0.10): Warm rich amber/rose bloom
+          bloomInner = 'rgba(251, 146, 60, 0.65)';
+          bloomOuter = 'rgba(244, 63, 94, 0.0)';
+          // Sunset / Dusk: violet-crimson ambient tint
+          ambientBg = 'radial-gradient(circle at ' + sunX.toFixed(1) + '% ' + sunY.toFixed(1) + '%, rgba(194, 65, 12, 0.28) 0%, rgba(136, 19, 55, 0.18) 100%)';
+          ambientOpacity = 0.90;
+          ambientBlend = 'soft-light';
+        } else if (alpha <= 0.25) {
+          // Golden Hour (0.10 < alpha <= 0.25): Radiant warm gold
+          bloomInner = 'rgba(253, 224, 71, 0.55)';
+          bloomOuter = 'transparent';
+          // Golden Hour: soft amber gradient tint
+          ambientBg = 'radial-gradient(circle at ' + sunX.toFixed(1) + '% ' + sunY.toFixed(1) + '%, rgba(245, 158, 11, 0.22) 0%, rgba(217, 119, 6, 0.10) 100%)';
+          ambientOpacity = 0.85;
+          ambientBlend = 'soft-light';
+        } else {
+          // High Noon (alpha > 0.25): Radiant white-cerulean daylight
+          bloomInner = 'rgba(254, 240, 138, 0.45)';
+          bloomOuter = 'transparent';
+          ambientBg = 'rgba(254, 243, 199, 0.08)';
+          ambientOpacity = 0.20;
+          ambientBlend = 'soft-light';
+        }
+        // Bloom opacity scales with solar elevation: min(1.0, max(0.15, sin(alpha) * 1.2))
+        bloomOpacity = Math.min(1.0, Math.max(0.15, sinAlpha * 1.2));
+      } else if (alpha >= -0.10) {
+        // Twilight (-0.10 <= alpha <= 0.0): cobalt indigo wash
+        bloomInner = 'rgba(251, 146, 60, 0.35)';
+        bloomOuter = 'rgba(244, 63, 94, 0.0)';
+        bloomOpacity = Math.max(0, 0.15 * (1 + alpha / 0.10));
+        ambientBg = 'linear-gradient(180deg, rgba(30, 27, 75, 0.35) 0%, rgba(15, 23, 42, 0.45) 100%)';
+        ambientOpacity = 0.95;
+        ambientBlend = 'soft-light';
+      } else {
+        // Deep Night (alpha < -0.10): Solar bloom fades to 0 opacity
+        bloomOpacity = 0;
+        // Deep Night: deep obsidian/slate wash with mix-blend-mode: multiply (rgba(2, 6, 23, 0.55))
+        // Ambient wash deepens the wallpaper shadows while maintaining legibility
+        ambientBg = 'linear-gradient(180deg, rgba(2, 6, 23, 0.55) 0%, rgba(15, 23, 42, 0.65) 100%)';
+        ambientOpacity = 1.0;
+        ambientBlend = 'multiply';
+      }
+
+      // 4. Directional Shadow Vectors
       var d = Math.max(6, Math.min(28, 20 * (1 - sinAlpha)));
       var dx = -Math.sin(theta) * d;
       var dy = Math.cos(theta) * d;
@@ -614,7 +679,7 @@ MediaVisualizerEngine.prototype.wake = function() {
       var shadowOpacity = (alpha < 0) ? 0.60 : 0.45;
       var cardShadow = Math.round(dx) + 'px ' + Math.round(dy) + 'px ' + Math.round(blur) + 'px -6px rgba(0, 0, 0, ' + shadowOpacity.toFixed(2) + '), 0 20px 40px -10px rgba(0, 0, 0, 0.52)';
 
-      // 2. Chromatic Grading Filter
+      // 5. Chromatic Grading Filter
       var filterStr = '';
       if (alpha > 0.20) {
         filterStr = 'brightness(1.02) contrast(1.02) saturate(1.05)';
@@ -626,7 +691,7 @@ MediaVisualizerEngine.prototype.wake = function() {
         filterStr = 'brightness(0.66) contrast(1.15) saturate(0.85) hue-rotate(185deg)';
       }
 
-      // 3. Directional Sky Vignette Shifting
+      // 6. Directional Sky Vignette Shifting
       var focalX = 50 + 20 * Math.sin(theta);
       var focalY = 50 - 20 * Math.cos(theta);
       var vignetteStr = 'radial-gradient(circle at ' + focalX.toFixed(1) + '% ' + focalY.toFixed(1) + '%, transparent 35%, rgba(2, 6, 23, 0.48) 100%), linear-gradient(180deg, rgba(2, 6, 23, 0.2) 0%, transparent 40%, rgba(2, 6, 23, 0.5) 100%)';
@@ -634,10 +699,27 @@ MediaVisualizerEngine.prototype.wake = function() {
       var elevDeg = alpha * (180 / Math.PI);
 
       var style = document.documentElement.style;
-      style.setProperty('--dynamic-wallpaper-filter', filterStr);
+      // Procedural Solar Overlay CSS Custom Properties
+      style.setProperty('--solar-bloom-x', sunX.toFixed(1) + '%');
+      style.setProperty('--solar-bloom-y', sunY.toFixed(1) + '%');
+      style.setProperty('--solar-bloom-opacity', bloomOpacity.toFixed(2));
+      style.setProperty('--solar-bloom-size', bloomSize);
+      style.setProperty('--solar-bloom-inner', bloomInner);
+      style.setProperty('--solar-bloom-outer', bloomOuter);
+      style.setProperty('--solar-ambient-wash-bg', ambientBg);
+      style.setProperty('--solar-ambient-wash-opacity', ambientOpacity.toFixed(2));
+      style.setProperty('--solar-ambient-wash-blend', ambientBlend);
+
+      // Dynamic Card Elevation & Wallpaper Grading
       style.setProperty('--dynamic-card-shadow', cardShadow);
+      style.setProperty('--dynamic-wallpaper-filter', filterStr);
       style.setProperty('--dynamic-vignette-gradient', vignetteStr);
       style.setProperty('--dynamic-solar-elevation', elevDeg.toFixed(1) + 'deg');
+
+      var washEl = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('solar-ambient-wash') : null;
+      if (washEl && washEl.style) {
+        washEl.style.mixBlendMode = ambientBlend;
+      }
     } catch (err) {
       console.warn('[SolarLightingEngine] Error updating lighting vectors:', err);
     }
@@ -649,6 +731,20 @@ MediaVisualizerEngine.prototype.wake = function() {
     style.setProperty('--dynamic-card-shadow', '0 20px 40px -10px rgba(0, 0, 0, 0.52)');
     style.setProperty('--dynamic-vignette-gradient', 'radial-gradient(circle at center, transparent 40%, rgba(2, 6, 23, 0.45) 100%), linear-gradient(180deg, rgba(2, 6, 23, 0.2) 0%, transparent 40%, rgba(2, 6, 23, 0.5) 100%)');
     style.setProperty('--dynamic-solar-elevation', '0deg');
+    style.setProperty('--solar-bloom-x', '50%');
+    style.setProperty('--solar-bloom-y', '50%');
+    style.setProperty('--solar-bloom-opacity', '0');
+    style.setProperty('--solar-bloom-size', '65vmax');
+    style.setProperty('--solar-bloom-inner', 'rgba(254, 240, 138, 0.45)');
+    style.setProperty('--solar-bloom-outer', 'transparent');
+    style.setProperty('--solar-ambient-wash-bg', 'transparent');
+    style.setProperty('--solar-ambient-wash-opacity', '0');
+    style.setProperty('--solar-ambient-wash-blend', 'soft-light');
+
+    var washEl = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('solar-ambient-wash') : null;
+    if (washEl && washEl.style) {
+      washEl.style.mixBlendMode = 'soft-light';
+    }
   };
 
   /**
@@ -874,6 +970,7 @@ MediaVisualizerEngine.prototype.wake = function() {
     init: function() {
       console.log('[App] Initializing Local Wally HUD...');
       this.cacheDom();
+      this.restoreCachedWallpaper();
       this.initEngines();
       this.applyInitialConfig();
       this.updateGpuDiagnostics();
@@ -1043,8 +1140,51 @@ MediaVisualizerEngine.prototype.wake = function() {
         mediaTitle: document.getElementById('media-title'),
         mediaArtist: document.getElementById('media-artist'),
         mediaSourceBadge: document.getElementById('media-source-badge'),
-        audioVisualizerCanvas: document.getElementById('audio-visualizer-canvas')
+        audioVisualizerCanvas: document.getElementById('audio-visualizer-canvas'),
+
+        // Procedural Solar Lighting Overlay DOM Nodes
+        solarLightingOverlay: document.getElementById('solar-lighting-overlay'),
+        solarLightBloom: document.getElementById('solar-light-bloom'),
+        solarAmbientWash: document.getElementById('solar-ambient-wash')
       };
+    },
+
+    restoreCachedWallpaper: function() {
+      try {
+        var cachedUrl = null;
+        var cachedPhotographer = null;
+        var cachedPhotographerUrl = null;
+
+        if (typeof localStorage !== 'undefined') {
+          cachedUrl = localStorage.getItem('local_wally_cached_bg_url');
+          cachedPhotographer = localStorage.getItem('local_wally_cached_bg_photographer');
+          cachedPhotographerUrl = localStorage.getItem('local_wally_cached_bg_photographer_url');
+        }
+
+        // Secondary fallback to LIVELY_HUD_SNAPSHOT if specific key is not yet populated
+        if (!cachedUrl && global.CacheManager) {
+          var snapshot = global.CacheManager.getAny();
+          if (snapshot && snapshot.background && snapshot.background.url) {
+            cachedUrl = snapshot.background.url;
+            cachedPhotographer = snapshot.background.photographer;
+            cachedPhotographerUrl = snapshot.background.photographerUrl;
+          }
+        }
+
+        if (cachedUrl && this.dom.bgA) {
+          this.dom.bgA.style.backgroundImage = 'url("' + cachedUrl + '")';
+          this.lastBgUrl = cachedUrl;
+          if (this.dom.unsplashCredit && cachedPhotographer) {
+            this.dom.unsplashCredit.textContent = 'Photo by ' + cachedPhotographer;
+            if (cachedPhotographerUrl) {
+              this.dom.unsplashCredit.href = cachedPhotographerUrl;
+            }
+          }
+          console.log('[App] Restored cached wallpaper instantly on boot (no pop-in)');
+        }
+      } catch (err) {
+        console.warn('[App] Could not restore cached wallpaper on boot:', err);
+      }
     },
 
     initEngines: function() {
@@ -2612,6 +2752,19 @@ MediaVisualizerEngine.prototype.wake = function() {
           self.dom.unsplashCredit.textContent = 'Photo by ' + (bg.photographer || 'Unsplash');
           self.dom.unsplashCredit.href = bg.photographerUrl || 'https://unsplash.com';
         }
+
+        // Persist wallpaper URL and photographer credit to eliminate startup blank pop-in
+        try {
+          if (incomingUrl && typeof localStorage !== 'undefined') {
+            localStorage.setItem('local_wally_cached_bg_url', incomingUrl);
+            if (bg && bg.photographer) {
+              localStorage.setItem('local_wally_cached_bg_photographer', bg.photographer);
+            }
+            if (bg && bg.photographerUrl) {
+              localStorage.setItem('local_wally_cached_bg_photographer_url', bg.photographerUrl);
+            }
+          }
+        } catch (e) {}
       };
       preloader.onerror = function(err) {
         console.warn('[App] Failed to preload resolution-matched wallpaper:', incomingUrl, err);
@@ -2738,11 +2891,11 @@ MediaVisualizerEngine.prototype.wake = function() {
         }
       }
 
-      // Next frame
-      var self = this;
-      this.animationFrameId = requestAnimationFrame(function(time) {
-        self.loop(time);
-      });
+      // Next frame with zero-allocation pre-bound callback
+      if (!this._boundLoop) {
+        this._boundLoop = this.loop.bind(this);
+      }
+      this.animationFrameId = requestAnimationFrame(this._boundLoop);
     }
   };
 
