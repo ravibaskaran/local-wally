@@ -44,7 +44,7 @@ Most animated wallpapers are notorious resource hogs. They run heavy video loops
   - **Sunrise & Sunset**: Warm amber and rose horizon glows.
   - **Golden Hour**: Radiant warm sunlight wash across the landscape.
   - **Midday**: Crisp daylight glow with realistic directional sunlight flares.
-  - **Night**: Deep night blue tones with starlight.
+  - **Night**: Soft moonlit luminescence and clear, illuminated night wallpaper with gentle nocturnal ambiance.
 - **Real-Time Moving Shadows**: The dashboard cards cast subtle drop shadows that shift angle and depth as the sun moves across your sky throughout the day.
 - **Instant Boot (No Blank Screens)**: Remembers your last wallpaper so your desktop looks gorgeous the millisecond your PC boots up, with zero blank white flashes.
 
@@ -159,7 +159,7 @@ Right-click the wallpaper in your Lively Wallpaper library and choose **Customis
 | **Enable Audio Visualizer** | Toggle the 32-bar sound visualizer | On |
 | **Dynamic Solar Lighting & Shadows** | Enable realistic daytime sunlight, sunset glow, and shadows | On |
 | **Glass Blur** | Adjust background blur intensity (0px to 40px) | 14px |
-| **Particle Density Multiplier** | Adjust rain/snow/star particle density (0.2x to 2.0x) | 1.0x |
+| **Particle Density Multiplier** | Adjust rain and snow particle density (0.2x to 2.0x) | 1.0x |
 | **Temperature Unit** | Switch between Celsius (°C) and Fahrenheit (°F) | Celsius (°C) |
 | **Data Refresh Interval** | How often weather and wallpapers update (5 to 30 minutes) | 15 min |
 | **Glass Contrast Theme** | Auto (adapts to background brightness), Dark Glass, or Light Glass | Auto |
@@ -252,7 +252,7 @@ local-wally/
     ├── app.js             # Main controller, 60 FPS animation loop, hardware sparklines
     ├── cache.js           # 15-minute smart caching firewall to save battery and network
     ├── lively.js          # Lively Wallpaper communication bridge and sleep controller
-    ├── particles.js       # High-efficiency rain, snow, and star particle engine
+    ├── particles.js       # High-efficiency rain, snow, and splash particle engine
     ├── sky.js             # Day/night sky color transitions and sun/moon positioning
     └── suncalc.js         # Offline solar and lunar position math
 ```

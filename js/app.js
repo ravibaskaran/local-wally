@@ -717,13 +717,15 @@ MediaVisualizerEngine.prototype.wake = function() {
         ambientOpacity = 0.95;
         ambientBlend = 'soft-light';
       } else {
-        // Deep Night (alpha < -0.10): Solar bloom fades to 0 opacity
-        bloomOpacity = 0;
-        // Deep Night: deep obsidian/slate wash with mix-blend-mode: multiply (rgba(2, 6, 23, 0.55))
-        // Ambient wash deepens the wallpaper shadows while maintaining legibility
-        ambientBg = 'linear-gradient(180deg, rgba(2, 6, 23, 0.55) 0%, rgba(15, 23, 42, 0.65) 100%)';
-        ambientOpacity = 1.0;
-        ambientBlend = 'multiply';
+        // Deep Night (alpha < -0.10): Soft moonlit luminescence keeps the wallpaper visible
+        bloomInner = 'rgba(219, 234, 254, 0.22)';
+        bloomOuter = 'rgba(186, 230, 253, 0.0)';
+        bloomOpacity = 0.18;
+        bloomSize = '70vmax';
+        // Night ambient wash: subtle cool slate tint using soft-light to avoid crushing shadows
+        ambientBg = 'linear-gradient(180deg, rgba(2, 6, 23, 0.20) 0%, rgba(15, 23, 42, 0.25) 100%)';
+        ambientOpacity = 0.40;
+        ambientBlend = 'soft-light';
       }
 
       // 4. Directional Shadow Vectors
@@ -741,15 +743,22 @@ MediaVisualizerEngine.prototype.wake = function() {
       } else if (alpha >= 0.0) {
         filterStr = 'brightness(0.96) contrast(1.06) saturate(1.35) sepia(0.22) hue-rotate(-12deg)';
       } else if (alpha >= -0.15) {
-        filterStr = 'brightness(0.82) contrast(1.10) saturate(1.15) hue-rotate(15deg)';
+        filterStr = 'brightness(0.90) contrast(1.04) saturate(1.05) hue-rotate(8deg)';
       } else {
-        filterStr = 'brightness(0.66) contrast(1.15) saturate(0.85) hue-rotate(185deg)';
+        // Deep Night (alpha < -0.15): Preserve natural wallpaper clarity and illumination with gentle nocturnal cooling
+        filterStr = 'brightness(0.86) contrast(1.02) saturate(0.95)';
       }
 
       // 6. Directional Sky Vignette Shifting
       var focalX = 50 + 20 * Math.sin(theta);
       var focalY = 50 - 20 * Math.cos(theta);
-      var vignetteStr = 'radial-gradient(circle at ' + focalX.toFixed(1) + '% ' + focalY.toFixed(1) + '%, transparent 35%, rgba(2, 6, 23, 0.48) 100%), linear-gradient(180deg, rgba(2, 6, 23, 0.2) 0%, transparent 40%, rgba(2, 6, 23, 0.5) 100%)';
+      var vignetteStr = '';
+      if (alpha < -0.10) {
+        // Soft nocturnal vignette: wide clear center to keep wallpaper details prominent
+        vignetteStr = 'radial-gradient(circle at ' + focalX.toFixed(1) + '% ' + focalY.toFixed(1) + '%, transparent 55%, rgba(2, 6, 23, 0.22) 100%), linear-gradient(180deg, rgba(2, 6, 23, 0.08) 0%, transparent 45%, rgba(2, 6, 23, 0.22) 100%)';
+      } else {
+        vignetteStr = 'radial-gradient(circle at ' + focalX.toFixed(1) + '% ' + focalY.toFixed(1) + '%, transparent 35%, rgba(2, 6, 23, 0.48) 100%), linear-gradient(180deg, rgba(2, 6, 23, 0.2) 0%, transparent 40%, rgba(2, 6, 23, 0.5) 100%)';
+      }
 
       var elevDeg = alpha * (180 / Math.PI);
 

@@ -17,7 +17,7 @@
     : 1800;
   var MAX_PRECIP = Math.max(100, Math.min(5000, cfgMaxPrecip));
   var MAX_SPLASHES = 120;
-  var MAX_STARS = 400;
+  var MAX_STARS = 0; // Disabled: unnecessary blinking stars removed from wallpaper UI
 
   var COLOR_STAR = 'rgba(255, 255, 255, 0.85)';
   var COLOR_SNOW = 'rgba(255, 255, 255, 0.82)';
@@ -256,10 +256,8 @@
     this.windFactor = (this.windSpeed / 50.0);
     if (this.windFactor > 1.8) this.windFactor = 1.8;
 
-    // Starfield active when sun is down and not heavily overcast
-    var isNight = (sunAltitude != null ? (sunAltitude < -0.15) : !isDay);
-    var isClearEnough = (this.mode === 'CLEAR' || this.mode === 'PARTLY_CLOUDY');
-    this.showStars = isNight && isClearEnough;
+    // Starfield disabled: blinking stars removed from wallpaper UI
+    this.showStars = false;
 
     // Active particle count based on weather severity and user multiplier
     var baseCount = 0;

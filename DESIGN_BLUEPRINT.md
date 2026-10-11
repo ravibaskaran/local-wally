@@ -67,7 +67,7 @@
 | Layer 0: [SkyEngine]        -> Dynamic SunCalc Solar/Lunar Celestial Gradient     |
 | Layer 1: [Double Buffer]    -> Cross-Fading Landscape Imagery (bg-a / bg-b)       |
 |                             -> macOS Dynamic Solar Lighting & Shadow Engine       |
-| Layer 2: [ParticleEngine]   -> SoA Canvas 2D Precipitation / Stars / Splashes     |
+| Layer 2: [ParticleEngine]   -> SoA Canvas 2D Precipitation (Rain, Snow, Splashes) |
 | Layer 3: [Bento Grid HUD]   -> 2-Column Windows 11 Acrylic Bento Telemetry:       |
 |                                - Col 1: Clock/Location, Temp, Metrics, Ephemeris, |
 |                                         European Air Quality Index                |
@@ -777,7 +777,7 @@ These coordinates are mapped in real-time to CSS Custom Properties exposed on `:
      * **Golden Hour**: Soft amber radial tint (`rgba(245, 158, 11, 0.22)`) with `mix-blend-mode: soft-light`.
      * **Sunset / Dusk**: Violet-crimson ambient tint (`rgba(194, 65, 12, 0.28)`) with `mix-blend-mode: soft-light`.
      * **Twilight** ($-0.10 \le \alpha \le 0.0\text{ rad}$): Cobalt indigo wash (`rgba(30, 27, 75, 0.35)`) with `mix-blend-mode: soft-light`.
-     * **Deep Night** ($\alpha < -0.10\text{ rad}$): Deep obsidian/slate wash (`rgba(2, 6, 23, 0.55)`) with `mix-blend-mode: multiply` to deepen wallpaper shadows while preserving foreground text contrast.
+     * **Deep Night** ($\alpha < -0.10\text{ rad}$): Soft moonlit wash (`rgba(2, 6, 23, 0.20)` to `rgba(15, 23, 42, 0.25)`) with `mix-blend-mode: soft-light`, soft celestial lunar bloom (`rgba(219, 234, 254, 0.22)`), and high-clarity wallpaper grading (`brightness(0.86) contrast(1.02)`) to ensure the underlying wallpaper remains illuminated, clear, and visible at night.
 
 3. **Directional Shadow Projection**:
    Physical shadows cast directly opposite the sun:
