@@ -12,6 +12,41 @@
 (function(global) {
   'use strict';
 
+  var MOON_PHASES = Object.freeze([
+    { name: 'New Moon', glyph: '🌑' },
+    { name: 'Waxing Crescent', glyph: '🌒' },
+    { name: 'First Quarter', glyph: '🌓' },
+    { name: 'Waxing Gibbous', glyph: '🌔' },
+    { name: 'Full Moon', glyph: '🌕' },
+    { name: 'Waning Gibbous', glyph: '🌖' },
+    { name: 'Last Quarter', glyph: '🌗' },
+    { name: 'Waning Crescent', glyph: '🌘' }
+  ]);
+
+  var WESTERN_NAMES = Object.freeze([
+    'Wolf Moon', 'Snow Moon', 'Worm Moon', 'Pink Moon',
+    'Flower Moon', 'Strawberry Moon', 'Buck Moon', 'Sturgeon Moon',
+    'Harvest Moon', 'Hunter\'s Moon', 'Beaver Moon', 'Cold Moon'
+  ]);
+
+  var VEDIC_NAMES = Object.freeze([
+    'Pausha Purnima', 'Magha Purnima', 'Phalguna Purnima', 'Chaitra Purnima',
+    'Vaishakha Purnima', 'Jyeshtha Purnima', 'Ashadha Purnima', 'Shravana Purnima',
+    'Bhadrapada Purnima', 'Ashvina Purnima', 'Kartika Purnima', 'Margashirsha Purnima'
+  ]);
+
+  var METEOR_SHOWERS = Object.freeze([
+    { name: 'Quadrantids', startM: 0, startD: 1, endM: 0, endD: 12, peak: 'Jan 3-4' },
+    { name: 'Lyrids', startM: 3, startD: 14, endM: 3, endD: 30, peak: 'Apr 22-23' },
+    { name: 'Eta Aquariids', startM: 3, startD: 19, endM: 4, endD: 28, peak: 'May 5-6' },
+    { name: 'Delta Aquariids', startM: 6, startD: 12, endM: 7, endD: 23, peak: 'Jul 29-30' },
+    { name: 'Perseids', startM: 6, startD: 17, endM: 7, endD: 24, peak: 'Aug 12-13' },
+    { name: 'Orionids', startM: 9, startD: 2, endM: 10, endD: 7, peak: 'Oct 21-22' },
+    { name: 'Leonids', startM: 10, startD: 6, endM: 10, endD: 30, peak: 'Nov 17-18' },
+    { name: 'Geminids', startM: 11, startD: 4, endM: 11, endD: 20, peak: 'Dec 13-14' },
+    { name: 'Ursids', startM: 11, startD: 17, endM: 11, endD: 26, peak: 'Dec 22-23' }
+  ]);
+
   /**
    * ==============================================================================
    * 1. MediaVisualizerEngine
@@ -102,6 +137,19 @@
 
   MediaVisualizerEngine.prototype.processAudioData = function(audioArray) {
     if (!this.enabled || !audioArray) return;
+
+    if (this.isSleeping) {
+      var checkLimit = Math.min(8, audioArray.length);
+      var hasEnergy = false;
+      for (var k = 0; k < checkLimit; k++) {
+        var sVal = audioArray[k];
+        if (typeof sVal === 'number' && Number.isFinite(sVal) && sVal >= 0.005) {
+          hasEnergy = true;
+          break;
+        }
+      }
+      if (!hasEnergy) return;
+    }
 
     var totalEnergy = 0;
     for (var i = 0; i < 32; i++) {
@@ -403,6 +451,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     this.isLightTheme = false;
 
     this.ctx = this.dom.canvas ? this.dom.canvas.getContext('2d') : null;
+    this.focusGradient = null;
+    this.breakGradient = null;
+    this.initGradients();
 
     this.bindEvents();
     this.render();
@@ -616,18 +667,25 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         ctx.lineWidth = lineWidth;
         ctx.lineCap = 'round';
 
-        var grad = ctx.createLinearGradient(10, 10, 78, 78);
-        if (this.mode === 'focus') {
-          grad.addColorStop(0, '#10b981');
-          grad.addColorStop(1, '#38bdf8');
-        } else {
-          grad.addColorStop(0, '#fbbf24');
-          grad.addColorStop(1, '#f43f5e');
+        if (!this.focusGradient) {
+          this.initGradients();
         }
-        ctx.strokeStyle = grad;
+        var grad = this.mode === 'focus' ? this.focusGradient : this.breakGradient;
+        ctx.strokeStyle = grad || (this.mode === 'focus' ? '#10b981' : '#fbbf24');
         ctx.stroke();
       }
     }
+  };
+
+  PomodoroEngine.prototype.initGradients = function() {
+    if (!this.ctx) return;
+    this.focusGradient = this.ctx.createLinearGradient(10, 10, 78, 78);
+    this.focusGradient.addColorStop(0, '#10b981');
+    this.focusGradient.addColorStop(1, '#38bdf8');
+
+    this.breakGradient = this.ctx.createLinearGradient(10, 10, 78, 78);
+    this.breakGradient.addColorStop(0, '#fbbf24');
+    this.breakGradient.addColorStop(1, '#f43f5e');
   };
 
   PomodoroEngine.prototype.setTheme = function(theme) {
@@ -660,7 +718,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     }
   };
 
-  SolarLightingEngine.prototype.update = function(now, lat, lng) {
+  SolarLightingEngine.prototype.update = function(now, lat, lng, sunPos) {
     if (!this.enabled || !global.SunCalc) {
       if (!this.isReset) {
         this.resetStyles();
@@ -671,12 +729,18 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
     try {
       now = now || new Date();
-      var pos = global.SunCalc.getPosition(now, lat, lng);
+      var pos = sunPos || global.SunCalc.getPosition(now, lat, lng);
       var alpha = pos.altitude;
       var theta = pos.azimuth;
 
       if (typeof alpha !== 'number' || isNaN(alpha) || typeof theta !== 'number' || isNaN(theta)) {
         return;
+      }
+
+      if (this.lastAltitude !== null && this.lastAzimuth !== null) {
+        if (Math.abs(alpha - this.lastAltitude) <= 0.005 && Math.abs(theta - this.lastAzimuth) <= 0.005) {
+          return;
+        }
       }
 
       this.lastAltitude = alpha;
@@ -854,9 +918,13 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     this.staticX = new Float32Array(this.pointsCount);
     this.staticCp1X = new Float32Array(this.pointsCount - 1);
     this.staticCp2X = new Float32Array(this.pointsCount - 1);
+    this.staticXStr = new Array(this.pointsCount);
+    this.staticCp1XStr = new Array(this.pointsCount - 1);
+    this.staticCp2XStr = new Array(this.pointsCount - 1);
 
     for (var i = 0; i < this.pointsCount; i++) {
       this.staticX[i] = i * this.dx;
+      this.staticXStr[i] = (Math.round(this.staticX[i] * 10) / 10).toString();
     }
     for (var j = 0; j < this.pointsCount - 1; j++) {
       if (j === 0) {
@@ -864,14 +932,18 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       } else {
         this.staticCp1X[j] = this.staticX[j] + this.dx / 3;
       }
+      this.staticCp1XStr[j] = (Math.round(this.staticCp1X[j] * 10) / 10).toString();
+
       if (j === this.pointsCount - 2) {
         this.staticCp2X[j] = this.staticX[this.pointsCount - 1] - this.dx / 6;
       } else {
         this.staticCp2X[j] = this.staticX[j + 1] - this.dx / 3;
       }
+      this.staticCp2XStr[j] = (Math.round(this.staticCp2X[j] * 10) / 10).toString();
     }
 
     this.yCoords = new Float32Array(this.pointsCount);
+    this.curveParts = new Array(this.pointsCount - 1);
     this.tracks = {};
   }
 
@@ -916,7 +988,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       this.yCoords[i] = 18 - norm * 16;
     }
 
-    var curveD = '';
+    var parts = this.curveParts;
     for (var j = 0; j < N - 1; j++) {
       var p0y = (j === 0) ? this.yCoords[0] : this.yCoords[j - 1];
       var p1y = this.yCoords[j];
@@ -931,12 +1003,17 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (cp1y < 1.5) cp1y = 1.5; else if (cp1y > 18.5) cp1y = 18.5;
       if (cp2y < 1.5) cp2y = 1.5; else if (cp2y > 18.5) cp2y = 18.5;
 
-      curveD += ' C ' + this.staticCp1X[j].toFixed(1) + ',' + cp1y.toFixed(1) + ' ' +
-                this.staticCp2X[j].toFixed(1) + ',' + cp2y.toFixed(1) + ' ' +
-                this.staticX[j + 1].toFixed(1) + ',' + p2y.toFixed(1);
+      var rCp1y = Math.round(cp1y * 10) / 10;
+      var rCp2y = Math.round(cp2y * 10) / 10;
+      var rP2y = Math.round(p2y * 10) / 10;
+
+      parts[j] = ' C ' + this.staticCp1XStr[j] + ',' + rCp1y + ' ' +
+                 this.staticCp2XStr[j] + ',' + rCp2y + ' ' +
+                 this.staticXStr[j + 1] + ',' + rP2y;
     }
 
-    var y0 = this.yCoords[0].toFixed(1);
+    var curveD = parts.join('');
+    var y0 = Math.round(this.yCoords[0] * 10) / 10;
     var lineD = 'M 0,' + y0 + curveD;
     var areaD = 'M 0,18 L 0,' + y0 + curveD + ' L 80,18 Z';
 
@@ -1424,8 +1501,21 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     syncPending: false,
     syncPendingForce: false,
 
-    // Text-Track Unicode Sparkline Characters (8 levels - fallback legacy)
-    SPARK_BLOCKS: [' ', '▂', '▃', '▄', '▅', '▆', '▇', '█'],
+    escapeHtml: function(str) {
+      if (str == null) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    },
+
+    setDomText: function(el, text) {
+      if (el && el.textContent !== text) {
+        el.textContent = text;
+      }
+    },
 
     // Hardware Telemetry Ring Buffers (40 samples each via Float32Array for zero-allocation charts)
     hwCpuHistory: new Float32Array(40),
@@ -2109,12 +2199,15 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
               String(val).toLowerCase()
             );
             if (global.ApiService) global.ApiService.newsProvider = npVal;
+            self.fetchNews(true);
             break;
           case 'newsApiKey':
             if (global.ApiService) global.ApiService.newsApiKey = val;
+            self.fetchNews(true);
             break;
           case 'currentsApiKey':
             if (global.ApiService) global.ApiService.currentsApiKey = val;
+            self.fetchNews(true);
             break;
           case 'showHardwareMonitor':
             self.setShowHardwareMonitor(val === true || val === 1 || val === 'true');
@@ -2463,6 +2556,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     },
 
     updateLayoutAutoResize: function() {
+      var hudHeight = (this.dom.hud && this.dom.hud.offsetHeight) || 395;
+      var dockHeight = (this.dom.dockMediaFocus && this.dom.dockMediaFocus.offsetHeight) || 124;
       var hwVisible = this.showHardwareMonitor;
       var newsVisible = this.showNewsFeed;
 
@@ -2527,8 +2622,6 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
         // Dynamically compute companion dock vertical positioning offset and collision avoidance
         if (this.dom.hud && this.dom.dockMediaFocus) {
-          var hudHeight = this.dom.hud.offsetHeight || 395;
-          var dockHeight = this.dom.dockMediaFocus.offsetHeight || 124;
           var offsetGap = 14;
           var vh = (typeof window !== 'undefined' && window.innerHeight) ? window.innerHeight : 1080;
           var vw = (typeof window !== 'undefined' && window.innerWidth) ? window.innerWidth : 1920;
@@ -2681,10 +2774,13 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         var srcH = Math.max(1, Math.min(ih - srcY, hudRect.height / scale));
 
         // Sample into offscreen canvas (24x16 downscale)
-        var sampleCanvas = document.createElement('canvas');
-        sampleCanvas.width = 24;
-        sampleCanvas.height = 16;
-        var ctx = sampleCanvas.getContext('2d');
+        if (!this._sampleCanvas) {
+          this._sampleCanvas = document.createElement('canvas');
+          this._sampleCanvas.width = 24;
+          this._sampleCanvas.height = 16;
+        }
+        var sampleCanvas = this._sampleCanvas;
+        var ctx = sampleCanvas.getContext('2d', { willReadFrequently: true }) || sampleCanvas.getContext('2d');
         if (!ctx) return;
 
         ctx.drawImage(img, srcX, srcY, srcW, srcH, 0, 0, 24, 16);
@@ -2900,16 +2996,18 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         var minutes = now.getMinutes();
         hStr = hours < 10 ? '0' + hours : '' + hours;
         mStr = minutes < 10 ? '0' + minutes : '' + minutes;
-        var options = { weekday: 'long', month: 'short', day: 'numeric' };
-        dateStr = now.toLocaleDateString('en-US', options);
+        if (!this._localDateFormatter) {
+          this._localDateFormatter = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+        }
+        dateStr = this._localDateFormatter.format(now);
       }
 
       if (this.dom.hudClock) {
-        this.dom.hudClock.textContent = hStr + ':' + mStr;
+        this.setDomText(this.dom.hudClock, hStr + ':' + mStr);
       }
 
       if (this.dom.hudDate) {
-        this.dom.hudDate.textContent = dateStr;
+        this.setDomText(this.dom.hudDate, dateStr);
       }
 
       // Update remaining cache TTL in diagnostics and footer
@@ -2938,32 +3036,39 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       // Continuously refresh celestial ephemeris, sky gradient, and dynamic solar lighting (every 15s)
       var elapsedCelestial = now.getTime() - this.lastCelestialUpdate;
       if (elapsedCelestial >= 15000 || !this.lastCelestialUpdate) {
-        this.renderCelestial();
-        this.updateSky();
+        var defaultLoc = (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.defaultLocation) || {};
+        var lat = typeof defaultLoc.latitude === 'number' ? defaultLoc.latitude : 35.6762;
+        var lng = typeof defaultLoc.longitude === 'number' ? defaultLoc.longitude : 139.6503;
+        if (this.state && this.state.location) {
+          if (typeof this.state.location.latitude === 'number') lat = this.state.location.latitude;
+          if (typeof this.state.location.longitude === 'number') lng = this.state.location.longitude;
+        }
+
+        var sunPos = (global.SunCalc && typeof global.SunCalc.getPosition === 'function') ? global.SunCalc.getPosition(now, lat, lng) : null;
+        var moonPos = (global.SunCalc && typeof global.SunCalc.getMoonPosition === 'function') ? global.SunCalc.getMoonPosition(now, lat, lng) : null;
+        var moonIllum = (global.SunCalc && typeof global.SunCalc.getMoonIllumination === 'function') ? global.SunCalc.getMoonIllumination(now) : null;
+
+        this.renderCelestial(now, lat, lng, sunPos, moonPos, moonIllum);
+        this.updateSky(sunPos, moonPos, moonIllum);
         if (this.solarLighting) {
-          var defaultLoc = (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.defaultLocation) || {};
-          var lat = typeof defaultLoc.latitude === 'number' ? defaultLoc.latitude : 35.6762;
-          var lng = typeof defaultLoc.longitude === 'number' ? defaultLoc.longitude : 139.6503;
-          if (this.state && this.state.location) {
-            if (typeof this.state.location.latitude === 'number') lat = this.state.location.latitude;
-            if (typeof this.state.location.longitude === 'number') lng = this.state.location.longitude;
-          }
-          this.solarLighting.update(now, lat, lng);
+          this.solarLighting.update(now, lat, lng, sunPos);
         }
         this.lastCelestialUpdate = now.getTime();
       }
     },
 
-    renderCelestial: function() {
+    renderCelestial: function(now, lat, lng, sunPos, moonPos, moonIllum) {
       if (!global.SunCalc) return;
 
-      var now = new Date();
-      var defaultLoc = (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.defaultLocation) || {};
-      var lat = typeof defaultLoc.latitude === 'number' ? defaultLoc.latitude : 35.6762;
-      var lng = typeof defaultLoc.longitude === 'number' ? defaultLoc.longitude : 139.6503;
-      if (this.state && this.state.location) {
-        if (typeof this.state.location.latitude === 'number') lat = this.state.location.latitude;
-        if (typeof this.state.location.longitude === 'number') lng = this.state.location.longitude;
+      now = now || new Date();
+      if (lat == null || lng == null) {
+        var defaultLoc = (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.defaultLocation) || {};
+        lat = typeof defaultLoc.latitude === 'number' ? defaultLoc.latitude : 35.6762;
+        lng = typeof defaultLoc.longitude === 'number' ? defaultLoc.longitude : 139.6503;
+        if (this.state && this.state.location) {
+          if (typeof this.state.location.latitude === 'number') lat = this.state.location.latitude;
+          if (typeof this.state.location.longitude === 'number') lng = this.state.location.longitude;
+        }
       }
 
       var tz = this.getTimezoneContext();
@@ -2991,11 +3096,12 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
 
       // 1. Solar Ephemeris & Precise Solar Altitude Day/Night Recognition
-      var sunPos = null;
-      try {
-        sunPos = global.SunCalc.getPosition(now, lat, lng);
-      } catch (e) {
-        console.warn('[App] Error computing SunCalc sun position:', e);
+      if (!sunPos && global.SunCalc && typeof global.SunCalc.getPosition === 'function') {
+        try {
+          sunPos = global.SunCalc.getPosition(now, lat, lng);
+        } catch (e) {
+          console.warn('[App] Error computing SunCalc sun position:', e);
+        }
       }
 
       // Sun altitude > -0.01454 rad (-0.833 deg) is the geometric solar horizon accounting for atmospheric refraction and solar radius
@@ -3035,12 +3141,11 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
 
       // Populate hidden fallback spans for backwards compatibility and automated tests
-      if (this.dom.ephemerisSunrise) this.dom.ephemerisSunrise.textContent = sunriseStr || '--:--';
-      if (this.dom.ephemerisNoon) this.dom.ephemerisNoon.textContent = noonStr || '--:--';
-      if (this.dom.ephemerisSunset) this.dom.ephemerisSunset.textContent = sunsetStr || '--:--';
+      if (this.dom.ephemerisSunrise) this.setDomText(this.dom.ephemerisSunrise, sunriseStr || '--:--');
+      if (this.dom.ephemerisNoon) this.setDomText(this.dom.ephemerisNoon, noonStr || '--:--');
+      if (this.dom.ephemerisSunset) this.setDomText(this.dom.ephemerisSunset, sunsetStr || '--:--');
 
       // 2. Lunar Ephemeris (Moon Phase, Illumination, Moonrise/Moonset)
-      var moonIllum = null;
       var moonTimes = null;
       var activePhase = { name: 'Full Moon', glyph: '🌕' };
       var illumPct = '--%';
@@ -3053,60 +3158,29 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       var moonsetStr = '--:--';
 
       try {
-        moonIllum = global.SunCalc.getMoonIllumination(now);
+        if (!moonIllum && global.SunCalc && typeof global.SunCalc.getMoonIllumination === 'function') {
+          moonIllum = global.SunCalc.getMoonIllumination(now);
+        }
         var fraction = (moonIllum && typeof moonIllum.fraction === 'number') ? moonIllum.fraction : 0;
         var phase = (moonIllum && typeof moonIllum.phase === 'number') ? moonIllum.phase : 0; // 0.0 to 1.0
 
         var phaseIndex = Math.round(phase * 8) % 8;
-        var moonPhases = [
-          { name: 'New Moon', glyph: '🌑' },
-          { name: 'Waxing Crescent', glyph: '🌒' },
-          { name: 'First Quarter', glyph: '🌓' },
-          { name: 'Waxing Gibbous', glyph: '🌔' },
-          { name: 'Full Moon', glyph: '🌕' },
-          { name: 'Waning Gibbous', glyph: '🌖' },
-          { name: 'Last Quarter', glyph: '🌗' },
-          { name: 'Waning Crescent', glyph: '🌘' }
-        ];
-
-        activePhase = moonPhases[phaseIndex] || moonPhases[0];
+        activePhase = MOON_PHASES[phaseIndex] || MOON_PHASES[0];
         illumPct = Math.round(fraction * 100) + '%';
         lunarAge = (phase * 29.530588).toFixed(1);
         isWaxing = phase < 0.5;
 
         // Traditional Western Full Moon Names by month
-        var westernNames = [
-          'Wolf Moon', 'Snow Moon', 'Worm Moon', 'Pink Moon',
-          'Flower Moon', 'Strawberry Moon', 'Buck Moon', 'Sturgeon Moon',
-          'Harvest Moon', 'Hunter\'s Moon', 'Beaver Moon', 'Cold Moon'
-        ];
-        westernFullMoonName = westernNames[now.getMonth()] || 'Full Moon';
+        westernFullMoonName = WESTERN_NAMES[now.getMonth()] || 'Full Moon';
 
         // Cultural Vedic Purnima Names (traditional Hindu lunar calendar)
-        var vedicNames = [
-          'Pausha Purnima', 'Magha Purnima', 'Phalguna Purnima', 'Chaitra Purnima',
-          'Vaishakha Purnima', 'Jyeshtha Purnima', 'Ashadha Purnima', 'Shravana Purnima',
-          'Bhadrapada Purnima', 'Ashvina Purnima', 'Kartika Purnima', 'Margashirsha Purnima'
-        ];
-        vedicPurnimaName = vedicNames[now.getMonth()] || 'Purnima';
+        vedicPurnimaName = VEDIC_NAMES[now.getMonth()] || 'Purnima';
 
         // Prominent Annual Meteor Showers
-        var meteorShowers = [
-          { name: 'Quadrantids', startM: 0, startD: 1, endM: 0, endD: 12, peak: 'Jan 3-4' },
-          { name: 'Lyrids', startM: 3, startD: 14, endM: 3, endD: 30, peak: 'Apr 22-23' },
-          { name: 'Eta Aquariids', startM: 3, startD: 19, endM: 4, endD: 28, peak: 'May 5-6' },
-          { name: 'Delta Aquariids', startM: 6, startD: 12, endM: 7, endD: 23, peak: 'Jul 29-30' },
-          { name: 'Perseids', startM: 6, startD: 17, endM: 7, endD: 24, peak: 'Aug 12-13' },
-          { name: 'Orionids', startM: 9, startD: 2, endM: 10, endD: 7, peak: 'Oct 21-22' },
-          { name: 'Leonids', startM: 10, startD: 6, endM: 10, endD: 30, peak: 'Nov 17-18' },
-          { name: 'Geminids', startM: 11, startD: 4, endM: 11, endD: 20, peak: 'Dec 13-14' },
-          { name: 'Ursids', startM: 11, startD: 17, endM: 11, endD: 26, peak: 'Dec 22-23' }
-        ];
-
         var curM = now.getMonth();
         var curD = now.getDate();
-        for (var si = 0; si < meteorShowers.length; si++) {
-          var ms = meteorShowers[si];
+        for (var si = 0; si < METEOR_SHOWERS.length; si++) {
+          var ms = METEOR_SHOWERS[si];
           var inRange = false;
           if (ms.startM === ms.endM) {
             inRange = (curM === ms.startM && curD >= ms.startD && curD <= ms.endD);
@@ -3149,8 +3223,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
 
       // Populate hidden fallback moon spans for tests
-      if (this.dom.ephemerisMoonrise) this.dom.ephemerisMoonrise.textContent = moonriseStr;
-      if (this.dom.ephemerisMoonset) this.dom.ephemerisMoonset.textContent = moonsetStr;
+      if (this.dom.ephemerisMoonrise) this.setDomText(this.dom.ephemerisMoonrise, moonriseStr);
+      if (this.dom.ephemerisMoonset) this.setDomText(this.dom.ephemerisMoonset, moonsetStr);
 
       // 3. Day vs Night Row Toggling
       if (isDay) {
@@ -3224,8 +3298,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         }
       }
 
-      if (this.dom.ephemerisRainVal) this.dom.ephemerisRainVal.textContent = rainVal;
-      if (this.dom.ephemerisRainSub) this.dom.ephemerisRainSub.textContent = rainSub;
+      if (this.dom.ephemerisRainVal) this.setDomText(this.dom.ephemerisRainVal, rainVal);
+      if (this.dom.ephemerisRainSub) this.setDomText(this.dom.ephemerisRainSub, rainSub);
 
       // Daytime Card 2: Feels-Like Peak (Strictly today, excluding tomorrow)
       var peakVal = 'Unavailable';
@@ -3233,11 +3307,13 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       var peakDetails = { peakTemp: null, peakTime: null, peakHumidity: null };
 
       if (hourly && hourly.length > 0) {
-        var isF = !!this.isFahrenheit;
+        var isF = (this.tempUnit === 'F');
         var highestApp = -Infinity;
         var highestTime = null;
         var highestHum = null;
 
+        var startOfDayMs = null;
+        var endOfDayMs = null;
         var todayKey = null;
         if (tz) {
           try {
@@ -3251,7 +3327,26 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
               });
             }
             todayKey = self._tzFormatters[tz + '_YMD'].format(now);
+            var nowTime = now.getTime();
+            var probe = nowTime - (nowTime % 3600000);
+            var checkDate = new Date();
+            while (probe > nowTime - 26 * 3600000) {
+              checkDate.setTime(probe - 3600000);
+              if (self._tzFormatters[tz + '_YMD'].format(checkDate) !== todayKey) {
+                startOfDayMs = probe;
+                break;
+              }
+              probe -= 3600000;
+            }
+            if (startOfDayMs != null) {
+              endOfDayMs = startOfDayMs + 24 * 3600000;
+            }
           } catch (e) {}
+        }
+        if (startOfDayMs == null) {
+          var d0 = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+          startOfDayMs = d0.getTime();
+          endOfDayMs = startOfDayMs + 86400000;
         }
 
         for (var pi = 0; pi < hourly.length; pi++) {
@@ -3265,17 +3360,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             if (!isNaN(hParsed)) hPtMs = hParsed;
           }
 
-          if (hPtMs) {
-            var ptDate = new Date(hPtMs);
-            if (todayKey && self._tzFormatters && self._tzFormatters[tz + '_YMD']) {
-              if (self._tzFormatters[tz + '_YMD'].format(ptDate) !== todayKey) {
-                continue;
-              }
-            } else {
-              if (ptDate.getDate() !== now.getDate() || ptDate.getMonth() !== now.getMonth() || ptDate.getFullYear() !== now.getFullYear()) {
-                continue;
-              }
-            }
+          if (hPtMs && (hPtMs < startOfDayMs || hPtMs >= endOfDayMs)) {
+            continue;
           }
 
           var appTemp = isF ? hPt.apparentF : hPt.apparentC;
@@ -3303,8 +3389,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         }
       }
 
-      if (this.dom.ephemerisPeakVal) this.dom.ephemerisPeakVal.textContent = peakVal;
-      if (this.dom.ephemerisPeakSub) this.dom.ephemerisPeakSub.textContent = peakSub;
+      if (this.dom.ephemerisPeakVal) this.setDomText(this.dom.ephemerisPeakVal, peakVal);
+      if (this.dom.ephemerisPeakSub) this.setDomText(this.dom.ephemerisPeakSub, peakSub);
 
       // Daytime Card 3: Golden Hour / Daylight Left
       var daylightLabel = 'Daylight Left';
@@ -3351,9 +3437,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         }
       }
 
-      if (this.dom.ephemerisDaylightLabel) this.dom.ephemerisDaylightLabel.textContent = daylightLabel;
-      if (this.dom.ephemerisDaylightVal) this.dom.ephemerisDaylightVal.textContent = daylightVal;
-      if (this.dom.ephemerisDaylightSub) this.dom.ephemerisDaylightSub.textContent = daylightSub;
+      if (this.dom.ephemerisDaylightLabel) this.setDomText(this.dom.ephemerisDaylightLabel, daylightLabel);
+      if (this.dom.ephemerisDaylightVal) this.setDomText(this.dom.ephemerisDaylightVal, daylightVal);
+      if (this.dom.ephemerisDaylightSub) this.setDomText(this.dom.ephemerisDaylightSub, daylightSub);
 
       // 5. Nighttime 3-Card Calculations
       // Night Card 1: Next Morning Golden Hour Window
@@ -3390,21 +3476,22 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         goldenSub = (formatTime(nextSunrise) || '--:--') + ' - ' + (nextGoldenEnd ? (formatTime(nextGoldenEnd) || '--:--') : '--:--');
       }
 
-      if (this.dom.ephemerisGoldenVal) this.dom.ephemerisGoldenVal.textContent = goldenVal;
-      if (this.dom.ephemerisGoldenSub) this.dom.ephemerisGoldenSub.textContent = goldenSub;
+      if (this.dom.ephemerisGoldenVal) this.setDomText(this.dom.ephemerisGoldenVal, goldenVal);
+      if (this.dom.ephemerisGoldenSub) this.setDomText(this.dom.ephemerisGoldenSub, goldenSub);
 
       // Night Card 2: Moon Phase, Illumination & Visibility Outlook
       var displayPhaseName = (activePhase.name === 'Full Moon') ? westernFullMoonName : activePhase.name;
-      var moonPos = null;
       var isMoonAbove = false;
       var moonAltDeg = 0;
-      try {
-        moonPos = global.SunCalc.getMoonPosition(now, lat, lng);
-        if (moonPos && typeof moonPos.altitude === 'number') {
-          isMoonAbove = moonPos.altitude > 0;
-          moonAltDeg = Math.round(moonPos.altitude * 180 / Math.PI);
-        }
-      } catch (e) {}
+      if (!moonPos && global.SunCalc && typeof global.SunCalc.getMoonPosition === 'function') {
+        try {
+          moonPos = global.SunCalc.getMoonPosition(now, lat, lng);
+        } catch (e) {}
+      }
+      if (moonPos && typeof moonPos.altitude === 'number') {
+        isMoonAbove = moonPos.altitude > 0;
+        moonAltDeg = Math.round(moonPos.altitude * 180 / Math.PI);
+      }
 
       var cloudClarity = 'Conditions unavailable';
       if (this.state && this.state.weather && this.state.weather.conditionText) {
@@ -3424,10 +3511,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
       var moonStatusSub = (isMoonAbove ? ('Above horizon (' + moonAltDeg + '°)') : 'Below horizon') + ' · ' + cloudClarity;
 
-      if (this.dom.ephemerisNightMoonGlyph) this.dom.ephemerisNightMoonGlyph.textContent = activePhase.glyph;
-      if (this.dom.ephemerisNightMoonPhase) this.dom.ephemerisNightMoonPhase.textContent = displayPhaseName;
-      if (this.dom.ephemerisNightMoonIllum) this.dom.ephemerisNightMoonIllum.textContent = illumPct;
-      if (this.dom.ephemerisNightMoonStatus) this.dom.ephemerisNightMoonStatus.textContent = moonStatusSub;
+      if (this.dom.ephemerisNightMoonGlyph) this.setDomText(this.dom.ephemerisNightMoonGlyph, activePhase.glyph);
+      if (this.dom.ephemerisNightMoonPhase) this.setDomText(this.dom.ephemerisNightMoonPhase, displayPhaseName);
+      if (this.dom.ephemerisNightMoonIllum) this.setDomText(this.dom.ephemerisNightMoonIllum, illumPct);
+      if (this.dom.ephemerisNightMoonStatus) this.setDomText(this.dom.ephemerisNightMoonStatus, moonStatusSub);
 
       // Night Card 3: Next Sky Event (Chronologically sorted among valid future candidates)
       var eventLabel = 'Next Sky Event';
@@ -3450,6 +3537,30 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
       skyCandidates.sort(function(a, b) { return a.time.getTime() - b.time.getTime(); });
 
+      // Tomorrow's sun/moon times fallback when candidates are exhausted for today
+      if (skyCandidates.length === 0) {
+        try {
+          var tomorrow = new Date(now.getTime() + 24 * 3600 * 1000);
+          var tomorrowSunTimes = global.SunCalc.getTimes(tomorrow, lat, lng);
+          if (tomorrowSunTimes && tomorrowSunTimes.dawn && tomorrowSunTimes.dawn > now) {
+            skyCandidates.push({ time: tomorrowSunTimes.dawn, label: 'Civil Dawn', sub: 'first light' });
+          }
+          if (tomorrowSunTimes && tomorrowSunTimes.sunrise && tomorrowSunTimes.sunrise > now) {
+            skyCandidates.push({ time: tomorrowSunTimes.sunrise, label: 'Sunrise', sub: 'morning' });
+          }
+          if (typeof global.SunCalc.getMoonTimes === 'function') {
+            var tomorrowMoonTimes = global.SunCalc.getMoonTimes(tomorrow, lat, lng, false);
+            if (tomorrowMoonTimes && tomorrowMoonTimes.set && tomorrowMoonTimes.set > now) {
+              skyCandidates.push({ time: tomorrowMoonTimes.set, label: 'Moonset', sub: 'tonight' });
+            }
+            if (tomorrowMoonTimes && tomorrowMoonTimes.rise && tomorrowMoonTimes.rise > now) {
+              skyCandidates.push({ time: tomorrowMoonTimes.rise, label: 'Moonrise', sub: 'rising' });
+            }
+          }
+          skyCandidates.sort(function(a, b) { return a.time.getTime() - b.time.getTime(); });
+        } catch (e) {}
+      }
+
       if (skyCandidates.length > 0) {
         var earliestEvent = skyCandidates[0];
         eventLabel = earliestEvent.label;
@@ -3465,9 +3576,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         eventSub = 'See calendar';
       }
 
-      if (this.dom.ephemerisEventLabel) this.dom.ephemerisEventLabel.textContent = eventLabel;
-      if (this.dom.ephemerisEventVal) this.dom.ephemerisEventVal.textContent = eventVal;
-      if (this.dom.ephemerisEventSub) this.dom.ephemerisEventSub.textContent = eventSub;
+      if (this.dom.ephemerisEventLabel) this.setDomText(this.dom.ephemerisEventLabel, eventLabel);
+      if (this.dom.ephemerisEventVal) this.setDomText(this.dom.ephemerisEventVal, eventVal);
+      if (this.dom.ephemerisEventSub) this.setDomText(this.dom.ephemerisEventSub, eventSub);
 
       // Update Card Header Tooltip
       if (this.dom.hudEphemerisCard) {
@@ -3719,6 +3830,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     selectNewsStory: function(idx) {
       if (!this.newsItems || this.newsItems.length === 0) return;
       this.clearNewsTimers();
+      if (this.dom.hudNewsLink) {
+        this.dom.hudNewsLink.classList.remove('is-fading');
+      }
       this.currentNewsIdx = idx % this.newsItems.length;
       this.displayNewsItem(this.currentNewsIdx);
 
@@ -3742,7 +3856,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (!content) return;
 
       var pop = this.dom.hudHoverPopover;
-      pop.innerHTML = '<div class="hud-popover-title">' + content.title + '</div>' +
+      var safeTitle = App.escapeHtml ? App.escapeHtml(content.title) : content.title;
+      pop.innerHTML = '<div class="hud-popover-title">' + safeTitle + '</div>' +
                       '<div class="hud-popover-body">' + content.bodyHtml + '</div>';
 
       if (this.currentPopoverAnchor && this.currentPopoverAnchor !== anchorEl) {
@@ -3800,7 +3915,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       var state = this.state || {};
       var weather = state.weather || {};
       var aqi = state.aqi || {};
-      var isF = !!this.isFahrenheit;
+      var isF = (this.tempUnit === 'F');
       var celestial = this.celestialData || {};
 
       function makeRows(rows) {
@@ -4147,15 +4262,24 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           if (titleEl) titleEl.textContent = 'Atmospheric Telemetry';
 
           var tempStr = '--';
-          if (weather.temp != null && Number.isFinite(weather.temp)) {
-            var valT = tempUnit === 'F' ? Math.round(weather.temp * 9 / 5 + 32) : Math.round(weather.temp);
-            tempStr = valT + '°' + tempUnit;
+          var curT = tempUnit === 'F' ? weather.tempF : weather.tempC;
+          if (curT == null && weather.temp != null && Number.isFinite(weather.temp)) {
+            curT = tempUnit === 'F' ? Math.round(weather.temp * 9 / 5 + 32) : Math.round(weather.temp);
           }
+          if (curT != null && Number.isFinite(curT)) {
+            tempStr = Math.round(curT) + '°' + tempUnit;
+          }
+
           var feelsStr = '--';
-          if (weather.feelsLike != null && Number.isFinite(weather.feelsLike)) {
-            var valF = tempUnit === 'F' ? Math.round(weather.feelsLike * 9 / 5 + 32) : Math.round(weather.feelsLike);
-            feelsStr = valF + '°' + tempUnit;
+          var curApp = tempUnit === 'F' ? weather.apparentF : weather.apparentC;
+          if (curApp == null && weather.feelsLike != null && Number.isFinite(weather.feelsLike)) {
+            curApp = tempUnit === 'F' ? Math.round(weather.feelsLike * 9 / 5 + 32) : Math.round(weather.feelsLike);
           }
+          if (curApp != null && Number.isFinite(curApp)) {
+            feelsStr = Math.round(curApp) + '°' + tempUnit;
+          }
+
+          var pVal = weather.precipitationMm != null ? weather.precipitationMm : (weather.precipMm != null ? weather.precipMm : 0.0);
 
           var locName = location.city || 'Local Area';
           if (location.country && location.city && location.country !== location.city) {
@@ -4185,7 +4309,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             '</div>' +
             '<div class="hud-detail-item">' +
               '<span class="hud-detail-item-label">Precipitation</span>' +
-              '<span class="hud-detail-item-val">' + (weather.precipMm != null ? weather.precipMm + ' mm' : '0.0 mm') + '</span>' +
+              '<span class="hud-detail-item-val">' + (pVal != null ? pVal + ' mm' : '0.0 mm') + '</span>' +
               '<span class="hud-detail-item-sub">Surface accumulation</span>' +
             '</div>' +
             '<div class="hud-detail-item">' +
@@ -4210,7 +4334,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             temp: 'Temperature (°' + tempUnit + ')',
             feels_like: 'Feels Like (°' + tempUnit + ')',
             precip: 'Precipitation Probability (%)',
-            wind: 'Surface Wind Speed (km/h)',
+            wind: 'Surface Wind Speed (' + (tempUnit === 'F' ? 'mph' : 'km/h') + ')',
             humidity: 'Relative Humidity (%)',
             aqi: 'Air Quality Index'
           };
@@ -4220,9 +4344,27 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           var ptsHtml = '';
           if (points && points.length > 0) {
             ptsHtml = '<div class="hud-detail-grid">';
+            var isF = (tempUnit === 'F');
             for (var pi = 0; pi < Math.min(8, points.length); pi++) {
               var pt = points[pi];
-              var ptVal = (typeof pt.value === 'number') ? pt.value.toFixed(1) : (pt.value || '--');
+              var v = NaN;
+              if (activeTab === 'temp') v = isF ? pt.tempF : pt.tempC;
+              else if (activeTab === 'feels_like') v = isF ? pt.apparentF : pt.apparentC;
+              else if (activeTab === 'precip') v = (pt.precipProb != null) ? pt.precipProb : (pt.value != null ? pt.value : NaN);
+              else if (activeTab === 'wind') v = isF ? pt.windSpeedMph : pt.windSpeedKm;
+              else if (activeTab === 'humidity') v = (pt.humidity != null) ? pt.humidity : NaN;
+              else if (activeTab === 'aqi') v = (pt.aqi != null) ? pt.aqi : NaN;
+
+              if (isNaN(v) && typeof pt.value === 'number') v = pt.value;
+
+              var ptVal = (!isNaN(v) && typeof v === 'number') ? (Math.round(v * 10) / 10).toString() : (pt.value || '--');
+              var suffix = '';
+              if (activeTab === 'temp' || activeTab === 'feels_like') suffix = '°';
+              else if (activeTab === 'precip' || activeTab === 'humidity') suffix = '%';
+              else if (activeTab === 'wind') suffix = isF ? ' mph' : ' km/h';
+
+              if (ptVal !== '--') ptVal += suffix;
+
               ptsHtml += '<div class="hud-detail-item">' +
                 '<span class="hud-detail-item-label">' + esc(pt.label || pt.time || ('+' + (pi * 3) + 'h')) + '</span>' +
                 '<span class="hud-detail-item-val">' + esc(ptVal) + '</span>' +
@@ -4249,7 +4391,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             html = '<div class="hud-detail-news-list">';
             for (var ni = 0; ni < newsList.length; ni++) {
               var nItem = newsList[ni];
-              var safeUrl = (nItem.url && /^https?:\/\//i.test(nItem.url)) ? nItem.url : '#';
+              var rawUrl = nItem.link || nItem.url || '';
+              var safeUrl = (typeof rawUrl === 'string' && /^https:\/\//i.test(rawUrl.trim())) ? rawUrl.trim() : '#';
               html += '<a class="hud-detail-news-item" href="' + esc(safeUrl) + '" target="_blank" rel="noopener noreferrer">' +
                 '<p class="hud-detail-news-title">' + esc(nItem.title || 'Untitled Story') + '</p>' +
                 '<div class="hud-detail-news-meta">' +
@@ -4635,6 +4778,31 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         });
     },
 
+    fetchNews: function(forceRefresh) {
+      var self = this;
+      if (!global.ApiService || typeof global.ApiService.fetchNews !== 'function') return Promise.resolve([]);
+      var loc = (this.state && this.state.location) || (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.defaultLocation) || {};
+      var city = loc.city || 'Local Area';
+      var country = loc.countryCode || 'US';
+      return global.ApiService.fetchNews(city, country, forceRefresh)
+        .then(function(articles) {
+          if (articles && articles.length > 0) {
+            self.newsItems = articles;
+            if (self.state) {
+              self.state.news = articles;
+            }
+            if (!self.isPlaybackPaused) {
+              self.renderNews(articles);
+            }
+          }
+          return articles;
+        })
+        .catch(function(err) {
+          console.warn('[App] fetchNews failed:', err);
+          return [];
+        });
+    },
+
     renderAll: function(snapshot) {
       if (!snapshot) return;
 
@@ -4912,16 +5080,6 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       historyArr[historyArr.length - 1] = val;
     },
 
-    getSparklineString: function(historyArr) {
-      var str = '';
-      for (var i = 0; i < historyArr.length; i++) {
-        var v = historyArr[i];
-        var idx = Math.min(7, Math.max(0, Math.floor((v / 100) * 8)));
-        str += this.SPARK_BLOCKS[idx];
-      }
-      return str;
-    },
-
     handleSystemInfo: function(data) {
       if (!data || this.isPlaybackPaused || !this.showHardwareMonitor) return;
       this.lastHwUpdate = Date.now();
@@ -4933,13 +5091,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       var cpuName = data.NameCpu || 'Processor';
       this.pushHwHistory(this.hwCpuHistory, cpuVal);
 
-      if (this.dom.hwCpuVal) this.dom.hwCpuVal.textContent = cpuVal + '%';
+      if (this.dom.hwCpuVal) this.setDomText(this.dom.hwCpuVal, cpuVal + '%');
       if (this.dom.hwCpuBar) this.dom.hwCpuBar.style.width = cpuVal + '%';
       if (this.sparklineEngine) this.sparklineEngine.render('cpu', this.hwCpuHistory);
-      if (this.dom.hwCpuSpark && this.dom.hwCpuSpark.tagName !== 'svg' && this.dom.hwCpuSpark.tagName !== 'SVG') {
-        this.dom.hwCpuSpark.textContent = this.getSparklineString(this.hwCpuHistory);
-      }
-      if (this.dom.hwCpuName) this.dom.hwCpuName.textContent = cpuName;
+      if (this.dom.hwCpuName) this.setDomText(this.dom.hwCpuName, cpuName);
 
       // GPU 3D load and name
       var gpuVal = (typeof data.CurrentGpu3D === 'number' && Number.isFinite(data.CurrentGpu3D)) ? Math.round(data.CurrentGpu3D) : 0;
@@ -4947,13 +5102,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       var gpuName = data.NameGpu || 'Graphics 3D';
       this.pushHwHistory(this.hwGpuHistory, gpuVal);
 
-      if (this.dom.hwGpuVal) this.dom.hwGpuVal.textContent = gpuVal + '%';
+      if (this.dom.hwGpuVal) this.setDomText(this.dom.hwGpuVal, gpuVal + '%');
       if (this.dom.hwGpuBar) this.dom.hwGpuBar.style.width = gpuVal + '%';
       if (this.sparklineEngine) this.sparklineEngine.render('gpu', this.hwGpuHistory);
-      if (this.dom.hwGpuSpark && this.dom.hwGpuSpark.tagName !== 'svg' && this.dom.hwGpuSpark.tagName !== 'SVG') {
-        this.dom.hwGpuSpark.textContent = this.getSparklineString(this.hwGpuHistory);
-      }
-      if (this.dom.hwGpuName) this.dom.hwGpuName.textContent = gpuName;
+      if (this.dom.hwGpuName) this.setDomText(this.dom.hwGpuName, gpuName);
 
       // RAM usage
       var totalRamMb = (typeof data.TotalRam === 'number' && Number.isFinite(data.TotalRam) && data.TotalRam > 0) ? data.TotalRam : 0;
@@ -4965,14 +5117,11 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       var totalGb = (totalRamMb / 1024).toFixed(1);
 
       this.pushHwHistory(this.hwRamHistory, ramPct);
-      if (this.dom.hwRamVal) this.dom.hwRamVal.textContent = ramPct + '%';
+      if (this.dom.hwRamVal) this.setDomText(this.dom.hwRamVal, ramPct + '%');
       if (this.dom.hwRamBar) this.dom.hwRamBar.style.width = ramPct + '%';
       if (this.sparklineEngine) this.sparklineEngine.render('ram', this.hwRamHistory);
-      if (this.dom.hwRamSpark && this.dom.hwRamSpark.tagName !== 'svg' && this.dom.hwRamSpark.tagName !== 'SVG') {
-        this.dom.hwRamSpark.textContent = this.getSparklineString(this.hwRamHistory);
-      }
       if (this.dom.hwRamDetail) {
-        this.dom.hwRamDetail.textContent = totalRamMb > 0 ? (usedGb + ' / ' + totalGb + ' GB') : 'Physical RAM';
+        this.setDomText(this.dom.hwRamDetail, totalRamMb > 0 ? (usedGb + ' / ' + totalGb + ' GB') : 'Physical RAM');
       }
 
       // Disk / Storage
@@ -4983,13 +5132,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (diskVal !== null) {
         diskVal = Math.max(0, Math.min(100, diskVal));
         this.pushHwHistory(this.hwDiskHistory, diskVal);
-        if (this.dom.hwDiskVal) this.dom.hwDiskVal.textContent = diskVal + '%';
+        if (this.dom.hwDiskVal) this.setDomText(this.dom.hwDiskVal, diskVal + '%');
         if (this.dom.hwDiskBar) this.dom.hwDiskBar.style.width = diskVal + '%';
         if (this.sparklineEngine) this.sparklineEngine.render('disk', this.hwDiskHistory);
-        if (this.dom.hwDiskSpark && this.dom.hwDiskSpark.tagName !== 'svg' && this.dom.hwDiskSpark.tagName !== 'SVG') {
-          this.dom.hwDiskSpark.textContent = this.getSparklineString(this.hwDiskHistory);
-        }
-        if (this.dom.hwDiskDetail) this.dom.hwDiskDetail.textContent = 'Drive C:';
+        if (this.dom.hwDiskDetail) this.setDomText(this.dom.hwDiskDetail, 'Drive C:');
       } else {
         this.updateDiskEstimate();
       }
@@ -5010,7 +5156,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         downKbps = Math.max(0, downKbps);
         this.pushHwHistory(this.hwNetDownHistory, downKbps);
 
-        if (this.dom.hwNetDownVal) this.dom.hwNetDownVal.textContent = this.formatNetworkBandwidth(downKbps);
+        if (this.dom.hwNetDownVal) this.setDomText(this.dom.hwNetDownVal, this.formatNetworkBandwidth(downKbps));
         if (this.dom.hwNetDownBar) {
           var downPct = Math.min(100, Math.max(2, Math.round((downKbps / 50000) * 100)));
           this.dom.hwNetDownBar.style.width = downPct + '%';
@@ -5023,7 +5169,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         upKbps = Math.max(0, upKbps);
         this.pushHwHistory(this.hwNetUpHistory, upKbps);
 
-        if (this.dom.hwNetUpVal) this.dom.hwNetUpVal.textContent = this.formatNetworkBandwidth(upKbps);
+        if (this.dom.hwNetUpVal) this.setDomText(this.dom.hwNetUpVal, this.formatNetworkBandwidth(upKbps));
         if (this.dom.hwNetUpBar) {
           var upPct = Math.min(100, Math.max(2, Math.round((upKbps / 15000) * 100)));
           this.dom.hwNetUpBar.style.width = upPct + '%';
@@ -5032,8 +5178,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
 
       if (data.NameNetCard) {
-        if (this.dom.hwNetDownName) this.dom.hwNetDownName.textContent = data.NameNetCard;
-        if (this.dom.hwNetUpName) this.dom.hwNetUpName.textContent = data.NameNetCard;
+        if (this.dom.hwNetDownName) this.setDomText(this.dom.hwNetDownName, data.NameNetCard);
+        if (this.dom.hwNetUpName) this.setDomText(this.dom.hwNetUpName, data.NameNetCard);
       }
 
       // Laptop Battery Telemetry from Lively host
@@ -5051,7 +5197,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
       // Switch badge to Live
       if (this.dom.hudHwBadge) {
-        this.dom.hudHwBadge.textContent = 'Live';
+        this.setDomText(this.dom.hudHwBadge, 'Live');
         this.dom.hudHwBadge.className = 'hud-hw-badge is-live';
       }
 
@@ -5069,13 +5215,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             var usedGb = (estimate.usage / (1024 * 1024 * 1024)).toFixed(1);
             var quotaGb = (estimate.quota / (1024 * 1024 * 1024)).toFixed(0);
             self.pushHwHistory(self.hwDiskHistory, pct);
-            if (self.dom.hwDiskVal) self.dom.hwDiskVal.textContent = pct + '%';
+            if (self.dom.hwDiskVal) self.setDomText(self.dom.hwDiskVal, pct + '%');
             if (self.dom.hwDiskBar) self.dom.hwDiskBar.style.width = pct + '%';
             if (self.sparklineEngine) self.sparklineEngine.render('disk', self.hwDiskHistory);
-            if (self.dom.hwDiskSpark && self.dom.hwDiskSpark.tagName !== 'svg' && self.dom.hwDiskSpark.tagName !== 'SVG') {
-              self.dom.hwDiskSpark.textContent = self.getSparklineString(self.hwDiskHistory);
-            }
-            if (self.dom.hwDiskDetail) self.dom.hwDiskDetail.textContent = usedGb + ' / ' + quotaGb + ' GB';
+            if (self.dom.hwDiskDetail) self.setDomText(self.dom.hwDiskDetail, usedGb + ' / ' + quotaGb + ' GB');
           } else {
             self.applyDefaultDiskDisplay();
           }
@@ -5090,13 +5233,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     applyDefaultDiskDisplay: function() {
       var pct = this.simulatedDiskPct || 28;
       this.pushHwHistory(this.hwDiskHistory, pct);
-      if (this.dom.hwDiskVal) this.dom.hwDiskVal.textContent = pct + '%';
+      if (this.dom.hwDiskVal) this.setDomText(this.dom.hwDiskVal, pct + '%');
       if (this.dom.hwDiskBar) this.dom.hwDiskBar.style.width = pct + '%';
       if (this.sparklineEngine) this.sparklineEngine.render('disk', this.hwDiskHistory);
-      if (this.dom.hwDiskSpark && this.dom.hwDiskSpark.tagName !== 'svg' && this.dom.hwDiskSpark.tagName !== 'SVG') {
-        this.dom.hwDiskSpark.textContent = this.getSparklineString(this.hwDiskHistory);
-      }
-      if (this.dom.hwDiskDetail) this.dom.hwDiskDetail.textContent = 'System NVMe';
+      if (this.dom.hwDiskDetail) this.setDomText(this.dom.hwDiskDetail, 'System NVMe');
     },
 
     checkHwFallback: function() {
@@ -5145,31 +5285,31 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       this.pushHwHistory(this.hwNetDownHistory, this.simulatedNetDown);
       this.pushHwHistory(this.hwNetUpHistory, this.simulatedNetUp);
 
-      if (this.dom.hwCpuVal) this.dom.hwCpuVal.textContent = this.simulatedCpuLoad + '%';
+      if (this.dom.hwCpuVal) this.setDomText(this.dom.hwCpuVal, this.simulatedCpuLoad + '%');
       if (this.dom.hwCpuBar) this.dom.hwCpuBar.style.width = this.simulatedCpuLoad + '%';
-      if (this.dom.hwCpuName) this.dom.hwCpuName.textContent = 'Processor';
+      if (this.dom.hwCpuName) this.setDomText(this.dom.hwCpuName, 'Processor');
 
-      if (this.dom.hwGpuVal) this.dom.hwGpuVal.textContent = this.simulatedGpuLoad + '%';
+      if (this.dom.hwGpuVal) this.setDomText(this.dom.hwGpuVal, this.simulatedGpuLoad + '%');
       if (this.dom.hwGpuBar) this.dom.hwGpuBar.style.width = this.simulatedGpuLoad + '%';
-      if (this.dom.hwGpuName) this.dom.hwGpuName.textContent = 'Graphics 3D';
+      if (this.dom.hwGpuName) this.setDomText(this.dom.hwGpuName, 'Graphics 3D');
 
-      if (this.dom.hwRamVal) this.dom.hwRamVal.textContent = ramPct + '%';
+      if (this.dom.hwRamVal) this.setDomText(this.dom.hwRamVal, ramPct + '%');
       if (this.dom.hwRamBar) this.dom.hwRamBar.style.width = ramPct + '%';
       if (this.dom.hwRamDetail) {
-        this.dom.hwRamDetail.textContent = this.simulatedRamUsed + ' / ' + this.simulatedRamTotal + ' GB';
+        this.setDomText(this.dom.hwRamDetail, this.simulatedRamUsed + ' / ' + this.simulatedRamTotal + ' GB');
       }
 
-      if (this.dom.hwDiskVal) this.dom.hwDiskVal.textContent = this.simulatedDiskPct + '%';
+      if (this.dom.hwDiskVal) this.setDomText(this.dom.hwDiskVal, this.simulatedDiskPct + '%');
       if (this.dom.hwDiskBar) this.dom.hwDiskBar.style.width = this.simulatedDiskPct + '%';
-      if (this.dom.hwDiskDetail) this.dom.hwDiskDetail.textContent = 'Drive C:';
+      if (this.dom.hwDiskDetail) this.setDomText(this.dom.hwDiskDetail, 'Drive C:');
 
       // Network Down & Up DOM Updates
       var netDownFormatted = this.formatNetworkBandwidth(this.simulatedNetDown);
       var netUpFormatted = this.formatNetworkBandwidth(this.simulatedNetUp);
-      if (this.dom.hwNetDownVal) this.dom.hwNetDownVal.textContent = netDownFormatted;
-      if (this.dom.hwNetUpVal) this.dom.hwNetUpVal.textContent = netUpFormatted;
-      if (this.dom.hwNetDownName) this.dom.hwNetDownName.textContent = 'Download';
-      if (this.dom.hwNetUpName) this.dom.hwNetUpName.textContent = 'Upload';
+      if (this.dom.hwNetDownVal) this.setDomText(this.dom.hwNetDownVal, netDownFormatted);
+      if (this.dom.hwNetUpVal) this.setDomText(this.dom.hwNetUpVal, netUpFormatted);
+      if (this.dom.hwNetDownName) this.setDomText(this.dom.hwNetDownName, 'Download');
+      if (this.dom.hwNetUpName) this.setDomText(this.dom.hwNetUpName, 'Upload');
 
       if (this.dom.hwNetDownBar) {
         var downPct = Math.min(100, Math.max(2, Math.round((this.simulatedNetDown / 50000) * 100)));
@@ -5190,22 +5330,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         this.sparklineEngine.render('netUp', this.hwNetUpHistory);
       }
 
-      // Fallback text sparkline updates if non-SVG elements present
-      if (this.dom.hwCpuSpark && this.dom.hwCpuSpark.tagName !== 'svg' && this.dom.hwCpuSpark.tagName !== 'SVG') {
-        this.dom.hwCpuSpark.textContent = this.getSparklineString(this.hwCpuHistory);
-      }
-      if (this.dom.hwGpuSpark && this.dom.hwGpuSpark.tagName !== 'svg' && this.dom.hwGpuSpark.tagName !== 'SVG') {
-        this.dom.hwGpuSpark.textContent = this.getSparklineString(this.hwGpuHistory);
-      }
-      if (this.dom.hwRamSpark && this.dom.hwRamSpark.tagName !== 'svg' && this.dom.hwRamSpark.tagName !== 'SVG') {
-        this.dom.hwRamSpark.textContent = this.getSparklineString(this.hwRamHistory);
-      }
-      if (this.dom.hwDiskSpark && this.dom.hwDiskSpark.tagName !== 'svg' && this.dom.hwDiskSpark.tagName !== 'SVG') {
-        this.dom.hwDiskSpark.textContent = this.getSparklineString(this.hwDiskHistory);
-      }
-
       if (this.dom.hudHwBadge) {
-        this.dom.hudHwBadge.textContent = 'Standby';
+        this.setDomText(this.dom.hudHwBadge, 'Standby');
         this.dom.hudHwBadge.className = 'hud-hw-badge is-standby';
       }
     },
@@ -5245,9 +5371,13 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     },
 
     displayNewsItem: function(idx) {
+      if (this.dom.hudNewsLink) {
+        this.dom.hudNewsLink.classList.remove('is-fading');
+      }
+
       if (!this.newsItems || this.newsItems.length === 0) {
         if (this.dom.hudNewsHeadline) {
-          this.dom.hudNewsHeadline.textContent = 'Regional dispatch unavailable';
+          this.setDomText(this.dom.hudNewsHeadline, 'Regional dispatch unavailable');
         }
         if (this.dom.hudNewsDots) {
           this.dom.hudNewsDots.style.display = 'none';
@@ -5272,13 +5402,13 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
 
       if (this.dom.hudNewsTitle) {
-        this.dom.hudNewsTitle.textContent = providerName;
+        this.setDomText(this.dom.hudNewsTitle, providerName);
       }
       if (this.dom.hudNewsHeadline) {
-        this.dom.hudNewsHeadline.textContent = item.title;
+        this.setDomText(this.dom.hudNewsHeadline, item.title);
       }
       if (this.dom.hudNewsSource) {
-        this.dom.hudNewsSource.textContent = item.source || providerName;
+        this.setDomText(this.dom.hudNewsSource, item.source || providerName);
       }
       if (this.dom.hudNewsLink) {
         var rawLink = item.link || '';
@@ -5431,11 +5561,11 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
     },
 
-    updateSky: function() {
+    updateSky: function(sunPos, moonPos, moonIllum) {
       if (!this.sky || !this.state) return;
       var now = new Date();
       var loc = this.state.location || { latitude: 35.6762, longitude: 139.6503 };
-      this.sky.update(now, loc.latitude, loc.longitude);
+      this.sky.update(now, loc.latitude, loc.longitude, sunPos, moonPos, moonIllum);
     },
 
     hasActiveAnimation: function() {
@@ -5552,8 +5682,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       this.animationFrameId = null;
 
       var elapsed = currentTime - this.lastFrameTime;
-      // Cap at 60 FPS (skip frames if called faster than ~16ms on 120Hz/144Hz/240Hz monitors)
-      if (elapsed < 16.0) {
+      // Cap at 60 FPS (skip frames if called faster than ~16ms on 120Hz/144Hz/240Hz monitors, allowing 14.5ms for timer jitter on 60Hz)
+      if (elapsed < 14.5) {
         if (!this._boundLoop) {
           this._boundLoop = this.loop.bind(this);
         }

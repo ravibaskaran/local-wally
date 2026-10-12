@@ -14,54 +14,52 @@
 (function(global) {
   'use strict';
 
-  function lerp(a, b, t) {
-    return a + (b - a) * t;
-  }
-
-  function parseHex(hex) {
-    hex = hex.replace('#', '');
+  function hexToRgb(hex) {
+    var clean = hex.replace('#', '');
+    var r = parseInt(clean.substring(0, 2), 16);
+    var g = parseInt(clean.substring(2, 4), 16);
+    var b = parseInt(clean.substring(4, 6), 16);
     return {
-      r: parseInt(hex.substring(0, 2), 16),
-      g: parseInt(hex.substring(2, 4), 16),
-      b: parseInt(hex.substring(4, 6), 16)
+      r: r,
+      g: g,
+      b: b,
+      str: 'rgb(' + r + ',' + g + ',' + b + ')'
     };
   }
 
-  function lerpColor(hexA, hexB, t) {
-    var cA = parseHex(hexA);
-    var cB = parseHex(hexB);
-    var r = Math.round(lerp(cA.r, cB.r, t));
-    var g = Math.round(lerp(cA.g, cB.g, t));
-    var b = Math.round(lerp(cA.b, cB.b, t));
+  function lerpColor(cA, cB, t) {
+    var r = Math.round(cA.r + (cB.r - cA.r) * t);
+    var g = Math.round(cA.g + (cB.g - cA.g) * t);
+    var b = Math.round(cA.b + (cB.b - cA.b) * t);
     return 'rgb(' + r + ',' + g + ',' + b + ')';
   }
 
-  // Atmospheric Keyframes for Sky Gradient
+  // Atmospheric Keyframes for Sky Gradient (pre-parsed at script load time)
   var PALETTES = {
     DAY: {
-      top: '#1e40af',    // Deep azure
-      mid: '#3b82f6',    // Sky blue
-      horizon: '#93c5fd' // Soft cyan-tinted light
+      top: hexToRgb('#1e40af'),
+      mid: hexToRgb('#3b82f6'),
+      horizon: hexToRgb('#93c5fd')
     },
     GOLDEN_HOUR: {
-      top: '#312e81',    // Indigo
-      mid: '#b91c1c',    // Crimson rose
-      horizon: '#f59e0b' // Radiant warm amber
+      top: hexToRgb('#312e81'),
+      mid: hexToRgb('#b91c1c'),
+      horizon: hexToRgb('#f59e0b')
     },
     DUSK: {
-      top: '#1e1b4b',    // Deep twilight violet
-      mid: '#701a75',    // Magenta plum
-      horizon: '#c2410c' // Ember orange
+      top: hexToRgb('#1e1b4b'),
+      mid: hexToRgb('#701a75'),
+      horizon: hexToRgb('#c2410c')
     },
     TWILIGHT: {
-      top: '#0f172a',    // Dark slate
-      mid: '#1e1b4b',    // Deep indigo
-      horizon: '#312e81' // Cobalt
+      top: hexToRgb('#0f172a'),
+      mid: hexToRgb('#1e1b4b'),
+      horizon: hexToRgb('#312e81')
     },
     NIGHT: {
-      top: '#020617',    // Obsidian void
-      mid: '#090d16',    // Deep slate
-      horizon: '#0f172a' // Midnight blue
+      top: hexToRgb('#020617'),
+      mid: hexToRgb('#090d16'),
+      horizon: hexToRgb('#0f172a')
     }
   };
 
@@ -114,17 +112,17 @@
    * @param {number} lat
    * @param {number} lon
    */
-  SkyEngine.prototype.update = function(date, lat, lon) {
+  SkyEngine.prototype.update = function(date, lat, lon, sunPos, moonPos, moonIllum) {
     if (!global.SunCalc) return;
     if (typeof lat !== 'number' || !Number.isFinite(lat) || typeof lon !== 'number' || !Number.isFinite(lon)) return;
 
-    var sunPos = global.SunCalc.getPosition(date, lat, lon);
-    var altitude = (sunPos && typeof sunPos.altitude === 'number' && Number.isFinite(sunPos.altitude)) ? sunPos.altitude : 0;
-    var azimuth = (sunPos && typeof sunPos.azimuth === 'number' && Number.isFinite(sunPos.azimuth)) ? sunPos.azimuth : 0;
+    var sPos = sunPos || global.SunCalc.getPosition(date, lat, lon);
+    var altitude = (sPos && typeof sPos.altitude === 'number' && Number.isFinite(sPos.altitude)) ? sPos.altitude : 0;
+    var azimuth = (sPos && typeof sPos.azimuth === 'number' && Number.isFinite(sPos.azimuth)) ? sPos.azimuth : 0;
 
     this.lastAltitude = altitude;
     this.applySkyGradient(altitude);
-    this.renderCelestialBody(date, lat, lon, altitude, azimuth);
+    this.renderCelestialBody(date, lat, lon, altitude, azimuth, moonPos, moonIllum);
   };
 
   /**
@@ -135,9 +133,9 @@
 
     if (alt >= 0.15) {
       // Full Daylight
-      top = PALETTES.DAY.top;
-      mid = PALETTES.DAY.mid;
-      horizon = PALETTES.DAY.horizon;
+      top = PALETTES.DAY.top.str;
+      mid = PALETTES.DAY.mid.str;
+      horizon = PALETTES.DAY.horizon.str;
     } else if (alt >= 0.0) {
       // Interpolate Golden Hour -> Day
       var t = alt / 0.15;
@@ -158,9 +156,9 @@
       horizon = lerpColor(PALETTES.TWILIGHT.horizon, PALETTES.DUSK.horizon, t3);
     } else {
       // Deep Night
-      top = PALETTES.NIGHT.top;
-      mid = PALETTES.NIGHT.mid;
-      horizon = PALETTES.NIGHT.horizon;
+      top = PALETTES.NIGHT.top.str;
+      mid = PALETTES.NIGHT.mid.str;
+      horizon = PALETTES.NIGHT.horizon.str;
     }
 
     if (this.container) {
@@ -171,7 +169,7 @@
   /**
    * Renders the Sun or Moon disc based on celestial coordinates
    */
-  SkyEngine.prototype.renderCelestialBody = function(date, lat, lon, sunAlt, sunAzimuth) {
+  SkyEngine.prototype.renderCelestialBody = function(date, lat, lon, sunAlt, sunAzimuth, moonPos, moonIllum) {
     if (!this.celestialEl) return;
     if (!this.sunEl || !this.moonEl) {
       this.initCelestialElements();
@@ -202,11 +200,11 @@
       this.moonEl.classList.add('is-hidden');
     } else {
       // Render Moon
-      var moonPos = global.SunCalc.getMoonPosition(date, lat, lon) || {};
-      var moonIllum = global.SunCalc.getMoonIllumination(date) || {};
+      var mPos = moonPos || (global.SunCalc.getMoonPosition(date, lat, lon) || {});
+      var mIllum = moonIllum || (global.SunCalc.getMoonIllumination(date) || {});
 
-      var safeMoonAzimuth = (typeof moonPos.azimuth === 'number' && Number.isFinite(moonPos.azimuth)) ? moonPos.azimuth : 0;
-      var safeMoonAltitude = (typeof moonPos.altitude === 'number' && Number.isFinite(moonPos.altitude)) ? moonPos.altitude : 0;
+      var safeMoonAzimuth = (typeof mPos.azimuth === 'number' && Number.isFinite(mPos.azimuth)) ? mPos.azimuth : 0;
+      var safeMoonAltitude = (typeof mPos.altitude === 'number' && Number.isFinite(mPos.altitude)) ? mPos.altitude : 0;
 
       var moonX = Math.round(((safeMoonAzimuth + Math.PI) / (Math.PI * 2)) * w - 30);
       var normMoonAlt = Math.max(0, Math.min(1.2, safeMoonAltitude / 1.1));

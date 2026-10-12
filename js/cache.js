@@ -35,6 +35,8 @@
   var CacheManager = {
     TTL_MS: initialMinutes * 60 * 1000,
     ttlMinutes: initialMinutes,
+    _cachedTimestamp: 0,
+    _cachedEnvelope: null,
 
     /**
      * Updates TTL interval in minutes (clamped between 5 and 30 minutes).
@@ -102,6 +104,8 @@
           }
         }
 
+        this._cachedTimestamp = envelope.timestamp;
+        this._cachedEnvelope = envelope;
         return envelope.data;
       } catch (err) {
         console.warn('[CacheManager] Error reading cache snapshot:', err);
@@ -131,17 +135,20 @@
      * @param {Object} [context] Optional provider context
      * @returns {boolean} Success status
      */
-    set: function(data, context) {
+    set: function(data, context, ttlMs) {
       try {
-        var wProv = (context && context.weatherProvider) || (data && data.weatherProvider) || null;
+        var now = Date.now();
+        var wProv = (typeof context === 'string') ? context : ((context && context.weatherProvider) || (data && data.weatherProvider) || null);
         var aProv = (context && context.aqiProvider) || (data && data.aqiProvider) || null;
         var envelope = {
-          timestamp: Date.now(),
+          timestamp: now,
           weatherProvider: wProv,
           aqiProvider: aProv,
           data: data
         };
         localStorage.setItem(CACHE_KEY, JSON.stringify(envelope));
+        this._cachedTimestamp = now;
+        this._cachedEnvelope = envelope;
         return true;
       } catch (err) {
         console.warn('[CacheManager] Failed to write to localStorage:', err);
@@ -171,11 +178,17 @@
      * @returns {number}
      */
     getAgeMs: function() {
+      if (this._cachedTimestamp > 0) {
+        var age = Date.now() - this._cachedTimestamp;
+        return (age >= 0) ? age : Infinity;
+      }
       try {
         var raw = localStorage.getItem(CACHE_KEY);
         if (!raw) return Infinity;
         var envelope = JSON.parse(raw);
         if (!envelope || typeof envelope.timestamp !== 'number') return Infinity;
+        this._cachedTimestamp = envelope.timestamp;
+        this._cachedEnvelope = envelope;
         var age = Date.now() - envelope.timestamp;
         return (age >= 0) ? age : Infinity;
       } catch (e) {
@@ -197,6 +210,8 @@
      * Clears cached snapshot
      */
     clear: function() {
+      this._cachedTimestamp = 0;
+      this._cachedEnvelope = null;
       try {
         localStorage.removeItem(CACHE_KEY);
       } catch (e) {

@@ -409,7 +409,7 @@
             clearTimeout(timer);
             cleanupSignal();
             if (timedOut) {
-              reject(new Error('Network request timed out: ' + url));
+              reject(new Error('Network request timed out: ' + safeUrl));
             } else {
               reject(err);
             }
@@ -1268,7 +1268,7 @@
 
     WallpaperAdapter: {
       unsplash: function(weatherCategory, isDay, query, nativeRes) {
-        var self = this;
+        var self = ApiService;
         var key = (self.unsplashApiKey || '').trim();
         var fallbackSet;
 
@@ -1351,7 +1351,7 @@
       },
 
       wallhaven: function(query, nativeRes) {
-        var self = this;
+        var self = ApiService;
         var key = (self.wallhavenApiKey || '').trim();
         if (!key) {
           return Promise.reject(new Error('Wallhaven API key missing'));
@@ -1393,7 +1393,7 @@
       },
 
       pexels: function(query, nativeRes) {
-        var self = this;
+        var self = ApiService;
         var key = (self.pexelsApiKey || '').trim();
         if (!key) {
           return Promise.reject(new Error('Pexels API key missing'));
@@ -1435,7 +1435,7 @@
       },
 
       pixabay: function(query, nativeRes) {
-        var self = this;
+        var self = ApiService;
         var key = (self.pixabayApiKey || '').trim();
         if (!key) {
           return Promise.reject(new Error('Pixabay API key missing'));
@@ -1537,13 +1537,6 @@
           }
           throw err;
         });
-    },
-
-    /**
-     * Backward-compatible alias for fetchWallpaper
-     */
-    fetchContextualImage: function(weatherCategory, isDay, customKeyword) {
-      return this.fetchWallpaper(weatherCategory, isDay, customKeyword);
     },
 
     /**
@@ -1678,7 +1671,7 @@
               var rawCountry = item.sourcecountry || '';
 
               // Protocol validation for safe external links
-              if (!rawUrl || !/^https?:\/\//i.test(rawUrl.trim())) continue;
+              if (!rawUrl || !/^https:\/\//i.test(rawUrl.trim())) continue;
               var safeUrl = rawUrl.trim();
 
               // Title cleanup and entity decoding
@@ -1803,7 +1796,7 @@
           var sourceName = sourceEl ? (sourceEl.textContent || '') : '';
 
           // Validate protocol to prevent javascript: or malformed URLs (XSS defense)
-          var safeLink = (typeof rawLink === 'string' && /^https?:\/\//i.test(rawLink.trim()))
+          var safeLink = (typeof rawLink === 'string' && /^https:\/\//i.test(rawLink.trim()))
             ? rawLink.trim()
             : 'https://news.google.com';
 
@@ -1856,7 +1849,9 @@
     NewsAdapter: {
       'google-news': function(city, countryCode) {
         return ApiService.fetchRegionalNews(city, countryCode).then(function(articles) {
-          return (articles || []).map(function(a) {
+          return (articles || []).filter(function(a) {
+            return a && a.link && /^https:\/\//i.test(a.link);
+          }).map(function(a) {
             return {
               id: a.link || a.title,
               title: a.title,
@@ -1870,6 +1865,10 @@
             };
           });
         });
+      },
+
+      gdelt: function(city, countryCode) {
+        return ApiService.fetchGdeltNews(city, countryCode);
       },
 
       newsapi: function(city, countryCode) {
@@ -2039,21 +2038,6 @@
       if (cleanCountry.length !== 2) cleanCountry = 'US';
       var queryKey = cleanCity.toLowerCase() + '_' + cleanCountry.toLowerCase();
 
-      // Check 15-minute cache firewall: survives reloads, prevents duplicate requests
-      var cachedEnvelope = self.getCachedNews();
-      var now = Date.now();
-      if (!forceRefresh && cachedEnvelope && cachedEnvelope.timestamp) {
-        var age = now - cachedEnvelope.timestamp;
-        if (age >= 0 && age < self.NEWS_CACHE_TTL_MS && Array.isArray(cachedEnvelope.data) && cachedEnvelope.data.length > 0) {
-          return Promise.resolve(cachedEnvelope.data);
-        }
-      }
-
-      // In-flight request de-duplication
-      if (self._activeNewsPromise) {
-        return self._activeNewsPromise;
-      }
-
       var eligible = ['google-news'];
       if (self.newsApiKey && String(self.newsApiKey).trim().length > 0) {
         eligible.push('newsapi');
@@ -2062,13 +2046,12 @@
         eligible.push('currents');
       }
 
-      var shouldRotate = (self.newsProvider === 'rotate') || (eligible.length > 1);
+      var shouldRotate = (self.newsProvider === 'rotate');
       var primaryProvider = 'google-news';
 
       if (shouldRotate) {
         var cursor = self.getNewsRotateCursor();
         primaryProvider = eligible[cursor % eligible.length];
-        self.setNewsRotateCursor((cursor + 1) % eligible.length);
       } else {
         var selected = (self.newsProvider || 'google-news').toLowerCase();
         if (selected === 'newsapi' && (!self.newsApiKey || !self.newsApiKey.trim())) {
@@ -2078,6 +2061,28 @@
         } else {
           primaryProvider = selected;
         }
+      }
+
+      // Check 15-minute cache firewall: survives reloads, prevents duplicate requests
+      var cachedEnvelope = self.getCachedNews();
+      var now = Date.now();
+      if (!forceRefresh && cachedEnvelope && cachedEnvelope.timestamp) {
+        var age = now - cachedEnvelope.timestamp;
+        var isQueryMatch = (cachedEnvelope.query === queryKey);
+        var isProviderMatch = shouldRotate || (cachedEnvelope.provider === primaryProvider) || (eligible.indexOf(cachedEnvelope.provider) !== -1);
+        if (age >= 0 && age < self.NEWS_CACHE_TTL_MS && isQueryMatch && isProviderMatch && Array.isArray(cachedEnvelope.data) && cachedEnvelope.data.length > 0) {
+          return Promise.resolve(cachedEnvelope.data);
+        }
+      }
+
+      // In-flight request de-duplication
+      if (self._activeNewsPromise) {
+        return self._activeNewsPromise;
+      }
+
+      if (shouldRotate) {
+        var cursor = self.getNewsRotateCursor();
+        self.setNewsRotateCursor((cursor + 1) % eligible.length);
       }
 
       function executeAdapter(prov) {
