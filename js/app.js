@@ -1831,7 +1831,6 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
         syncDot: document.getElementById('sync-dot'),
         syncStatus: document.getElementById('sync-status'),
-        btnRefresh: document.getElementById('btn-refresh'),
         unsplashCredit: document.getElementById('unsplash-credit'),
         diagPanel: document.getElementById('diagnostic-panel'),
         diagGpu: document.getElementById('diag-gpu'),
@@ -2057,12 +2056,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         });
       });
 
-      // Refresh button click
-      if (this.dom.btnRefresh) {
-        this.dom.btnRefresh.addEventListener('click', function() {
-          self.loadAtmosphere(true);
-        });
-      }
+      // Manual refresh control removed (v0.8.4): news and atmosphere update
+      // automatically on their own cadences — news every 5 minutes within the
+      // quota firewall, atmosphere on its cache TTL.
 
       // Keyboard shortcuts
       window.addEventListener('keydown', function(e) {
@@ -2090,8 +2086,6 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
         if (e.key === 'd' || e.key === 'D') {
           self.toggleDiagnostics();
-        } else if (e.key === 'r' || e.key === 'R') {
-          self.loadAtmosphere(true);
         } else if (e.key === 't' || e.key === 'T') {
           self.toggleTempUnit();
         } else if (e.key === 'c' || e.key === 'C') {
@@ -2283,8 +2277,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             self.setShowNewsFeed(val === true || val === 1 || val === 'true');
             break;
           case 'newsProvider':
-            var nProviders = ['google-news', 'newsapi', 'currents', 'rotate'];
-            var npVal = (typeof val === 'number') ? (nProviders[val] || 'google-news') : (
+            var nProviders = ['auto', 'google-news', 'newsapi', 'currents', 'rotate'];
+            var npVal = (typeof val === 'number') ? (nProviders[val] || 'auto') : (
+              val === 'Auto (API keys first)' || val === 'auto' ? 'auto' :
               val === 'NewsAPI' ? 'newsapi' :
               val === 'Currents News' ? 'currents' :
               val === 'Rotate configured sources' ? 'rotate' :
@@ -2520,11 +2515,26 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
               : 7;
             this.newsTimer = setInterval(this.rotateNews.bind(this), rotSec * 1000);
           }
+          // Late-enable: make sure the 5-minute automatic news cadence exists
+          // even when the feed was disabled at boot (v0.8.4). The immediate
+          // fetch stays pause-gated — no network attempts while hidden.
+          if (!this.newsFetchTimer && !this.isPlaybackPaused) {
+            var newsFetchTick = function() {
+              if (this.isPlaybackPaused || !this.showNewsFeed) return;
+              this.fetchNews();
+            };
+            this.newsFetchTimer = setInterval(newsFetchTick.bind(this), 300000);
+            this.fetchNews();
+          }
         } else {
           this.dom.hudNewsBlock.classList.add('is-hidden');
           if (this.newsTimer) {
             clearInterval(this.newsTimer);
             this.newsTimer = null;
+          }
+          if (this.newsFetchTimer) {
+            clearInterval(this.newsFetchTimer);
+            this.newsFetchTimer = null;
           }
         }
       }
@@ -3126,17 +3136,19 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       var tz = this.getTimezoneContext();
       var hStr = '--';
       var mStr = '--';
+      var periodStr = '';
       var dateStr = '';
 
       if (tz) {
         try {
           if (!this._tzFormatters) this._tzFormatters = {};
           if (!this._tzFormatters[tz + '_clock']) {
+            // 12-hour AM/PM clock via cached formatter + formatToParts (v0.8.4)
             this._tzFormatters[tz + '_clock'] = new Intl.DateTimeFormat('en-US', {
               timeZone: tz,
               hour: '2-digit',
               minute: '2-digit',
-              hour12: false
+              hour12: true
             });
           }
           if (!this._tzFormatters[tz + '_date']) {
@@ -3147,10 +3159,11 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
               day: 'numeric'
             });
           }
-          var parts = this._tzFormatters[tz + '_clock'].format(now).split(':');
-          if (parts.length === 2) {
-            hStr = parts[0];
-            mStr = parts[1];
+          var clockParts = this._tzFormatters[tz + '_clock'].formatToParts(now);
+          for (var pi = 0; pi < clockParts.length; pi++) {
+            if (clockParts[pi].type === 'hour') hStr = clockParts[pi].value;
+            else if (clockParts[pi].type === 'minute') mStr = clockParts[pi].value;
+            else if (clockParts[pi].type === 'dayPeriod') periodStr = clockParts[pi].value.replace(/\s+/g, ' ').toUpperCase();
           }
           dateStr = this._tzFormatters[tz + '_date'].format(now);
         } catch (e) {
@@ -3161,6 +3174,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (!tz) {
         var hours = now.getHours();
         var minutes = now.getMinutes();
+        periodStr = hours >= 12 ? 'PM' : 'AM';
+        hours = hours % 12;
+        if (hours === 0) hours = 12;
         hStr = hours < 10 ? '0' + hours : '' + hours;
         mStr = minutes < 10 ? '0' + minutes : '' + minutes;
         if (!this._localDateFormatter) {
@@ -3170,7 +3186,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
 
       if (this.dom.hudClock) {
-        this.setDomText(this.dom.hudClock, hStr + ':' + mStr);
+        this.setDomText(this.dom.hudClock, hStr + ':' + mStr + (periodStr ? ' ' + periodStr : ''));
       }
 
       if (this.dom.hudDate) {
@@ -5019,15 +5035,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         }
       }
 
-      if (this.dom.btnRefresh) {
-        this.dom.btnRefresh.classList.add('is-spinning');
-      }
-
       var finishSync = function() {
         self.isSyncing = false;
-        if (self.dom.btnRefresh) {
-          self.dom.btnRefresh.classList.remove('is-spinning');
-        }
         if (self.syncPending) {
           var pendingForce = !!self.syncPendingForce;
           self.syncPending = false;
@@ -6014,6 +6023,16 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (!this.syncInterval) {
         this.syncInterval = setInterval(this.checkAndSync.bind(this), 60000);
       }
+      // Dedicated news cadence: every 5 minutes. The quota firewall (and the
+      // 5-minute provider windows) decide which attempts actually hit the
+      // network — nothing here bypasses it (LW06).
+      if (!this.newsFetchTimer && this.showNewsFeed) {
+        var newsFetchTick = function() {
+          if (this.isPlaybackPaused || !this.showNewsFeed) return;
+          this.fetchNews();
+        };
+        this.newsFetchTimer = setInterval(newsFetchTick.bind(this), 300000);
+      }
       if (this.pomodoro && this.showPomodoro) {
         this.pomodoro.resumeTicker();
       }
@@ -6065,6 +6084,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (this.syncInterval) {
         clearInterval(this.syncInterval);
         this.syncInterval = null;
+      }
+      if (this.newsFetchTimer) {
+        clearInterval(this.newsFetchTimer);
+        this.newsFetchTimer = null;
       }
       if (this.pomodoro) {
         this.pomodoro.sleepTicker();

@@ -97,6 +97,15 @@
     primaryCorsProxy: 'https://api.allorigins.win/raw?url=',
 
     // --------------------------------------------------------------------------
+    // MIDDLE CORS GATEWAY PROXY
+    // --------------------------------------------------------------------------
+    // Second proxy tried between the primary and fallback gateways before the
+    // Google News RSS chain gives up (v0.8.4). Comment out or override here to
+    // swap gateways without touching js/api.js.
+    // Default: 'https://api.codetabs.com/v1/proxy?quest='
+    middleCorsProxy: 'https://api.codetabs.com/v1/proxy?quest=',
+
+    // --------------------------------------------------------------------------
     // 11. FALLBACK CORS GATEWAY PROXY
     // --------------------------------------------------------------------------
     // Secondary fallback proxy endpoint utilized if the primary proxy experiences a timeout or error.
@@ -184,8 +193,9 @@
     showNewsFeed: true,
 
     // Regional News Provider
-    // Default: 'google-news' | Options: 'google-news', 'newsapi', 'currents', 'rotate'
-    newsProvider: 'google-news',
+    // Default: 'auto' | Options: 'auto' (API keys first: Currents -> NewsAPI -> Google News),
+    // 'google-news', 'newsapi', 'currents', 'rotate'
+    newsProvider: 'auto',
 
     // Custom NewsAPI key (optional/blank by default)
     newsApiKey: '',

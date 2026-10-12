@@ -860,6 +860,10 @@ html, body {
 .bento-col-secondary {
   flex: 1;
   gap: 8px;
+  /* Top-stack instead of space-between: the column stretches to match the
+     taller primary column, and space-between used to dump ALL the leftover
+     height between the hardware monitor and the news card (v0.8.4). */
+  justify-content: flex-start;
 }
 
 /* ==========================================================================
@@ -1134,12 +1138,13 @@ html, body {
 .metric-card {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   background: var(--card-bg);
   border: 1px solid var(--card-border);
   border-radius: 8px;
-  padding: 4px 3px;
-  text-align: center;
+  padding: 4px 7px;
+  text-align: left;
+  gap: 1px;
   transition: background 0.2s ease, border-color 0.2s ease;
 }
 
@@ -1964,27 +1969,33 @@ html, body {
    Secondary Column Auto-Adaptation (Dynamic Expansion & Flex Balancing)
    ========================================================================== */
 
-/* When News Block is hidden: Hardware Monitor expands gracefully to fill column */
-.bento-col-secondary:has(#hud-news-block.is-hidden) #hud-hw-block,
+/* Hardware Monitor absorbs the column's spare height in EVERY visibility
+   combination (v0.8.4): slack spreads across its metric rows instead of
+   pooling as one large gap between it and the news card. */
+#hud-hw-block,
 #hud-hw-block.flex-expand {
   flex: 1;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  border-bottom: none;
   padding-bottom: 8px;
 }
 
-.bento-col-secondary:has(#hud-news-block.is-hidden) .hw-metrics-container,
+/* The divider survives only while the news card sits below the monitor. */
+.bento-col-secondary:has(#hud-news-block:not(.is-hidden)) #hud-hw-block {
+  border-bottom: 1px solid var(--divider-color);
+}
+
+#hud-hw-block,
+#hud-hw-block.flex-expand {
+  border-bottom: none;
+}
+
+#hud-hw-block .hw-metrics-container,
 #hud-hw-block.flex-expand .hw-metrics-container {
   flex: 1;
   justify-content: space-around;
   gap: 8px;
-}
-
-.bento-col-secondary:has(#hud-news-block.is-hidden) .hw-row,
-#hud-hw-block.flex-expand .hw-row {
-  padding: 6px 8px;
 }
 
 /* When Hardware Monitor is hidden: News Block expands gracefully */
@@ -2070,41 +2081,6 @@ html, body {
   border-radius: 50%;
   background: var(--accent-emerald);
   box-shadow: 0 0 6px var(--accent-emerald);
-}
-
-.hud-refresh-btn {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  padding: 3px;
-  border-radius: 4px;
-  transition: color 0.2s, transform 0.3s;
-}
-
-.hud-refresh-btn:hover {
-  color: var(--text-primary);
-  transform: rotate(90deg);
-}
-
-@keyframes spin-refresh {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.hud-refresh-btn.is-spinning {
-  pointer-events: none;
-  opacity: 0.8;
-}
-
-.hud-refresh-btn.is-spinning svg {
-  animation: spin-refresh 0.8s linear infinite;
 }
 
 /* ==========================================================================

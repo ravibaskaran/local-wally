@@ -81,7 +81,7 @@
     wallhavenApiKey: (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.wallhavenApiKey) || '',
     pexelsApiKey: (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.pexelsApiKey) || '',
     pixabayApiKey: (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.pixabayApiKey) || '',
-    newsProvider: (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.newsProvider) || 'google-news',
+    newsProvider: (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.newsProvider) || 'auto',
     newsApiKey: (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.newsApiKey) || '',
     currentsApiKey: (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.currentsApiKey) || '',
 
@@ -1986,28 +1986,36 @@
         cleanCountry = 'US';
       }
 
+      var cityUsable = !!(cityName && String(cityName).trim()) && !/^(local( area)?|metropolitan)$/i.test(cityName);
       var geoUrl = 'https://news.google.com/rss/headlines/section/geo/' + encodeURIComponent(cleanCity) +
         '?hl=en&gl=' + cleanCountry + '&ceid=' + cleanCountry + ':en';
-      var fallbackUrl = 'https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en';
+      // Country-level edition (was hardcoded US) — keyless users outside the US
+      // get their own regional news instead of American headlines.
+      var fallbackUrl = 'https://news.google.com/rss?hl=en&gl=' + cleanCountry + '&ceid=' + cleanCountry + ':en';
 
       function requestXml(rssUrl) {
-        var primaryProxy = (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.primaryCorsProxy) || 'https://api.allorigins.win/raw?url=';
-        var fallbackProxy = (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.fallbackCorsProxy) || 'https://corsproxy.io/?url=';
-        var primaryUrl = primaryProxy + encodeURIComponent(rssUrl);
-        var fallbackProxyUrl = fallbackProxy + encodeURIComponent(rssUrl);
+        // Public CORS gateways, tried in order. Each leg is independently
+        // flaky (allorigins 429/timeouts, corsproxy.io now 401s unallowlisted
+        // origins), so a middle leg keeps the chain salvageable (v0.8.4).
+        var proxies = [
+          (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.primaryCorsProxy) || 'https://api.allorigins.win/raw?url=',
+          (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.middleCorsProxy) || 'https://api.codetabs.com/v1/proxy?quest=',
+          (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.fallbackCorsProxy) || 'https://corsproxy.io/?url='
+        ];
 
-        return ApiService.fetchWithTimeout(primaryUrl, 5000)
-          .then(function(res) {
-            if (!res.ok) throw new Error('HTTP ' + res.status);
-            return res.text();
-          })
-          .catch(function() {
-            return ApiService.fetchWithTimeout(fallbackProxyUrl, 5000)
-              .then(function(res) {
-                if (!res.ok) throw new Error('HTTP ' + res.status);
-                return res.text();
-              });
-          });
+        function attemptProxy(idx) {
+          return ApiService.fetchWithTimeout(proxies[idx] + encodeURIComponent(rssUrl), 5000)
+            .then(function(res) {
+              if (!res.ok) throw new Error('HTTP ' + res.status);
+              return res.text();
+            })
+            .catch(function(err) {
+              if (idx + 1 < proxies.length) return attemptProxy(idx + 1);
+              throw err;
+            });
+        }
+
+        return attemptProxy(0);
       }
 
       function parseItems(xmlString) {
@@ -2078,17 +2086,23 @@
         return articles;
       }
 
-      // 1. Try GDELT DOC 2.0 API first (keyless, proxy-free, direct JSON)
-      return self.fetchGdeltNews(cleanCity, cleanCountry)
-        .catch(function(gdeltErr) {
-          // 2. Fall back to Google News RSS if GDELT fails or has no records
-          console.warn('[ApiService] GDELT news unavailable, attempting Google News RSS:', gdeltErr.message);
-          return requestXml(geoUrl)
-            .then(parseItems)
-            .catch(function() {
-              return requestXml(fallbackUrl).then(parseItems);
-            });
+      // 1. Try GDELT DOC 2.0 API first (keyless, proxy-free, direct JSON).
+      //    Unusable locality names ('Local', 'Metropolitan', empty — Lively
+      //    doesn't always expose a real city) skip GDELT and the meaningless
+      //    geo feed attempt, and land directly on the country-level feed.
+      var chain = cityUsable
+        ? self.fetchGdeltNews(cleanCity, cleanCountry)
+        : Promise.reject(new Error('No usable locality name'));
+      return chain.catch(function(gdeltErr) {
+        // 2. Fall back to Google News RSS if GDELT fails or has no records
+        console.warn('[ApiService] GDELT news unavailable, attempting Google News RSS:', gdeltErr.message);
+        var geoAttempt = cityUsable
+          ? requestXml(geoUrl).then(parseItems)
+          : Promise.reject(new Error('Geo RSS skipped: no usable locality name'));
+        return geoAttempt.catch(function() {
+          return requestXml(fallbackUrl).then(parseItems);
         });
+      });
       // Terminal fallback policy (LW05): errors propagate to fetchNews, which
       // serves matching real cached stories (stale-marked) or an explicit
       // unavailable state — never fabricated headlines.
@@ -2228,11 +2242,15 @@
       }
     },
 
-    NEWS_CACHE_TTL_MS: 15 * 60 * 1000,
-    // Quota firewall: >= 15 minutes between network attempts PER actual keyed
+    NEWS_CACHE_TTL_MS: 5 * 60 * 1000,
+    // Quota firewall: >= cooldown between network attempts PER actual keyed
     // provider, counting failed attempts, independent of any refresh/force
     // flag (LW06). Response caching (query/provider aware) stays separate.
+    // Tiered: keyed providers keep the 15-minute quota-safe window; the keyless
+    // Google News chain (GDELT + public RSS gateways) runs on a 5-minute window
+    // so automatic news updates stay fresh without touching API quotas.
     NEWS_QUOTA_COOLDOWN_MS: 15 * 60 * 1000,
+    NEWS_QUOTA_COOLDOWN_KEYLESS_MS: 5 * 60 * 1000,
     _NEWS_QUOTA_SKEW_MAX_MS: 24 * 60 * 60 * 1000,
     _NEWS_QUOTA_STORE_KEY: 'LIVELY_HUD_NEWS_QUOTA',
     // In-flight map keyed by normalized request identity, cleaned on settle, bounded (LW04)
@@ -2355,10 +2373,19 @@
      * (no retry loop); absurdly future-dated stamps (>24h) are treated as
      * corrupt and reset once (LW06).
      */
+    _newsCooldownMsFor: function(provider) {
+      // Tiered quota firewall: keyed providers keep the full 15-minute window;
+      // the keyless Google News chain refreshes on a 5-minute window.
+      return (provider === 'newsapi' || provider === 'currents')
+        ? this.NEWS_QUOTA_COOLDOWN_MS
+        : this.NEWS_QUOTA_COOLDOWN_KEYLESS_MS;
+    },
+
     _newsCooldownReady: function(provider) {
       this._loadNewsQuota();
       var entry = this._newsQuota[provider];
       if (!entry) return true;
+      var cooldown = this._newsCooldownMsFor(provider);
       var epochElapsed = Date.now() - entry.epochMs;
       if (epochElapsed < 0) {
         if (epochElapsed < -this._NEWS_QUOTA_SKEW_MAX_MS) {
@@ -2368,10 +2395,10 @@
         }
         return false;
       }
-      if (epochElapsed < this.NEWS_QUOTA_COOLDOWN_MS) return false;
+      if (epochElapsed < cooldown) return false;
       if (entry.monoMs != null) {
         var monoElapsed = this._newsNow() - entry.monoMs;
-        if (monoElapsed < this.NEWS_QUOTA_COOLDOWN_MS) return false;
+        if (monoElapsed < cooldown) return false;
       }
       return true;
     },
@@ -2384,12 +2411,12 @@
 
     /**
      * Regional news dispatcher with identity-bound request isolation (LW04),
-     * an unbypassable per-provider quota firewall (LW06), a 15-minute
-     * query-aware response cache, rotation when keyed providers exist, and a
-     * single bounded Google News fallback. Terminal failures surface matching
-     * real cached stories (stale-marked) or an empty unavailable state — never
-     * fabricated headlines (LW05). There is deliberately NO force parameter:
-     * nothing may bypass the quota firewall.
+     * an unbypassable per-provider quota firewall (LW06; 15-minute keyed,
+     * 5-minute keyless), a 5-minute query-aware response cache, rotation when
+     * keyed providers exist, and a single bounded Google News fallback.
+     * Terminal failures surface matching real cached stories (stale-marked) or
+     * an empty unavailable state — never fabricated headlines (LW05). There is
+     * deliberately NO force parameter: nothing may bypass the quota firewall.
      */
     fetchNews: function(cityName, countryCode) {
       var self = this;
@@ -2413,8 +2440,14 @@
         var cursor = self.getNewsRotateCursor();
         primaryProvider = eligible[cursor % eligible.length];
       } else {
-        var selected = (self.newsProvider || 'google-news').toLowerCase();
-        if (selected === 'newsapi' && (!self.newsApiKey || !self.newsApiKey.trim())) {
+        var selected = (self.newsProvider || 'auto').toLowerCase();
+        if (selected.indexOf('auto') === 0) {
+          // Auto (API keys first): Currents is CORS-open from WebView2 (null or
+          // localhost origin), NewsAPI's free plan blocks browser preflight, and
+          // keyless installs fall back to the Google News chain.
+          primaryProvider = eligible.indexOf('currents') !== -1 ? 'currents'
+            : (eligible.indexOf('newsapi') !== -1 ? 'newsapi' : 'google-news');
+        } else if (selected === 'newsapi' && (!self.newsApiKey || !self.newsApiKey.trim())) {
           primaryProvider = 'google-news';
         } else if (selected === 'currents' && (!self.currentsApiKey || !self.currentsApiKey.trim())) {
           primaryProvider = 'google-news';

@@ -270,6 +270,22 @@ local-wally/
 
 ## 🛡️ Recent Updates & Quality Improvements
 
+### Version 0.8.4 — Keyed-First News Default, 5-Minute Auto Refresh & HUD Polish
+- **News source reliability**:
+  - The Google News chain was fully broken in the wild (live-probed: GDELT 429 rate-limited, `api.allorigins.win` timing out, `corsproxy.io` returning 401 to non-allowlisted origins) while the provider default stayed hard-locked to it — configured NewsAPI/Currents keys were never consulted unless explicitly selected.
+  - New **"Auto (API keys first)"** default resolves Currents → NewsAPI → Google News when keys are configured (Currents is CORS-open from WebView2; NewsAPI's free plan blocks browser preflight, so it is tried second). Keyless installs keep the Google News chain.
+  - Google News chain re-armed: unusable locality names (empty, `Local`, `Metropolitan`, `Local Area`) skip the doomed GDELT/geo legs and go straight to a country-aware Google News RSS edition (previously hardcoded US); a third public gateway (`api.codetabs.com`) was added between the primary and fallback proxies, overridable via the new `middleCorsProxy` config knob.
+- **Automatic 5-minute news refresh**:
+  - News now refreshes on a dedicated 5-minute cadence independent of the 15-minute atmosphere cycle (pause-aware, feed-hidden-aware, idempotent across park/resume and enable/disable).
+  - The manual refresh button (and its hidden `R` keyboard shortcut) is removed — no manual refresh control remains in the UI.
+  - Tiered quota firewall preserved: keyed providers keep the unbypassable **15-minute** cooldown (NewsAPI free tier ≈ 100 calls/day; 5-minute polling would exhaust it in ~8 hours), while the keyless Google News chain refreshes on a true 5-minute window. Response cache TTL lowered to 5 minutes; between keyed windows the card keeps honestly-marked cached stories.
+- **HUD layout & polish**:
+  - The large whitespace gap between the hardware telemetry and the news card is gone: the secondary column top-stacks (`flex-start`) and the hardware monitor absorbs spare column height in every visibility combination, distributing slack across its metric rows instead of pooling one lump gap; the divider survives only while the news card sits below.
+  - Environmental metric cards (Humidity/Wind/Precip) are left-justified for a cleaner, more elegant read.
+  - The top clock now displays **AM/PM** (12-hour) with the timezone-aware formatter (`formatToParts`) and a correct manual fallback.
+- **Migration note**: the News Provider dropdown gained an "Auto" item at index 0, which shifts previously stored selections by one — if you had explicitly selected a provider before v0.8.4, re-select it once. The default index 0 upgrades transparently to Auto.
+- **Verification**: 7 suites green (v0.8.3 suite 62/62, providers suite 100%, v0.8.1 100%, v0.7.3/v0.7.2/v0.7.1/hardening 100%), `node --check` clean, fresh-context adversarial review SHIP-WITH-NITS with zero major findings (5 nits fixed). One test-suite sandbox gained `URLSearchParams` (scratch-only change, SHA-256 reported in release notes).
+
 ### Version 0.8.3 — News Engine Integrity, Timezone-Correct Forecasts & Render Pacing
 - **News Engine Integrity**:
   - Every news request is bound to its identity (location query, country, provider/mode): a delayed response can never overwrite another query's cache, visible news, or pending snapshot; equivalent concurrent requests dedupe into one bounded in-flight map.

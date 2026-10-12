@@ -138,6 +138,7 @@
     "value": 0,
     "text": "News Provider",
     "items": [
+      "Auto (API keys first)",
       "Google News",
       "NewsAPI",
       "Currents News",
