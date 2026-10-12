@@ -227,5 +227,19 @@
     "value": 0,
     "text": "Default Forecast Tab",
     "items": ["Temperature", "Feels Like", "Precipitation", "Wind", "Humidity", "AQI"]
+  },
+  "settingsExport": {
+    "type": "button",
+    "value": "Export Settings (incl. API keys)",
+    "text": "Local Wally — Backup & Restore"
+  },
+  "settingsImport": {
+    "type": "button",
+    "value": "Import Settings",
+    "text": ""
+  },
+  "settingsHelp": {
+    "type": "label",
+    "value": "Buttons above export/import your full setup (keys included). Manual location with city autocomplete, backup status and diagnostics live in the HUD's own panel: press D with the mouse over the desktop."
   }
 }

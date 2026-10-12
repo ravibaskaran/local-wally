@@ -1828,25 +1828,29 @@
         return customKeyword.trim();
       }
       var cat = (weatherCategory || '').toUpperCase();
+      // v0.8.8: EVERY category carries a night variant — a night wallpaper
+      // must never show a daylight scene (user report: green daytime field
+      // at 8:58 PM). Stock sites match 'night ' tags well across providers.
+      var nightPrefix = isDay ? '' : 'night ';
       switch (cat) {
         case 'CLEAR':
           return isDay ? 'clear sky landscape' : 'night sky landscape';
         case 'CLOUDY':
         case 'OVERCAST':
-          return 'cloudy landscape';
+          return nightPrefix + 'cloudy landscape';
         case 'RAIN':
         case 'DRIZZLE':
-          return 'rainy landscape';
+          return nightPrefix + 'rainy landscape';
         case 'SNOW':
-          return 'snowy landscape';
+          return nightPrefix + 'snowy landscape';
         case 'FOG':
         case 'MIST':
-          return 'misty landscape';
+          return nightPrefix + 'misty landscape';
         case 'THUNDERSTORM':
         case 'STORM':
-          return 'stormy landscape';
+          return nightPrefix + 'stormy landscape';
         default:
-          return 'nature landscape';
+          return nightPrefix + 'nature landscape';
       }
     },
 

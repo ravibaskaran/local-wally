@@ -270,6 +270,12 @@ local-wally/
 
 ## 🛡️ Recent Updates & Quality Improvements
 
+### Version 0.8.8 — Customize-Panel Backup Buttons, Popover Guard, Right-Aligned Conditions, Night Wallpapers
+- **Export/Import now visible in Lively's Customize settings**: the app's settings panel (right-click wallpaper → Customize Wallpaper) gains **"Export Settings (incl. API keys)"** / **"Import Settings"** buttons plus a help label — the same engine as before, now discoverable where you already are. Manual location with city autocomplete and backup status remain in the HUD diagnostics panel (**`D`** over the desktop — Lively's host-rendered panel can't host custom dropdowns).
+- **Hover popover can no longer outlive the mouse**: when another window covers the wallpaper, the WebView receives no mouse events — `mouseleave` never fires and popovers (e.g. Network Bandwidth) lingered visibly while you worked elsewhere (report + screenshot). A linger guard now closes any popover when the page sees no mouse activity for ~10 s (or the anchor is untouched ~12 s); movement inside the anchor keeps it for deliberate readers.
+- **Atmospheric condition info sits on the card's right edge** (right-justified column, per request).
+- **Wallpaper vibe now follows the clock in EVERY weather**: previously only Clear had a night query — after dark every category (cloudy/rain/snow/storm/fog/default) fetches `night …` variants, so no more bright daylight fields at 20:58 (verified: all 11 category cases map to distinct day/night queries).
+
 ### Version 0.8.7 — Manual Location Control & Dialog-Free Auto Location
 - **Manual location (customization)**: press **`D`** → **Location** → type a city (autocomplete after 3+ characters — e.g. typing `BEN` offers *Bengaluru, Karnataka — India* rows you pick from, keyboard-navigable) **or** raw `lat, lon`. Manual entry overrides automatic detection entirely; it's geocoded once via the keyless Open-Meteo geocoder (coordinates + timezone included), cached so boots stay instant and offline-safe, and the HUD re-syncs (weather, news, ephemeris) immediately. "Use automatic" clears the override.
 - **Dialog-free automatic location**: the wallpaper **never raises a geolocation permission dialog**. Resolution order: manual entry → your last detected location (persisted across sessions and boots — instant paint, no detection wait) → silent detection, where HTML5 GPS is consulted **only if its permission is already granted** (a state query, never a prompt) and the keyless IP lookup carries everything else, then the config fallback.

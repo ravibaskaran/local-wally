@@ -1421,3 +1421,22 @@ Replaces the fixed moon row with three nocturnal cards:
 
 ### 38.5 Verification
 - New scratch suite `test_v087_location.js` (9 sections: manual precedence, coords/city/invalid paths + rejections, prompt-state zero-GPS, granted-state silent GPS, persisted-instant boots + adoption + jitter immunity, cache-miss recovery + broken-manual fallthrough, outage-default persistence/non-adoption, broken Permissions API, backup prefix sanity). Full 9-suite battery green, clean exits, `node --check` clean. Fresh-context adversarial diff review verdict FIX-FIRST → all findings applied (source-quality adoption gate; no forged `'US'` region on coordinate pins; suggestion-click coordinate passthrough; corrupt-record self-heal; broken-manual pipeline fall-through; aria/polish nits); scratch SHA-256 in release notes.
+
+## 39. Customize-Panel Buttons, Popover Linger Guard, Right-Aligned Conditions, Night Wallpaper Queries (v0.8.8)
+
+### 39.1 Discoverability: Backup Buttons in the Lively Customize Panel
+- Lively's property schema (schemas/livelyPropertiesSchema.json, core-separation) supports `type: "button"` (fires a property event with the label value) and `type: "label"`. LivelyProperties v0.8.8 adds `settingsExport`/`settingsImport` button controls + a `settingsHelp` label pointing at the D panel; App dispatches the two new cases — export calls `exportSettings()`; import programmatically opens the existing hidden file picker. Backup/restore state semantics live ONLY in the D panel (buttons are actions, not settings — excluded from `SETTINGS_PROPNAMES`/export payload by design).
+- Note: Lively's Customize widgets are host-rendered — custom dropdowns/autocomplete are impossible there; the Location section stays in the HUD panel by design (documented).
+
+### 39.2 Hover Popover Linger Guard (app.js)
+- Root cause: wallpapers covered by other windows receive NO mouse events from the compositor — `mouseleave` for the popover anchor never fires, so a popover opened just before a window came up lingers indefinitely (visible in the user screenshot while the mouse was in the browser).
+- Guard: on popover open, arm a 1.5s interval checker with two clocks — `page idle >10s` (WebView covered or mouse elsewhere: hide) and `anchor idle >12s` (movement exists elsewhere on the desktop but never returned to the anchor: hide). Any document mousemove updates the page clock; movement inside the anchor/popover bounds resets both (deliberate reading keeps the popover). Hide clears the interval. Existing pause-path dismissal (playback pause hides popovers) is untouched.
+
+### 39.3 Condition Meta Right-Justified (style.css)
+- `.hud-temp-block` uses `justify-content: space-between`; `.hud-condition-meta` flips to `align-items: flex-end` + `text-align: right` — the conditions column hugs the weather card's right edge (user request; supersedes the earlier left-internal alignment for this block).
+
+### 39.4 Wallpaper Queries Day/Night-Aware Across All Categories (api.js)
+- `mapWeatherToQuery`: previously only Clear had a distinct night query — after dark, cloudy/rain/snow/fog/storm and the default still searched the SAME daytime terms, surfacing daylight scenes at night (user screenshot: green day field at 20:58). Now every category (11 cases, incl. UNKNOWN → default) carries a `night ` prefix when `isDay` is false; custom keywords still pass through untouched. Verified distinct day/night queries per category in the suite.
+
+### 39.5 Verification
+- New scratch suite `test_v088_hud_polish.js` (button schema + wiring, linger-guard rules A–D, right-justify CSS, full day/night query table, custom-keyword passthrough). Full 10-suite battery green with clean exits; `node --check` clean; LivelyProperties.json validated. Scratch SHA-256 in release notes.

@@ -2442,6 +2442,17 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
               self.updateClock();
             }
             break;
+          case 'settingsExport':
+            // Customize-panel button (Lively fires a property event on click)
+            self.exportSettings();
+            break;
+          case 'settingsImport':
+            // Customize-panel button: opens the file picker from wallpaper UI
+            if (self.dom.diagImportFile) {
+              self.dom.diagImportFile.value = '';
+              self.dom.diagImportFile.click();
+            }
+            break;
         }
       });
 
@@ -4608,10 +4619,15 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
       pop.style.top = Math.round(top) + 'px';
       pop.style.left = Math.round(left) + 'px';
+      this._startPopoverLinger(anchorEl);
     },
 
     hideHoverPopover: function() {
       if (!this.dom.hudHoverPopover) return;
+      if (this._popoverLingerTimer) {
+        clearInterval(this._popoverLingerTimer);
+        this._popoverLingerTimer = null;
+      }
       if (this.currentPopoverAnchor) {
         this.currentPopoverAnchor.removeAttribute('aria-describedby');
         this.currentPopoverAnchor = null;
@@ -4619,6 +4635,72 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       this.dom.hudHoverPopover.classList.remove('is-visible');
       this.dom.hudHoverPopover.setAttribute('aria-hidden', 'true');
       this.isHoverPopoverOpen = false;
+    },
+
+    /**
+     * Popover linger guard (v0.8.8): popovers must never outlive mouse
+     * presence. When another window covers the wallpaper the WebView receives
+     * NO mouse events at all, so mouseleave never fires and a popover could
+     * linger forever while the user's mouse is somewhere else (report). Rules:
+     *  - no mouse movement seen anywhere in the page for >10s  -> hide,
+     *  - movement exists but never enters the anchor/popover for >12s -> hide,
+     *  - movement inside the anchor/popover resets both clocks (a deliberate
+     *    reader keeps the popover alive).
+     */
+    _startPopoverLinger: function(anchorEl) {
+      if (this._popoverLingerTimer) {
+        clearInterval(this._popoverLingerTimer);
+        this._popoverLingerTimer = null;
+      }
+      var now = Date.now();
+      this._popoverAnyMoveAt = now;
+      this._popoverAnchorMoveAt = now;
+      this.currentPopoverLingerAnchor = anchorEl;
+      if (!this._popoverMouseMoveBound) {
+        this._popoverMouseMoveBound = true;
+        var selfRef = this;
+        document.addEventListener('mousemove', function(e) {
+          selfRef._popoverMouseMoveHandler(e);
+        }, { passive: true, capture: true });
+      }
+      var self = this;
+      this._popoverLingerTimer = setInterval(function() {
+        self._checkPopoverLinger();
+      }, 1500);
+    },
+
+    _popoverMouseMoveHandler: function(e) {
+      if (!this.isHoverPopoverOpen) return;
+      var now = Date.now();
+      this._popoverAnyMoveAt = now;
+      var inside = false;
+      var anchor = this.currentPopoverAnchor;
+      var pop = this.dom.hudHoverPopover;
+      if (anchor && typeof anchor.getBoundingClientRect === 'function') {
+        var r = anchor.getBoundingClientRect();
+        inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+      }
+      if (!inside && pop && typeof pop.getBoundingClientRect === 'function') {
+        var pr = pop.getBoundingClientRect();
+        inside = e.clientX >= pr.left && e.clientX <= pr.right && e.clientY >= pr.top && e.clientY <= pr.bottom;
+      }
+      if (inside) this._popoverAnchorMoveAt = now;
+    },
+
+    _checkPopoverLinger: function() {
+      if (!this.isHoverPopoverOpen) {
+        if (this._popoverLingerTimer) {
+          clearInterval(this._popoverLingerTimer);
+          this._popoverLingerTimer = null;
+        }
+        return;
+      }
+      var now = Date.now();
+      var pageIdle = (now - (this._popoverAnyMoveAt || 0)) > 10000;
+      var anchorIdle = (now - (this._popoverAnchorMoveAt || 0)) > 12000;
+      if (pageIdle || anchorIdle) {
+        this.hideHoverPopover();
+      }
     },
 
     getPopoverContent: function(type, el) {
