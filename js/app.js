@@ -87,9 +87,11 @@
       this.bandRanges[i * 2 + 1] = endBin;
     }
 
-    // Zero-CPU Silence Sleep state
-    this.silenceFrames = 0;
+    // Zero-CPU Silence Sleep state (wall-clock silence window, ms since silence began; 0 = sound)
+    this.silenceSince = 0;
     this.isSleeping = false;
+    // Cached media wrap width captured before layout writes (C-F02 reflow avoidance)
+    this._wrapWidthSample = 0;
 
     // Demo / Preview Mode state
     this.demoMode = 0; // 0: Normal / SMTC, 1: Synthwave, 2: Lo-Fi, 3: Ambient
@@ -123,11 +125,20 @@
     this.initGradient();
   };
 
+  MediaVisualizerEngine.prototype.captureWrapWidth = function() {
+    if (!this.dom.canvas) return;
+    var wrap = this.dom.canvas.parentElement;
+    this._wrapWidthSample = (wrap && wrap.clientWidth > 0) ? wrap.clientWidth : 0;
+  };
+
   MediaVisualizerEngine.prototype.resize = function() {
     if (!this.dom.canvas) return;
     var wrap = this.dom.canvas.parentElement;
-    if (wrap && wrap.clientWidth > 0) {
-      var targetW = wrap.clientWidth - 8;
+    // Prefer a fresh pre-write sample when present so this read does not force a reflow (C-F02)
+    var wrapWidth = (this._wrapWidthSample > 0) ? this._wrapWidthSample : (wrap ? wrap.clientWidth : 0);
+    this._wrapWidthSample = 0;
+    if (wrapWidth > 0) {
+      var targetW = wrapWidth - 8;
       if (targetW > 60 && Math.abs(this.dom.canvas.width - targetW) > 2) {
         this.dom.canvas.width = targetW;
         this.initGradient();
@@ -179,12 +190,9 @@
     }
 
     if (totalEnergy < 0.005) {
-      this.silenceFrames++;
-      if (this.silenceFrames > 90 && !this.isSleeping) {
-        this.sleep();
-      }
+      if (this.silenceSince === 0) this.silenceSince = performance.now();
     } else {
-      this.silenceFrames = 0;
+      this.silenceSince = 0;
       if (this.isSleeping) {
         this.wake();
       }
@@ -215,15 +223,15 @@ MediaVisualizerEngine.prototype.render = function(dt) {
     activeEnergy += cur;
   }
 
-  // If energy is silent, count silence frames and enter deep sleep after 90 frames (~1.5s)
+  // If energy is silent, track the silence window and enter deep sleep after 1.5s (C-F03)
   if (activeEnergy < 0.005) {
-    this.silenceFrames++;
-    if (this.silenceFrames > 90) {
+    if (this.silenceSince === 0) this.silenceSince = performance.now();
+    if (performance.now() - this.silenceSince >= 1500) {
       this.sleep();
       return;
     }
   } else {
-    this.silenceFrames = 0;
+    this.silenceSince = 0;
   }
 
   var w = this.dom.canvas.width;
@@ -274,7 +282,7 @@ MediaVisualizerEngine.prototype.sleep = function() {
 
 MediaVisualizerEngine.prototype.wake = function() {
   this.isSleeping = false;
-  this.silenceFrames = 0;
+  this.silenceSince = 0;
   var appInstance = global.App || global.app;
   if (appInstance && typeof appInstance.wakeAnimationLoop === 'function') {
     appInstance.wakeAnimationLoop();
@@ -682,12 +690,14 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     var s = this.remainingSeconds % 60;
     var mStr = m < 10 ? '0' + m : '' + m;
     var sStr = s < 10 ? '0' + s : '' + s;
-    if (this.dom.time) {
-      this.dom.time.textContent = mStr + ':' + sStr;
+    var timeStr = mStr + ':' + sStr;
+    if (this.dom.time && this.dom.time.textContent !== timeStr) {
+      this.dom.time.textContent = timeStr;
     }
     if (this.dom.card) {
       var pModeLabel = this.mode === 'focus' ? 'Focus' : this.mode === 'break' ? 'Short Break' : 'Long Break';
-      this.dom.card.title = 'Pomodoro: ' + pModeLabel + ' (' + mStr + ':' + sStr + (this.isRunning ? ' - Running' : ' - Paused') + ') (Click to inspect focus controls)';
+      var pTitle = 'Pomodoro: ' + pModeLabel + ' (' + timeStr + (this.isRunning ? ' - Running' : ' - Paused') + ') (Click to inspect focus controls)';
+      if (this.dom.card.title !== pTitle) this.dom.card.title = pTitle;
     }
 
     if (!this.ctx || !this.dom.canvas) return;
@@ -1565,6 +1575,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         .replace(/'/g, '&#39;');
     },
 
+    // Precompiled: ISO strings carrying an explicit UTC offset or Z suffix (CORR-1).
+    // Offset-naive isoTime must not be Date-parsed as host-local in horizon filters.
+    isoTimeHasOffsetRe: /(?:Z|[+-]\d{2}:\d{2})$/i,
+
     setDomText: function(el, text) {
       if (el && el.textContent !== text) {
         el.textContent = text;
@@ -1905,7 +1919,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         }
 
         if (cachedUrl && this.dom.bgA) {
-          this.dom.bgA.style.backgroundImage = 'url("' + cachedUrl + '")';
+          var safeCachedUrl = String(cachedUrl || '').replace(/["\\\n\r]/g, '');
+          this.dom.bgA.style.backgroundImage = 'url("' + safeCachedUrl + '")';
           if (this.dom.unsplashCredit && cachedPhotographer) {
             this.dom.unsplashCredit.textContent = 'Photo by ' + cachedPhotographer;
             var safePhotogUrl = (cachedPhotographerUrl && /^https:\/\//i.test(String(cachedPhotographerUrl).trim()))
@@ -2621,6 +2636,23 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       var hwVisible = this.showHardwareMonitor;
       var newsVisible = this.showNewsFeed;
 
+      // C-F02: pre-measure the media wrap while the DOM is clean, but only when the dock
+      // layout state is already steady (no is-hidden / is-solo transitions pending), so
+      // resize() below reads a cached width instead of forcing a post-write reflow.
+      if (this.mediaVisualizer && typeof this.mediaVisualizer.captureWrapWidth === 'function' &&
+          this.dom.dockMediaFocus && this.dom.dockMediaFocus.classList &&
+          typeof this.dom.dockMediaFocus.classList.contains === 'function') {
+        var dockWillShow = (this.showMediaFocusDock !== false) && (this.showPomodoro || this.showMediaPlayer);
+        var dockLayoutSteady = dockWillShow && !this.dom.dockMediaFocus.classList.contains('is-hidden');
+        if (dockLayoutSteady && this.dom.mediaCard && this.dom.mediaCard.classList &&
+            typeof this.dom.mediaCard.classList.contains === 'function') {
+          dockLayoutSteady = this.dom.mediaCard.classList.contains('is-solo') === (!!this.showMediaPlayer && !this.showPomodoro);
+        }
+        if (dockLayoutSteady) {
+          this.mediaVisualizer.captureWrapWidth();
+        }
+      }
+
       // Secondary column auto-resizing
       if (this.dom.hudColSecondary) {
         if (!hwVisible && !newsVisible) {
@@ -2986,9 +3018,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (!this.dom.diagGpu) return;
       if (this.particles && this.particles.gpuProfile) {
         var prof = this.particles.gpuProfile;
-        this.dom.diagGpu.textContent = prof.cleanRenderer + ' (' + prof.tier + ', DPR ' + prof.dpr.toFixed(1) + ')';
+        this.setDomText(this.dom.diagGpu, prof.cleanRenderer + ' (' + prof.tier + ', DPR ' + prof.dpr.toFixed(1) + ')');
       } else {
-        this.dom.diagGpu.textContent = 'Universal 2D (DPR 1.0)';
+        this.setDomText(this.dom.diagGpu, 'Universal 2D (DPR 1.0)');
       }
     },
 
@@ -3079,16 +3111,16 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         var sStr = remS < 10 ? '0' + remS : '' + remS;
 
         if (this.dom.diagCacheTtl) {
-          this.dom.diagCacheTtl.textContent = remM + 'm ' + sStr + 's';
+          this.setDomText(this.dom.diagCacheTtl, remM + 'm ' + sStr + 's');
         }
 
         if (this.dom.syncStatus) {
           if (this.simulationMode > 0) {
-            this.dom.syncStatus.textContent = 'Sim Mode';
+            this.setDomText(this.dom.syncStatus, 'Sim Mode');
           } else if (remainingMs > 0) {
-            this.dom.syncStatus.textContent = 'Sync in ' + remM + 'm';
+            this.setDomText(this.dom.syncStatus, 'Sync in ' + remM + 'm');
           } else {
-            this.dom.syncStatus.textContent = 'Syncing...';
+            this.setDomText(this.dom.syncStatus, 'Syncing...');
           }
         }
       }
@@ -3173,8 +3205,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (typeof this.simulationMode === 'number' && this.simulationMode > 0) {
         if (this.simulationMode === 4) isDay = false;
         else if (this.simulationMode === 1) isDay = true;
-      } else if (!sunPos && this.state && this.state.weather && typeof this.state.weather.isDay === 'boolean') {
-        isDay = this.state.weather.isDay;
+      } else if (!sunPos && this.state && this.state.weather &&
+                 (typeof this.state.weather.isDay === 'number' || typeof this.state.weather.isDay === 'boolean')) {
+        var dayFlag = this.state.weather.isDay;
+        isDay = (typeof dayFlag === 'number') ? (dayFlag === 1) : !!dayFlag;
       }
 
       var sunriseStr = '--:--';
@@ -3323,6 +3357,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
           // Check timestamp to filter within the next 6 hours horizon
           var ptTimeMs = pt.timestamp;
+          if (!ptTimeMs && pt.isoTime && this.isoTimeHasOffsetRe.test(pt.isoTime)) {
+            var parsedIsoTime = new Date(pt.isoTime).getTime();
+            if (!isNaN(parsedIsoTime)) ptTimeMs = parsedIsoTime;
+          }
           if (!ptTimeMs && pt.time) {
             var parsedTime = new Date(pt.time).getTime();
             if (!isNaN(parsedTime)) ptTimeMs = parsedTime;
@@ -3418,6 +3456,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
           // Exclude points outside current day
           var hPtMs = hPt.timestamp;
+          if (!hPtMs && hPt.isoTime && this.isoTimeHasOffsetRe.test(hPt.isoTime)) {
+            var hParsedIso = new Date(hPt.isoTime).getTime();
+            if (!isNaN(hParsedIso)) hPtMs = hParsedIso;
+          }
           if (!hPtMs && hPt.time) {
             var hParsed = new Date(hPt.time).getTime();
             if (!isNaN(hParsed)) hPtMs = hParsed;
@@ -3585,8 +3627,12 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       var eventSub = 'at --:--';
 
       var skyCandidates = [];
-      if (sunTimes && sunTimes.dawn && sunTimes.dawn > now) {
-        skyCandidates.push({ time: sunTimes.dawn, label: 'Civil Dawn', sub: 'first light' });
+      // Prefer astronomical dawn (nightEnd); guard against SunCalc's Invalid Date at
+      // circumpolar latitudes so it cannot mask a valid civil dawn (CORR-2)
+      var neTime = sunTimes && sunTimes.nightEnd;
+      var dawnTime = (neTime && !isNaN(neTime.getTime())) ? neTime : (sunTimes && sunTimes.dawn);
+      if (dawnTime && !isNaN(dawnTime.getTime()) && dawnTime > now) {
+        skyCandidates.push({ time: dawnTime, label: 'Astronomical Dawn', sub: 'first light' });
       }
       if (sunTimes && sunTimes.sunrise && sunTimes.sunrise > now) {
         skyCandidates.push({ time: sunTimes.sunrise, label: 'Sunrise', sub: 'morning' });
@@ -3605,8 +3651,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         try {
           var tomorrow = new Date(now.getTime() + 24 * 3600 * 1000);
           var tomorrowSunTimes = global.SunCalc.getTimes(tomorrow, lat, lng);
-          if (tomorrowSunTimes && tomorrowSunTimes.dawn && tomorrowSunTimes.dawn > now) {
-            skyCandidates.push({ time: tomorrowSunTimes.dawn, label: 'Civil Dawn', sub: 'first light' });
+          var tNeTime = tomorrowSunTimes && tomorrowSunTimes.nightEnd;
+          var tomorrowDawnTime = (tNeTime && !isNaN(tNeTime.getTime())) ? tNeTime : (tomorrowSunTimes && tomorrowSunTimes.dawn);
+          if (tomorrowDawnTime && !isNaN(tomorrowDawnTime.getTime()) && tomorrowDawnTime > now) {
+            skyCandidates.push({ time: tomorrowDawnTime, label: 'Astronomical Dawn', sub: 'first light' });
           }
           if (tomorrowSunTimes && tomorrowSunTimes.sunrise && tomorrowSunTimes.sunrise > now) {
             skyCandidates.push({ time: tomorrowSunTimes.sunrise, label: 'Sunrise', sub: 'morning' });
@@ -4368,22 +4416,22 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             '</div>' +
             '<div class="hud-detail-item">' +
               '<span class="hud-detail-item-label">Relative Humidity</span>' +
-              '<span class="hud-detail-item-val">' + (weather.humidity != null ? weather.humidity + '%' : 'Unavailable') + '</span>' +
+              '<span class="hud-detail-item-val">' + esc(weather.humidity != null ? weather.humidity + '%' : 'Unavailable') + '</span>' +
               '<span class="hud-detail-item-sub">Dew point equilibrium</span>' +
             '</div>' +
             '<div class="hud-detail-item">' +
               '<span class="hud-detail-item-label">Surface Wind</span>' +
-              '<span class="hud-detail-item-val">' + (weather.windSpeedKm != null ? weather.windSpeedKm + ' km/h' : 'Calm') + '</span>' +
+              '<span class="hud-detail-item-val">' + esc(weather.windSpeedKm != null ? weather.windSpeedKm + ' km/h' : 'Calm') + '</span>' +
               '<span class="hud-detail-item-sub">' + (weather.windDirection ? esc(weather.windDirection) : 'Variable direction') + '</span>' +
             '</div>' +
             '<div class="hud-detail-item">' +
               '<span class="hud-detail-item-label">Precipitation</span>' +
-              '<span class="hud-detail-item-val">' + (pVal != null ? pVal + ' mm' : '0.0 mm') + '</span>' +
+              '<span class="hud-detail-item-val">' + esc(pVal != null ? pVal + ' mm' : '0.0 mm') + '</span>' +
               '<span class="hud-detail-item-sub">Surface accumulation</span>' +
             '</div>' +
             '<div class="hud-detail-item">' +
               '<span class="hud-detail-item-label">Barometric Pressure</span>' +
-              '<span class="hud-detail-item-val">' + (weather.pressureHpa ? weather.pressureHpa + ' hPa' : '1013 hPa') + '</span>' +
+              '<span class="hud-detail-item-val">' + esc(weather.pressureHpa ? weather.pressureHpa + ' hPa' : '1013 hPa') + '</span>' +
               '<span class="hud-detail-item-sub">Mean sea-level</span>' +
             '</div>' +
             '<div class="hud-detail-item full-width">' +
@@ -4883,6 +4931,19 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       this.renderCelestial();
       this.updateBackground(snapshot.background);
       this.updateAtmosphereEngines(snapshot);
+
+      // Keep an open detail drawer fresh on snapshot refresh (A-F4);
+      // preserve reader scroll position and surface failures per file convention (CORR-3)
+      if (this.isDetailOpen && this.activeDetailCard) {
+        var detailBodyEl = this.dom.hudDetailBody;
+        var detailScrollTop = detailBodyEl ? detailBodyEl.scrollTop : 0;
+        try {
+          this.renderCardDetailContent(this.activeDetailCard);
+        } catch (e) {
+          console.warn('[App] Detail refresh failed:', e && e.message);
+        }
+        if (detailBodyEl) detailBodyEl.scrollTop = detailScrollTop;
+      }
     },
 
     renderForecast: function(hourly) {
@@ -5567,7 +5628,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     updateBackground: function(bg) {
       if (!bg || !bg.url || bg.url === this.lastBgUrl) return;
       var self = this;
-      var incomingUrl = bg.url;
+      var incomingUrl = String(bg.url || '').replace(/["\\\n\r]/g, '');
 
       // Double-buffered cross-fade preloader
       var preloader = new Image();
@@ -5739,7 +5800,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (!this._boundLoop) {
         this._boundLoop = this.loop.bind(this);
       }
-      this.animationFrameId = requestAnimationFrame(this._boundLoop);
+      // Guarded arm: no-ops when the pendingSnapshot drain above already woke the
+      // loop chain (renderAll -> updateAtmosphereEngines -> wakeAnimationLoop),
+      // preventing a second parallel RAF chain per vsync (C-F01).
+      this.wakeAnimationLoop();
     },
 
     stopLoop: function() {
@@ -5812,10 +5876,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           this.frameCount = 0;
           this.fpsTimer = currentTime;
 
-          if (this.dom.diagFps) this.dom.diagFps.textContent = this.fps;
-          if (this.dom.diagFrametime) this.dom.diagFrametime.textContent = (dt * 1000).toFixed(1) + 'ms';
+          if (this.dom.diagFps) this.setDomText(this.dom.diagFps, String(this.fps));
+          if (this.dom.diagFrametime) this.setDomText(this.dom.diagFrametime, (dt * 1000).toFixed(1) + 'ms');
           if (this.dom.diagParticles && this.particles) {
-            this.dom.diagParticles.textContent = this.particles.activePrecipCount;
+            this.setDomText(this.dom.diagParticles, String(this.particles.activePrecipCount));
           }
           this.updateGpuDiagnostics();
         }

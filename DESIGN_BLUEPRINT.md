@@ -1273,3 +1273,31 @@ Replaces the fixed moon row with three nocturnal cards:
 - **Lifecycle Animation Suspension**: `App.startLoop()` and `stopLoop()` dynamically toggle `.is-paused` on `document.body`. This binds to `.is-paused * { animation-play-state: paused !important; }` in CSS, ensuring that infinite CSS keyframe animations (such as charging pulses) suspend completely when the wallpaper sleeps.
 - **High-Refresh Display Calibration**: The frame-skip threshold is calibrated to `14.5ms`, guaranteeing smooth 60 FPS pacing without dropping frames on 120Hz, 144Hz, or 240Hz monitors.
 - **Zero-Asset Audio Synthesis**: The Pomodoro timer synthesizes a dual-tone audio chime (587.33 Hz → 880 Hz) using the browser's native Web Audio API (`AudioContext`), delivering clean completion cues without bundling external audio assets.
+
+## 33. Consolidated Audit Fixes, Timezone Correctness & Render-Loop Integrity (v0.8.2)
+
+### 33.1 Render-Loop & Lifecycle Integrity
+- **Single RAF Chain Invariant**: The final re-arm in `App.startLoop()` is delegated to the guarded `App.wakeAnimationLoop()` instead of a bare `requestAnimationFrame`, so the pending-snapshot drain (which wakes the loop through `renderAll → updateAtmosphereEngines → wakeAnimationLoop`) can no longer produce a second parallel frame chain. `stopLoop()` therefore cancels the one true chain, and the active animation path performs exactly one `loop()` invocation per vsync.
+- **Boot Visibility Reconciliation**: `LivelyBridge.init()` re-reads `document.hidden` and calls `updatePlaybackState()` immediately after attaching the `visibilitychange` listener, closing the window in which a hidden→visible transition before init would leave stale pause state and permanently park the loop, timers, clock, and sync.
+
+### 33.2 Timezone-Aware Forecast Horizons
+- **Absolute Adapter Timestamps**: All three weather adapters (Open-Meteo, MET Norway, OpenWeatherMap) attach epoch-millisecond `timestamp` fields to every normalized forecast point. Open-Meteo resolves its `timezone=auto` location-local naive strings (`2026-10-12T14:00`) without host dependence: `Date.UTC(components) − utc_offset_seconds`. Explicit-offset/`Z` strings parse directly; unresolvable strings emit `null` so downstream fallbacks run.
+- **Offset-Bearing Fallback Contract**: The Rain Outlook and Feels-Like Peak horizon filters (`renderCelestial`) consult `pt.timestamp` first, then `pt.isoTime` only when it carries an explicit offset or `Z` (precompiled `App.isoTimeHasOffsetRe`), and finally the legacy `HH:00` host-local last resort. Cached snapshots from any provider therefore never mis-date points across midnight or timezone boundaries.
+
+### 33.3 Security & Data Integrity Hardening
+- **Drawer Escaping Completion**: All provider-sourced interpolations in the weather detail drawer (humidity, surface wind, precipitation, barometric pressure) pass through the local `esc()` escaper, matching the condition-text and wind-direction fields.
+- **Honest AQI Normalization**: The three AQI normalizer sites (Open-Meteo `european_aqi`, WAQI wrapped `data.aqi`, WAQI direct-object with finite-value preference) return the canonical `available: false` / `category: 'Unavailable'` envelope on degenerate success payloads instead of fabricating index values.
+- **CSS URL Interpolation Hardening**: Both wallpaper ingest points (`restoreCachedWallpaper`, `updateBackground`) strip quote/backslash/control characters from URLs before composing `url("...")` background images.
+- **News Attach Rejection Guard**: The background news-settle chain in `ApiService.fetchAtmosphere` carries a `.catch` warn handler, preventing unhandled promise rejections.
+
+### 33.4 Rendering & Interaction Refinements
+- **Reflow-Free Auto-Resize**: `updateLayoutAutoResize` pre-captures the media visualizer wrap width (steady-state gated) before style/class writes; `MediaVisualizerEngine.resize()` consumes the cached sample, eliminating the per-invocation read-after-write layout invalidation.
+- **Wall-Clock Silence Sleep**: The visualizer tracks silence as a `performance.now()` window in a single counting site and enters deep sleep at 1.5 s of continuous silence, removing the double frame counting (host push + render) that fired at ~0.75 s.
+- **Astronomical Dawn Event Card**: The Next Sky Event candidate prefers `nightEnd` (−18°) per §29.3/§30.4 with `isNaN` guards against SunCalc's Invalid Date at circumpolar latitudes, mirrored in the tomorrow-fallback path.
+- **Open-Drawer Freshness**: `renderAll` re-renders an open detail drawer through `renderCardDetailContent` while preserving `hudDetailBody.scrollTop`, guarded by a warn-level catch.
+- **Warm-Path Write Guards**: Pomodoro time/title and diagnostics counters (cache TTL, sync status, FPS, frametime, particles, GPU profile) route through `App.setDomText` or inline `!==` dirty checks. `prefers-reduced-motion: reduce` disables the charging pulse animation.
+
+### 33.5 Verification & Change Footprint
+- 6/6 regression suites at 100% (v081, v08-providers, v073, v072, v071, v07-targeted); `node --check` clean across all 22 JavaScript files; git whitespace clean.
+- Change footprint: 4 files, +197/−42 (`js/app.js`, `js/api.js`, `js/lively.js`, `css/style.css`).
+- Integrated-GPU guidance unchanged: lowering `glassBlurPx` remains the single largest GPU-bandwidth saving, as the glassmorphic backdrop blur composites over the live particle canvas each frame.

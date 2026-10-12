@@ -220,6 +220,9 @@
           self.documentHidden = !!document.hidden;
           self.updatePlaybackState();
         });
+        // Reconcile any hidden->visible transition missed between parse and init (B-NFB-02)
+        self.documentHidden = !!document.hidden;
+        self.updatePlaybackState();
       }
     }
   };

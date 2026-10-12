@@ -270,6 +270,22 @@ local-wally/
 
 ## 🛡️ Recent Updates & Quality Improvements
 
+### Version 0.8.2 — Consolidated Audit Fixes, Timezone Correctness & Render-Loop Integrity
+- **Stability & Correctness**:
+  - Restored the single-RAF-chain invariant: resuming with a queued snapshot no longer arms a duplicate animation loop (`App.startLoop()` re-arms via the guarded `wakeAnimationLoop()`), eliminating double per-vsync work during active animation.
+  - Timezone-correct 6-hour Rain Outlook and Feels-Like Peak horizons: all three weather adapters emit absolute forecast `timestamp`s; Open-Meteo resolves location-local naive strings via `utc_offset_seconds` → `Date.UTC`, and the cached-snapshot fallback only trusts offset-bearing ISO strings — fixing wrong/missing rain windows after midnight and for remote timezones.
+- **Security & Robustness**:
+  - Completed HTML escaping in the weather detail drawer (4 provider-sourced fields) and hardened CSS `url("...")` interpolation at both wallpaper ingest points.
+  - Fixed a boot visibility race that could permanently park the wallpaper if the window transitioned hidden→visible before bridge init.
+  - AQI no longer fabricates a value on degenerate success payloads — all 3 normalizer sites report `Unavailable` without a usable measurement.
+  - Next Sky Event now uses astronomical dawn (`nightEnd`) per blueprint §29.3/§30.4, with circumpolar Invalid-Date guards (also in the tomorrow fallback).
+- **Performance & Rendering**:
+  - Eliminated a forced reflow in the auto-resize layout path (wrap width captured before style writes); audio visualizer silence sleep now honors the documented 1.5 s wall-clock (previously ~0.75 s from double frame counting).
+  - Dirty-check guards on warm-path DOM text updates (Pomodoro, diagnostics); `prefers-reduced-motion` now disables the charging pulse.
+- **Quality of Life**:
+  - Revived the numeric provider `isDay` fallback; open detail drawers refresh on sync with scroll preserved; unhandled-rejection guard on the news attach chain.
+- **Verification**: 6/6 regression suites at 100%, `node --check` clean across all 22 JS files, 4-file footprint (+197/−42).
+
 ### Version 0.8.1 — Comprehensive Production Code Audit & Performance Hardening
 - **Security & Protocol Enforcement**:
   - Enforced strict `https://` protocol checks across all external news and photo links (`a#hud-news-link`, `a#unsplash-credit`), falling back to trusted secure defaults and enforcing `target="_blank"` and `rel="noopener noreferrer"`.

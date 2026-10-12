@@ -2415,6 +2415,9 @@ html, body {
     transition: none !important;
     transform: none !important;
   }
+  .hw-battery-badge.is-charging {
+    animation: none !important;
+  }
 }
 
 /* Diagnostic / FPS Overlay */

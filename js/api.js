@@ -651,11 +651,23 @@
         var timeArr = hourly.time || [];
         var count = Math.min(24, timeArr.length);
         var step = count >= 8 ? Math.floor(count / 8) : 1;
+        // CORR-1: with timezone=auto the hourly.time strings are location-local wall clock
+        // with no offset; derive absolute UTC from utc_offset_seconds instead of host-local parsing.
+        var locOffsetMs = (typeof data.utc_offset_seconds === 'number') ? data.utc_offset_seconds * 1000 : null;
         for (var i = 0; i < 8 && i < count; i++) {
           var idx = Math.min(i * step, count - 1);
           if (idx >= 0 && timeArr[idx]) {
             var tStr = timeArr[idx];
             var ptDate = new Date(tStr);
+            var ptTs = null;
+            if (/(?:Z|[+-]\d{2}:\d{2})$/i.test(tStr)) {
+              // Explicit offset present: Date parsing is already absolute-correct
+              if (!isNaN(ptDate.getTime())) ptTs = ptDate.getTime();
+            } else if (locOffsetMs != null) {
+              // Naive wall clock: UTC = wall time - location offset
+              var isoM = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(tStr);
+              if (isoM) ptTs = Date.UTC(+isoM[1], +isoM[2] - 1, +isoM[3], +isoM[4], +isoM[5]) - locOffsetMs;
+            }
             var h = !isNaN(ptDate.getTime()) ? ptDate.getHours() : ((new Date().getHours() + i * 3) % 24);
             var lbl = (i === 0) ? 'Now' : ((h % 12 || 12) + (h >= 12 ? ' PM' : ' AM'));
             var ptTempC = (hourly.temperature_2m && hourly.temperature_2m[idx] != null && Number.isFinite(hourly.temperature_2m[idx])) ? hourly.temperature_2m[idx] : null;
@@ -669,6 +681,7 @@
             hourlyForecast.push({
               time: (h < 10 ? '0' : '') + h + ':00',
               isoTime: tStr,
+              timestamp: ptTs,
               label: lbl,
               hour: h,
               tempC: (ptTempC != null) ? Math.round(ptTempC * 10) / 10 : null,
@@ -769,6 +782,7 @@
             hourlyForecast.push({
               time: (h < 10 ? '0' : '') + h + ':00',
               isoTime: tStr,
+              timestamp: !isNaN(ptDate.getTime()) ? ptDate.getTime() : null,
               label: lbl,
               hour: h,
               tempC: (ptT != null) ? Math.round(ptT * 10) / 10 : null,
@@ -909,6 +923,7 @@
             hourlyForecast.push({
               time: (h < 10 ? '0' : '') + h + ':00',
               isoTime: item.dt ? new Date(item.dt * 1000).toISOString() : null,
+              timestamp: dt.getTime(),
               label: lbl,
               hour: h,
               tempC: (ptT != null) ? Math.round(ptT * 10) / 10 : null,
@@ -984,7 +999,29 @@
     AqiAdapter: {
       normalizeOpenMeteo: function(data) {
         var cur = data.current || {};
-        var eq = cur.european_aqi != null ? cur.european_aqi : 20;
+        if (cur.european_aqi == null || !Number.isFinite(cur.european_aqi)) {
+          // Degenerate success payload: report unavailable instead of fabricating a value (B-NFB-03)
+          var unavailableAqi = {
+            available: false,
+            europeanAqi: null,
+            aqi: null,
+            category: 'Unavailable',
+            color: '#64748b',
+            badgeColor: '#64748b',
+            pm2_5: null,
+            pm25: null,
+            pm10: null,
+            pollutantUnit: 'µg/m³'
+          };
+          return {
+            available: false,
+            europeanAqi: null,
+            aqi: unavailableAqi,
+            hourlyAqi: null,
+            category: 'Unavailable'
+          };
+        }
+        var eq = cur.european_aqi;
         var meta = ApiService.interpretEuropeanAqi(eq);
         var aqi = {
           available: true,
@@ -1014,7 +1051,29 @@
       normalizeWaqi: function(data) {
         if (data && data.status === 'ok' && data.data) {
           var d = data.data;
-          var rawAqi = typeof d.aqi === 'number' ? d.aqi : 25;
+          if (typeof d.aqi !== 'number') {
+            // Degenerate success payload: report unavailable instead of fabricating a value (B-NFB-03)
+            var unavailableWaqi = {
+              available: false,
+              europeanAqi: null,
+              aqi: null,
+              category: 'Unavailable',
+              color: '#64748b',
+              badgeColor: '#64748b',
+              pm2_5: null,
+              pm25: null,
+              pm10: null,
+              pollutantUnit: 'AQI'
+            };
+            return {
+              available: false,
+              europeanAqi: null,
+              aqi: unavailableWaqi,
+              hourlyAqi: null,
+              category: 'Unavailable'
+            };
+          }
+          var rawAqi = d.aqi;
           var eqVal;
           if (rawAqi <= 50) eqVal = Math.round(rawAqi * 0.4);
           else if (rawAqi <= 100) eqVal = 20 + Math.round((rawAqi - 50) * 0.4);
@@ -1046,7 +1105,31 @@
         // Direct object support without data wrapper
         if (data && (typeof data.aqi === 'number' || (data.data && typeof data.data.aqi === 'number'))) {
           var d2 = data.data || data;
-          var rawAqi2 = typeof d2.aqi === 'number' ? d2.aqi : 25;
+          var candAqi2 = (typeof data.aqi === 'number' && Number.isFinite(data.aqi)) ? data.aqi
+            : ((data.data && typeof data.data.aqi === 'number' && Number.isFinite(data.data.aqi)) ? data.data.aqi : null);
+          if (candAqi2 === null) {
+            // Degenerate success payload: report unavailable instead of fabricating a value (B-NFB-03)
+            var unavailableWaqi2 = {
+              available: false,
+              europeanAqi: null,
+              aqi: null,
+              category: 'Unavailable',
+              color: '#64748b',
+              badgeColor: '#64748b',
+              pm2_5: null,
+              pm25: null,
+              pm10: null,
+              pollutantUnit: 'AQI'
+            };
+            return {
+              available: false,
+              europeanAqi: null,
+              aqi: unavailableWaqi2,
+              hourlyAqi: null,
+              category: 'Unavailable'
+            };
+          }
+          var rawAqi2 = candAqi2;
           var eqVal2;
           if (rawAqi2 <= 50) eqVal2 = Math.round(rawAqi2 * 0.4);
           else if (rawAqi2 <= 100) eqVal2 = 20 + Math.round((rawAqi2 - 50) * 0.4);
@@ -2221,6 +2304,8 @@
                     }
                   }
                 }
+              }).catch(function(e) {
+                console.warn('[ApiService] News attach failed:', e && e.message);
               });
 
               return payload;
