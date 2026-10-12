@@ -2350,6 +2350,10 @@ html, body {
   z-index: 1000;
   pointer-events: none;
   max-width: 260px;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  box-sizing: border-box;
+  word-break: break-word;
   padding: 8px 12px;
   border-radius: 10px;
   background: rgba(15, 23, 42, 0.92);

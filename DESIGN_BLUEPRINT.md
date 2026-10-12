@@ -1179,3 +1179,41 @@ Replaces the fixed moon row with three nocturnal cards:
 - **Accessible Controls**: Converted static pagination indicators into accessible `<button class="news-dot" type="button" role="tab" aria-selected="..." data-idx="...">` elements within a `role="tablist"` container.
 - **Metadata Hover Preview**: Hovering over any dot immediately reveals the story publisher domain and relative publication age (`2h ago`) within the floating hover popover.
 - **Instant Story Selection**: Clicking or pressing <kbd>Enter</kbd> / <kbd>Space</kbd> on a dot immediately selects and transitions to that story, resetting the automatic 7-second rotation timer to avoid jarring mid-read slide changes.
+
+---
+
+## 30. v0.7.3 Audit Hardening, Lifecycle Integrity & Telemetry Precision
+
+### 30.1 Delegated News Listener & Invalidation Lifecycle
+- **Delegated Container Listener**: Bound a single idempotent click handler to `#hud-news-dots` (`this.dom.hudNewsDots`), resolving active dots via `e.target.closest('.news-dot')`. Eliminates cumulative event listener accumulation across periodic GDELT news renders.
+- **Timer Invalidation**: Enhanced `clearNewsTimers()` to cancel both `this.newsTimer` and `this.newsTransitionTimer`, while removing `.is-fading`. Invoked synchronously upon manual dot selection (`selectNewsStory(idx)`), preventing delayed (~300ms) carousel transition callbacks from overriding manual selections.
+- **Accessible Navigation**: Implemented roving `tabindex="0"` on the active story dot and `tabindex="-1"` on inactive dots, with comprehensive keyboard directional navigation (`ArrowRight`, `ArrowLeft`, `ArrowDown`, `ArrowUp`, `Home`, `End`).
+
+### 30.2 Authoritative Physical Solar Altitude Day/Night Threshold
+- **Physical Derivation**: Solar altitude evaluated via SunCalc against the physical threshold:
+  $$\text{altitude} > -0.01454\text{ rad}$$
+  Physical altitude is authoritative; weather provider `isDay` flags are never permitted to override valid solar calculations.
+- **Polar Symmetry**: Standardized polar day and polar night classifications to the identical `-0.01454` rad threshold, avoiding conflicting horizon boundaries.
+- **Isolated Timezone Context**: Implemented `getTimezoneContext()`, caching `Intl.DateTimeFormat` instances across runtime cycles. Gracefully returns `null` for missing or invalid timezones rather than falling back to host machine time.
+
+### 30.3 Zero-Fabrication Forecast Telemetry & Boundary Filtering
+- **Preserved Nulls**: Purged synthetic linear interpolation padding in `js/api.js` (`normalizeForecastPoints`). Empty or partial provider responses return true data points with missing measurements preserved as `null`.
+- **Chart Resilience**: `SvgForecastChartEngine` formats missing values as `'--'` without inflating bounding box scales.
+- **Horizon Constraints**:
+  - Daytime Card 1 (Rain Outlook) filters points strictly within the upcoming 6-hour window ($[\text{now} - 30\text{m}, \text{now} + 6\text{h}]$).
+  - Daytime Card 2 (Feels-Like Peak) strictly scopes search to the current local calendar date (`todayKey`), preventing tomorrow's peak temperature from leaking into today's card.
+
+### 30.4 Chronological Sky Events & Night Outlook Resilience
+- **Chronological Sorting**: Night Sky Event card aggregates valid candidate celestial transits (astronomical dawn, sunrise, moonset, moonrise), strictly sorting candidates chronologically (`.sort((a,b) => a.time - b.time)`). The earliest upcoming transit is selected, avoiding duplicates with the Golden Hour card.
+- **Honest Cloud Outlook**: Moon Visibility Outlook reports `"Conditions unavailable"` when weather conditions are absent, never fabricating `"Clear sky"`.
+
+### 30.5 Viewport-Safe Floating Hover Popover & Accessibility
+- **Containment & Scroll**: Added `.hud-hover-popover { max-height: calc(100vh - 16px); overflow-y: auto; box-sizing: border-box; word-break: break-word; }` to protect multi-monitor, high-DPI, and compact laptop viewports.
+- **Edge Clamping**: Clamps popover rendering coordinates to maintain an 8px boundary buffer from viewport edges.
+- **Expanded Focus Targets**: Added container targets `#hud-hw-block` and `#hud-metrics-row` with `tabindex="0"` and rich contextual popover content (`hw-block`, `metrics`). Immediate dismissal supported via <kbd>Escape</kbd>.
+
+### 30.6 Single RAF Owner Pattern & Complete Background Parking
+- **Single RAF Owner**: Reset `this.animationFrameId = null` at the start of `loop()`, ensuring clean ownership. Canceled pending RAF before scheduling in `startLoop()`.
+- **Zero-Load Parking**: `stopLoop()` halts `clockInterval`, `hwFallbackTimer`, `syncInterval`, and news timers, ensuring true 0% CPU and 0% GPU load during Lively Wallpaper sleep/game modes.
+- **Early Lively Lifecycle Hook**: Added early `global.livelyWallpaperPlaybackChanged` fallback in `js/lively.js` prior to `init()`, and reconciled initial document visibility (`document.hidden`).
+

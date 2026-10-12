@@ -1147,9 +1147,15 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       var v = NaN;
       if (tab === 'temp') v = isF ? p.tempF : p.tempC;
       else if (tab === 'feels_like') v = isF ? p.apparentF : p.apparentC;
-      else if (tab === 'precip') v = p.precipProb != null ? p.precipProb : 0;
+      else if (tab === 'precip') {
+        if (p.precipProb != null && Number.isFinite(p.precipProb)) v = p.precipProb;
+        else continue;
+      }
       else if (tab === 'wind') v = isF ? p.windSpeedMph : p.windSpeedKm;
-      else if (tab === 'humidity') v = p.humidity != null ? p.humidity : 50;
+      else if (tab === 'humidity') {
+        if (p.humidity != null && Number.isFinite(p.humidity)) v = p.humidity;
+        else continue;
+      }
       else if (tab === 'aqi') {
         if (p.aqi != null && Number.isFinite(p.aqi)) {
           v = p.aqi;
@@ -1242,24 +1248,44 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       var label = '';
       if (tab === 'temp') {
         v = isF ? p.tempF : p.tempC;
-        if (typeof v !== 'number' || !Number.isFinite(v)) v = minB;
-        label = Math.round(v) + '°';
+        if (typeof v !== 'number' || !Number.isFinite(v)) {
+          v = minB;
+          label = '--';
+        } else {
+          label = Math.round(v) + '°';
+        }
       } else if (tab === 'feels_like') {
         v = isF ? p.apparentF : p.apparentC;
-        if (typeof v !== 'number' || !Number.isFinite(v)) v = minB;
-        label = Math.round(v) + '°';
+        if (typeof v !== 'number' || !Number.isFinite(v)) {
+          v = minB;
+          label = '--';
+        } else {
+          label = Math.round(v) + '°';
+        }
       } else if (tab === 'precip') {
-        v = p.precipProb != null ? p.precipProb : 0;
-        if (typeof v !== 'number' || !Number.isFinite(v)) v = 0;
-        label = Math.round(v) + '%';
+        v = p.precipProb != null ? p.precipProb : null;
+        if (typeof v !== 'number' || !Number.isFinite(v)) {
+          v = minB;
+          label = '--';
+        } else {
+          label = Math.round(v) + '%';
+        }
       } else if (tab === 'wind') {
         v = isF ? p.windSpeedMph : p.windSpeedKm;
-        if (typeof v !== 'number' || !Number.isFinite(v)) v = 0;
-        label = Math.round(v) + (isF ? ' mph' : ' km/h');
+        if (typeof v !== 'number' || !Number.isFinite(v)) {
+          v = minB;
+          label = '--';
+        } else {
+          label = Math.round(v) + (isF ? ' mph' : ' km/h');
+        }
       } else if (tab === 'humidity') {
-        v = p.humidity != null ? p.humidity : 50;
-        if (typeof v !== 'number' || !Number.isFinite(v)) v = 50;
-        label = Math.round(v) + '%';
+        v = p.humidity != null ? p.humidity : null;
+        if (typeof v !== 'number' || !Number.isFinite(v)) {
+          v = minB;
+          label = '--';
+        } else {
+          label = Math.round(v) + '%';
+        }
       } else if (tab === 'aqi') {
         if (p.aqi != null && Number.isFinite(p.aqi)) {
           v = p.aqi;
@@ -1431,6 +1457,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     newsItems: [],
     currentNewsIdx: 0,
     newsTimer: null,
+    newsTransitionTimer: null,
+    _newsDotsDelegated: false,
+    _tzFormatters: null,
 
     // Animation Loop State
     animationFrameId: null,
@@ -1485,10 +1514,14 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       // Initial data load
       this.loadAtmosphere(false);
 
-      // Start 60 FPS render loop & active timers if not paused
+      // Reconcile playback state before starting loop
+      if (global.LivelyBridge) {
+        this.isPlaybackPaused = !!global.LivelyBridge.isPaused;
+      }
       if (!this.isPlaybackPaused) {
         this.startLoop();
       } else {
+        this.stopLoop();
         console.log('[App] Initial document hidden or Lively paused; render loop parked.');
       }
     },
@@ -1888,10 +1921,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           if (self.pomodoro) self.pomodoro.toggle();
         } else if (e.key === 'Escape' || e.key === 'Esc') {
           if (self.isHoverPopoverOpen) {
-            e.preventDefault();
+            if (e.preventDefault) e.preventDefault();
             self.hideHoverPopover();
           } else if (self.isDetailOpen) {
-            e.preventDefault();
+            if (e.preventDefault) e.preventDefault();
             self.closeCardDetail();
           }
         }
@@ -2769,21 +2802,67 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
     },
 
+    getTimezoneContext: function() {
+      var defaultLoc = (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.defaultLocation) || {};
+      var tz = (this.state && this.state.weather && this.state.weather.timezone) ||
+               (this.state && this.state.location && (this.state.location.timeZone || this.state.location.timezone)) ||
+               (defaultLoc.timeZone || defaultLoc.timezone) || null;
+      return tz;
+    },
+
     updateClock: function() {
       if (this.isPlaybackPaused) return;
       var now = new Date();
-      var hours = now.getHours();
-      var minutes = now.getMinutes();
-      var hStr = hours < 10 ? '0' + hours : '' + hours;
-      var mStr = minutes < 10 ? '0' + minutes : '' + minutes;
+      var tz = this.getTimezoneContext();
+      var hStr = '--';
+      var mStr = '--';
+      var dateStr = '';
+
+      if (tz) {
+        try {
+          if (!this._tzFormatters) this._tzFormatters = {};
+          if (!this._tzFormatters[tz + '_clock']) {
+            this._tzFormatters[tz + '_clock'] = new Intl.DateTimeFormat('en-US', {
+              timeZone: tz,
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: false
+            });
+          }
+          if (!this._tzFormatters[tz + '_date']) {
+            this._tzFormatters[tz + '_date'] = new Intl.DateTimeFormat('en-US', {
+              timeZone: tz,
+              weekday: 'long',
+              month: 'short',
+              day: 'numeric'
+            });
+          }
+          var parts = this._tzFormatters[tz + '_clock'].format(now).split(':');
+          if (parts.length === 2) {
+            hStr = parts[0];
+            mStr = parts[1];
+          }
+          dateStr = this._tzFormatters[tz + '_date'].format(now);
+        } catch (e) {
+          tz = null;
+        }
+      }
+
+      if (!tz) {
+        var hours = now.getHours();
+        var minutes = now.getMinutes();
+        hStr = hours < 10 ? '0' + hours : '' + hours;
+        mStr = minutes < 10 ? '0' + minutes : '' + minutes;
+        var options = { weekday: 'long', month: 'short', day: 'numeric' };
+        dateStr = now.toLocaleDateString('en-US', options);
+      }
 
       if (this.dom.hudClock) {
         this.dom.hudClock.textContent = hStr + ':' + mStr;
       }
 
       if (this.dom.hudDate) {
-        var options = { weekday: 'long', month: 'short', day: 'numeric' };
-        this.dom.hudDate.textContent = now.toLocaleDateString('en-US', options);
+        this.dom.hudDate.textContent = dateStr;
       }
 
       // Update remaining cache TTL in diagnostics and footer
@@ -2840,9 +2919,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         if (typeof this.state.location.longitude === 'number') lng = this.state.location.longitude;
       }
 
-      var tz = (this.state && this.state.weather && this.state.weather.timezone) ||
-               (this.state && this.state.location && (this.state.location.timeZone || this.state.location.timezone)) ||
-               (defaultLoc.timeZone || defaultLoc.timezone) || null;
+      var tz = this.getTimezoneContext();
 
       // Timezone-aware formatting helper with caching
       var self = this;
@@ -2863,9 +2940,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             return self._tzFormatters[fmtKey].format(d);
           } catch (e) {}
         }
-        var h = d.getHours();
-        var m = d.getMinutes();
-        return (h < 10 ? '0' + h : '' + h) + ':' + (m < 10 ? '0' + m : '' + m);
+        return null;
       }
 
       // 1. Solar Ephemeris & Precise Solar Altitude Day/Night Recognition
@@ -2879,11 +2954,11 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       // Sun altitude > -0.01454 rad (-0.833 deg) is the geometric solar horizon accounting for atmospheric refraction and solar radius
       var isDay = (sunPos && typeof sunPos.altitude === 'number') ? (sunPos.altitude > -0.01454) : true;
 
-      // Allow simulation mode (e.g. 4: Starry Night, 1: Clear Day) or explicit test boolean override
+      // Allow simulation mode (e.g. 4: Starry Night, 1: Clear Day) override
       if (typeof this.simulationMode === 'number' && this.simulationMode > 0) {
         if (this.simulationMode === 4) isDay = false;
         else if (this.simulationMode === 1) isDay = true;
-      } else if (this.state && this.state.weather && typeof this.state.weather.isDay === 'boolean') {
+      } else if (!sunPos && this.state && this.state.weather && typeof this.state.weather.isDay === 'boolean') {
         isDay = this.state.weather.isDay;
       }
 
@@ -2900,7 +2975,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         // Handle polar daylight/night edge cases gracefully
         if (!sunriseStr || !sunsetStr) {
           var noonPos = global.SunCalc.getPosition(sunTimes.solarNoon || now, lat, lng);
-          if (noonPos && noonPos.altitude > 0) {
+          if (noonPos && typeof noonPos.altitude === 'number' && noonPos.altitude > -0.01454) {
             sunriseStr = sunriseStr || 'Polar Day';
             sunsetStr = sunsetStr || '24h Sun';
           } else {
@@ -2932,8 +3007,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
       try {
         moonIllum = global.SunCalc.getMoonIllumination(now);
-        var fraction = moonIllum.fraction || 0;
-        var phase = moonIllum.phase || 0; // 0.0 to 1.0
+        var fraction = (moonIllum && typeof moonIllum.fraction === 'number') ? moonIllum.fraction : 0;
+        var phase = (moonIllum && typeof moonIllum.phase === 'number') ? moonIllum.phase : 0; // 0.0 to 1.0
 
         var phaseIndex = Math.round(phase * 8) % 8;
         var moonPhases = [
@@ -3002,7 +3077,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           moonTimes = global.SunCalc.getMoonTimes(now, lat, lng, false);
           if (moonTimes) {
             if (moonTimes.rise) {
-              moonriseStr = formatTime(moonTimes.rise);
+              moonriseStr = formatTime(moonTimes.rise) || 'Moonrise';
             } else if (moonTimes.alwaysUp) {
               moonriseStr = 'Up 24h';
             } else if (moonTimes.alwaysDown) {
@@ -3012,7 +3087,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             }
 
             if (moonTimes.set) {
-              moonsetStr = formatTime(moonTimes.set);
+              moonsetStr = formatTime(moonTimes.set) || 'Moonset';
             } else if (moonTimes.alwaysUp) {
               moonsetStr = 'Up 24h';
             } else if (moonTimes.alwaysDown) {
@@ -3051,30 +3126,46 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         rainVal = 'Unavailable';
         rainSub = 'No forecast data';
       } else {
-        var maxPrecipProb = 0;
+        var maxPrecipProb = null;
         var maxPrecipMm = 0;
         var nextRainTime = null;
         var validPointsCount = 0;
+        var nowMs = now.getTime();
+        var horizonMs = nowMs + 6 * 3600 * 1000;
 
-        for (var hi = 0; hi < hourly.length && validPointsCount < 4; hi++) {
+        for (var hi = 0; hi < hourly.length; hi++) {
           var pt = hourly[hi];
           if (!pt) continue;
-          validPointsCount++;
+
+          // Check timestamp to filter within the next 6 hours horizon
+          var ptTimeMs = pt.timestamp;
+          if (!ptTimeMs && pt.time) {
+            var parsedTime = new Date(pt.time).getTime();
+            if (!isNaN(parsedTime)) ptTimeMs = parsedTime;
+          }
+          if (ptTimeMs && (ptTimeMs < nowMs - 1800000 || ptTimeMs > horizonMs)) {
+            continue;
+          }
+
           var prob = (typeof pt.precipProb === 'number') ? pt.precipProb : (typeof pt.precipitation_probability === 'number' ? pt.precipitation_probability : null);
-          var mm = (typeof pt.precipMm === 'number') ? pt.precipMm : (typeof pt.precipitation === 'number' ? pt.precipitation : 0);
+          var mm = (typeof pt.precipMm === 'number') ? pt.precipMm : (typeof pt.precipitation === 'number' ? pt.precipitation : null);
           var ptTime = pt.time || pt.label || ((pt.hour < 10 ? '0' : '') + pt.hour + ':00');
 
-          if (prob !== null) {
-            rainOutlookDetails.push({ time: ptTime, prob: prob, mm: mm });
-            if (prob > maxPrecipProb) maxPrecipProb = prob;
-            if (mm > maxPrecipMm) maxPrecipMm = mm;
-            if (!nextRainTime && (prob >= 25 || mm >= 0.1)) {
+          if (prob !== null || mm !== null) {
+            validPointsCount++;
+            var safeProb = prob !== null ? prob : 0;
+            var safeMm = mm !== null ? mm : 0;
+            rainOutlookDetails.push({ time: ptTime, prob: safeProb, mm: safeMm });
+            if (prob !== null && (maxPrecipProb === null || prob > maxPrecipProb)) maxPrecipProb = prob;
+            if (safeMm > maxPrecipMm) maxPrecipMm = safeMm;
+            if (!nextRainTime && (safeProb >= 25 || safeMm >= 0.1)) {
               nextRainTime = ptTime;
             }
           }
+          if (validPointsCount >= 6) break;
         }
 
-        if (rainOutlookDetails.length === 0) {
+        if (validPointsCount === 0 || maxPrecipProb === null) {
           rainVal = 'Unavailable';
           rainSub = 'No forecast data';
         } else if (maxPrecipProb >= 25 || maxPrecipMm >= 0.1) {
@@ -3089,9 +3180,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (this.dom.ephemerisRainVal) this.dom.ephemerisRainVal.textContent = rainVal;
       if (this.dom.ephemerisRainSub) this.dom.ephemerisRainSub.textContent = rainSub;
 
-      // Daytime Card 2: Feels-Like Peak
-      var peakVal = '--°';
-      var peakSub = 'at --:--';
+      // Daytime Card 2: Feels-Like Peak (Strictly today, excluding tomorrow)
+      var peakVal = 'Unavailable';
+      var peakSub = 'No forecast';
       var peakDetails = { peakTemp: null, peakTime: null, peakHumidity: null };
 
       if (hourly && hourly.length > 0) {
@@ -3100,9 +3191,46 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         var highestTime = null;
         var highestHum = null;
 
+        var todayKey = null;
+        if (tz) {
+          try {
+            if (!self._tzFormatters) self._tzFormatters = {};
+            if (!self._tzFormatters[tz + '_YMD']) {
+              self._tzFormatters[tz + '_YMD'] = new Intl.DateTimeFormat('en-CA', {
+                timeZone: tz,
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit'
+              });
+            }
+            todayKey = self._tzFormatters[tz + '_YMD'].format(now);
+          } catch (e) {}
+        }
+
         for (var pi = 0; pi < hourly.length; pi++) {
           var hPt = hourly[pi];
           if (!hPt) continue;
+
+          // Exclude points outside current day
+          var hPtMs = hPt.timestamp;
+          if (!hPtMs && hPt.time) {
+            var hParsed = new Date(hPt.time).getTime();
+            if (!isNaN(hParsed)) hPtMs = hParsed;
+          }
+
+          if (hPtMs) {
+            var ptDate = new Date(hPtMs);
+            if (todayKey && self._tzFormatters && self._tzFormatters[tz + '_YMD']) {
+              if (self._tzFormatters[tz + '_YMD'].format(ptDate) !== todayKey) {
+                continue;
+              }
+            } else {
+              if (ptDate.getDate() !== now.getDate() || ptDate.getMonth() !== now.getMonth() || ptDate.getFullYear() !== now.getFullYear()) {
+                continue;
+              }
+            }
+          }
+
           var appTemp = isF ? hPt.apparentF : hPt.apparentC;
           if (appTemp == null || isNaN(appTemp)) {
             var rawApp = hPt.apparent_temperature;
@@ -3125,13 +3253,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           peakDetails.peakTemp = Math.round(highestApp);
           peakDetails.peakTime = highestTime;
           peakDetails.peakHumidity = highestHum;
-        } else {
-          peakVal = 'Unavailable';
-          peakSub = 'No forecast';
         }
-      } else {
-        peakVal = 'Unavailable';
-        peakSub = 'No forecast';
       }
 
       if (this.dom.ephemerisPeakVal) this.dom.ephemerisPeakVal.textContent = peakVal;
@@ -3143,7 +3265,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       var daylightSub = 'until sunset';
 
       if (!sunTimes || !sunTimes.sunrise || !sunTimes.sunset || isNaN(sunTimes.sunrise.getTime()) || isNaN(sunTimes.sunset.getTime())) {
-        if (sunPos && sunPos.altitude > 0) {
+        if (sunPos && typeof sunPos.altitude === 'number' && sunPos.altitude > -0.01454) {
           daylightLabel = 'Polar Day';
           daylightVal = '24h Sun';
           daylightSub = 'Above horizon';
@@ -3161,20 +3283,20 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           var remMs = Math.max(0, morningGoldenEnd.getTime() - now.getTime());
           var remM = Math.max(1, Math.round(remMs / 60000));
           daylightVal = remM + 'm left';
-          daylightSub = 'ends ' + formatTime(morningGoldenEnd);
+          daylightSub = 'ends ' + (formatTime(morningGoldenEnd) || '--:--');
         } else if (eveningGoldenStart && sunTimes.sunset && now >= eveningGoldenStart && now < sunTimes.sunset) {
           daylightLabel = 'Golden Hour';
           var remMs = Math.max(0, sunTimes.sunset.getTime() - now.getTime());
           var remM = Math.max(1, Math.round(remMs / 60000));
           daylightVal = remM + 'm left';
-          daylightSub = 'sunset ' + formatTime(sunTimes.sunset);
+          daylightSub = 'sunset ' + (formatTime(sunTimes.sunset) || '--:--');
         } else if (sunTimes.sunset && now < sunTimes.sunset) {
           daylightLabel = 'Daylight Left';
           var remMs = Math.max(0, sunTimes.sunset.getTime() - now.getTime());
           var remH = Math.floor(remMs / 3600000);
           var remM = Math.floor((remMs % 3600000) / 60000);
           daylightVal = (remH > 0 ? (remH + 'h ') : '') + remM + 'm';
-          daylightSub = 'sunset ' + formatTime(sunTimes.sunset);
+          daylightSub = 'sunset ' + (formatTime(sunTimes.sunset) || '--:--');
         } else {
           daylightLabel = 'Dusk';
           daylightVal = formatTime(sunTimes.dusk || sunTimes.sunset) || 'Evening';
@@ -3206,7 +3328,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
 
       if (!nextSunrise || isNaN(nextSunrise.getTime())) {
-        if (sunPos && sunPos.altitude < -0.01454) {
+        if (sunPos && typeof sunPos.altitude === 'number' && sunPos.altitude < -0.01454) {
           goldenVal = 'Polar Night';
           goldenSub = 'No sunrise';
         } else {
@@ -3218,7 +3340,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         var diffH = Math.floor(diffMs / 3600000);
         var diffM = Math.floor((diffMs % 3600000) / 60000);
         goldenVal = 'in ' + (diffH > 0 ? (diffH + 'h ') : '') + diffM + 'm';
-        goldenSub = formatTime(nextSunrise) + ' - ' + (nextGoldenEnd ? formatTime(nextGoldenEnd) : '--:--');
+        goldenSub = (formatTime(nextSunrise) || '--:--') + ' - ' + (nextGoldenEnd ? (formatTime(nextGoldenEnd) || '--:--') : '--:--');
       }
 
       if (this.dom.ephemerisGoldenVal) this.dom.ephemerisGoldenVal.textContent = goldenVal;
@@ -3237,15 +3359,19 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         }
       } catch (e) {}
 
-      var cloudClarity = 'Clear sky';
-      if (this.state && this.state.weather) {
-        var wCond = (this.state.weather.conditionText || '').toLowerCase();
-        if (wCond.indexOf('cloud') !== -1 || wCond.indexOf('overcast') !== -1) {
+      var cloudClarity = 'Conditions unavailable';
+      if (this.state && this.state.weather && this.state.weather.conditionText) {
+        var wCond = this.state.weather.conditionText.toLowerCase();
+        if (wCond.indexOf('clear') !== -1 || wCond.indexOf('sunny') !== -1) {
+          cloudClarity = 'Clear sky';
+        } else if (wCond.indexOf('cloud') !== -1 || wCond.indexOf('overcast') !== -1) {
           cloudClarity = (wCond.indexOf('partly') !== -1) ? 'Partly cloudy' : 'Cloudy sky';
         } else if (wCond.indexOf('rain') !== -1 || wCond.indexOf('drizzle') !== -1 || wCond.indexOf('storm') !== -1) {
           cloudClarity = 'Rain / overcast';
         } else if (wCond.indexOf('fog') !== -1 || wCond.indexOf('mist') !== -1 || wCond.indexOf('haze') !== -1) {
           cloudClarity = 'Hazy sky';
+        } else {
+          cloudClarity = this.state.weather.conditionText;
         }
       }
 
@@ -3256,27 +3382,32 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (this.dom.ephemerisNightMoonIllum) this.dom.ephemerisNightMoonIllum.textContent = illumPct;
       if (this.dom.ephemerisNightMoonStatus) this.dom.ephemerisNightMoonStatus.textContent = moonStatusSub;
 
-      // Night Card 3: Next Sky Event
+      // Night Card 3: Next Sky Event (Chronologically sorted among valid future candidates)
       var eventLabel = 'Next Sky Event';
       var eventVal = 'Dawn';
       var eventSub = 'at --:--';
 
-      var upcomingDawn = (sunTimes && sunTimes.dawn && sunTimes.dawn > now) ? sunTimes.dawn : null;
-      var upcomingMoonset = (moonTimes && moonTimes.set && moonTimes.set > now) ? moonTimes.set : null;
-      var upcomingMoonrise = (moonTimes && moonTimes.rise && moonTimes.rise > now) ? moonTimes.rise : null;
+      var skyCandidates = [];
+      if (sunTimes && sunTimes.dawn && sunTimes.dawn > now) {
+        skyCandidates.push({ time: sunTimes.dawn, label: 'Civil Dawn', sub: 'first light' });
+      }
+      if (sunTimes && sunTimes.sunrise && sunTimes.sunrise > now) {
+        skyCandidates.push({ time: sunTimes.sunrise, label: 'Sunrise', sub: 'morning' });
+      }
+      if (moonTimes && moonTimes.set && moonTimes.set > now) {
+        skyCandidates.push({ time: moonTimes.set, label: 'Moonset', sub: 'tonight' });
+      }
+      if (moonTimes && moonTimes.rise && moonTimes.rise > now) {
+        skyCandidates.push({ time: moonTimes.rise, label: 'Moonrise', sub: 'rising' });
+      }
 
-      if (upcomingMoonset && (!nextSunrise || upcomingMoonset < nextSunrise)) {
-        eventLabel = 'Moonset';
-        eventVal = formatTime(upcomingMoonset);
-        eventSub = 'tonight';
-      } else if (upcomingDawn && (!nextSunrise || upcomingDawn < nextSunrise)) {
-        eventLabel = 'Civil Dawn';
-        eventVal = formatTime(upcomingDawn);
-        eventSub = 'first light';
-      } else if (upcomingMoonrise) {
-        eventLabel = 'Moonrise';
-        eventVal = formatTime(upcomingMoonrise);
-        eventSub = 'rising';
+      skyCandidates.sort(function(a, b) { return a.time.getTime() - b.time.getTime(); });
+
+      if (skyCandidates.length > 0) {
+        var earliestEvent = skyCandidates[0];
+        eventLabel = earliestEvent.label;
+        eventVal = formatTime(earliestEvent.time) || '--:--';
+        eventSub = earliestEvent.sub;
       } else if (activeShower) {
         eventLabel = activeShower.name;
         eventVal = 'Meteor Peak';
@@ -3358,6 +3489,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
       var targets = [
         { el: this.dom.hudWeatherCard || (this.dom.hudTempVal && typeof this.dom.hudTempVal.closest === 'function' ? this.dom.hudTempVal.closest('#hud-weather-card') : null), type: 'weather' },
+        { el: this.dom.hudMetricsRow, type: 'metrics' },
         { el: this.dom.metricWind, type: 'wind' },
         { el: this.dom.metricHumidity, type: 'humidity' },
         { el: this.dom.metricPrecip, type: 'precip' },
@@ -3369,6 +3501,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         { el: this.dom.ephemerisNightMoon, type: 'night-moon' },
         { el: this.dom.ephemerisNightEvent, type: 'night-event' },
         { el: this.dom.hudAqiCard, type: 'aqi' },
+        { el: this.dom.hudHwBlock, type: 'hw-block' },
         { el: document.getElementById('hw-cpu-row'), type: 'hw-cpu' },
         { el: document.getElementById('hw-gpu-row'), type: 'hw-gpu' },
         { el: document.getElementById('hw-ram-row'), type: 'hw-ram' },
@@ -3385,6 +3518,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         if (!item || !item.el) return;
         var el = item.el;
         var type = item.type;
+
+        if (typeof el.hasAttribute === 'function' && !el.hasAttribute('tabindex')) {
+          el.setAttribute('tabindex', '0');
+        }
 
         el.addEventListener('mouseenter', function() {
           self.showHoverPopover(el, type);
@@ -3411,53 +3548,133 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         attachHoverTarget(targets[i]);
       }
 
+      if (!this._popoverGlobalListenersAttached) {
+        this._popoverGlobalListenersAttached = true;
+        window.addEventListener('resize', function() {
+          if (self.isHoverPopoverOpen && self.currentPopoverAnchor) {
+            self.showHoverPopover(self.currentPopoverAnchor, self._currentPopoverType);
+          }
+        });
+        document.addEventListener('keydown', function(e) {
+          if (e.key === 'Escape') {
+            if (self.isHoverPopoverOpen) {
+              self.hideHoverPopover();
+            }
+            if (self.isDetailOpen) {
+              self.closeCardDetail();
+            }
+          }
+        });
+      }
+
       this.attachNewsDotListeners();
     },
 
-    attachNewsDotListeners: function() {
-      var self = this;
-      if (!this.dom.hudNewsDots) return;
-      var dots = (typeof this.dom.hudNewsDots.querySelectorAll === 'function')
-        ? this.dom.hudNewsDots.querySelectorAll('.news-dot')
-        : (this.dom.hudNewsDots.children || []);
-      for (var i = 0; i < dots.length; i++) {
-        (function(dot, idx) {
-          dot.addEventListener('mouseenter', function() {
-            self.showHoverPopover(dot, 'news-dot');
-          });
-          dot.addEventListener('mouseleave', function() {
-            self.hideHoverPopover();
-          });
-          dot.addEventListener('focusin', function() {
-            self.showHoverPopover(dot, 'news-dot');
-          });
-          dot.addEventListener('focusout', function() {
-            self.hideHoverPopover();
-          });
-          dot.addEventListener('click', function(e) {
-            e.stopPropagation();
-            self.selectNewsStory(idx);
-          });
-          dot.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              e.stopPropagation();
-              self.selectNewsStory(idx);
-            }
-          });
-        })(dots[i], i);
-      }
-    },
-
-    selectNewsStory: function(idx) {
-      if (!this.newsItems || this.newsItems.length === 0) return;
-      this.currentNewsIdx = idx % this.newsItems.length;
-      this.displayNewsItem(this.currentNewsIdx);
-
+    clearNewsTimers: function() {
       if (this.newsTimer) {
         clearInterval(this.newsTimer);
         this.newsTimer = null;
       }
+      if (this.newsTransitionTimer) {
+        clearTimeout(this.newsTransitionTimer);
+        this.newsTransitionTimer = null;
+      }
+      if (this.dom.hudNewsLink) {
+        this.dom.hudNewsLink.classList.remove('is-fading');
+      }
+    },
+
+    attachNewsDotListeners: function() {
+      var self = this;
+      if (!this.dom.hudNewsDots || this._newsDotsDelegated) return;
+      this._newsDotsDelegated = true;
+
+      var container = this.dom.hudNewsDots;
+
+      container.addEventListener('click', function(e) {
+        var target = e.target;
+        var dot = (target && typeof target.closest === 'function') ? target.closest('.news-dot') : null;
+        if (!dot && target && target.classList && target.classList.contains('news-dot')) dot = target;
+        if (!dot) return;
+        e.stopPropagation();
+        var idx = parseInt(dot.getAttribute('data-idx') || '0', 10);
+        self.selectNewsStory(idx);
+      });
+
+      container.addEventListener('mouseover', function(e) {
+        var target = e.target;
+        var dot = (target && typeof target.closest === 'function') ? target.closest('.news-dot') : null;
+        if (!dot && target && target.classList && target.classList.contains('news-dot')) dot = target;
+        if (dot) self.showHoverPopover(dot, 'news-dot');
+      });
+
+      container.addEventListener('mouseout', function(e) {
+        var target = e.target;
+        var dot = (target && typeof target.closest === 'function') ? target.closest('.news-dot') : null;
+        if (!dot && target && target.classList && target.classList.contains('news-dot')) dot = target;
+        if (dot) self.hideHoverPopover();
+      });
+
+      container.addEventListener('focusin', function(e) {
+        var target = e.target;
+        var dot = (target && typeof target.closest === 'function') ? target.closest('.news-dot') : null;
+        if (!dot && target && target.classList && target.classList.contains('news-dot')) dot = target;
+        if (dot) self.showHoverPopover(dot, 'news-dot');
+      });
+
+      container.addEventListener('focusout', function(e) {
+        var target = e.target;
+        var dot = (target && typeof target.closest === 'function') ? target.closest('.news-dot') : null;
+        if (!dot && target && target.classList && target.classList.contains('news-dot')) dot = target;
+        if (dot) self.hideHoverPopover();
+      });
+
+      container.addEventListener('keydown', function(e) {
+        var target = e.target;
+        var dot = (target && typeof target.closest === 'function') ? target.closest('.news-dot') : null;
+        if (!dot && target && target.classList && target.classList.contains('news-dot')) dot = target;
+        if (!dot) return;
+
+        var currentIdx = parseInt(dot.getAttribute('data-idx') || '0', 10);
+        var visibleDots = container.querySelectorAll ? container.querySelectorAll('.news-dot:not([style*="display: none"])') : [];
+        var count = visibleDots.length || (self.newsItems ? self.newsItems.length : 1);
+        var targetIdx = -1;
+
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          e.stopPropagation();
+          self.selectNewsStory(currentIdx);
+          return;
+        } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+          e.preventDefault();
+          targetIdx = (currentIdx + 1) % count;
+        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          targetIdx = (currentIdx - 1 + count) % count;
+        } else if (e.key === 'Home') {
+          e.preventDefault();
+          targetIdx = 0;
+        } else if (e.key === 'End') {
+          e.preventDefault();
+          targetIdx = count - 1;
+        }
+
+        if (targetIdx >= 0 && targetIdx !== currentIdx) {
+          self.selectNewsStory(targetIdx);
+          var nextDot = container.querySelector ? container.querySelector('.news-dot[data-idx="' + targetIdx + '"]') : null;
+          if (nextDot && typeof nextDot.focus === 'function') {
+            nextDot.focus();
+          }
+        }
+      });
+    },
+
+    selectNewsStory: function(idx) {
+      if (!this.newsItems || this.newsItems.length === 0) return;
+      this.clearNewsTimers();
+      this.currentNewsIdx = idx % this.newsItems.length;
+      this.displayNewsItem(this.currentNewsIdx);
+
       var rotSec = (global.LOCAL_WALLY_CONFIG && typeof global.LOCAL_WALLY_CONFIG.newsRotateIntervalSeconds === 'number')
         ? Math.max(3, global.LOCAL_WALLY_CONFIG.newsRotateIntervalSeconds)
         : 7;
@@ -3485,6 +3702,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         this.currentPopoverAnchor.removeAttribute('aria-describedby');
       }
       this.currentPopoverAnchor = anchorEl;
+      this._currentPopoverType = popoverType;
       anchorEl.setAttribute('aria-describedby', 'hud-hover-popover');
 
       pop.classList.add('is-visible');
@@ -3495,19 +3713,21 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       var popW = pop.offsetWidth || 230;
       var popH = pop.offsetHeight || 90;
       var pad = 8;
+      var vw = (typeof window !== 'undefined' && window.innerWidth) ? window.innerWidth : 1920;
+      var vh = (typeof window !== 'undefined' && window.innerHeight) ? window.innerHeight : 1080;
 
       var top, left;
-      if (rect.bottom + popH + pad <= window.innerHeight) {
+      if (rect.bottom + popH + pad <= vh) {
         top = rect.bottom + 6;
       } else if (rect.top - popH - 6 >= pad) {
         top = rect.top - popH - 6;
       } else {
-        top = Math.max(pad, window.innerHeight - popH - pad);
+        top = Math.max(pad, vh - popH - pad);
       }
 
       left = rect.left + (rect.width / 2) - (popW / 2);
       if (left < pad) left = pad;
-      if (left + popW + pad > window.innerWidth) left = window.innerWidth - popW - pad;
+      if (left + popW + pad > vw) left = vw - popW - pad;
 
       pop.style.top = Math.round(top) + 'px';
       pop.style.left = Math.round(left) + 'px';
@@ -3565,6 +3785,16 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
               ['Dew Point', dewStr],
               ['Barometric Pressure', (weather.pressureHpa ? weather.pressureHpa + ' hPa' : '1013 hPa')],
               ['Surface Wind', (weather.windSpeedKm != null ? weather.windSpeedKm + ' km/h' : 'Calm') + (weather.windDirection ? ' · ' + weather.windDirection : '')]
+            ])
+          };
+
+        case 'metrics':
+          return {
+            title: 'Environmental Metrics',
+            bodyHtml: makeRows([
+              ['Relative Humidity', (weather.humidity != null ? weather.humidity + '%' : '--')],
+              ['Surface Wind', (weather.windSpeedKm != null ? weather.windSpeedKm + ' km/h' : 'Calm')],
+              ['Precipitation', (weather.precipitationMm != null ? weather.precipitationMm + ' mm' : '0.0 mm')]
             ])
           };
 
@@ -3690,6 +3920,17 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
               ['Quality Status', cat + ' (' + aqiNum + ')'],
               ['PM2.5 / PM10', (aqi.pm25 != null ? aqi.pm25 + ' µg/m³' : '--') + ' / ' + (aqi.pm10 != null ? aqi.pm10 + ' µg/m³' : '--')],
               ['Health Advisory', adv]
+            ])
+          };
+
+        case 'hw-block':
+          return {
+            title: 'Hardware Telemetry Monitor',
+            bodyHtml: makeRows([
+              ['Processor (CPU)', (this.dom.hwCpuVal ? this.dom.hwCpuVal.textContent : '--%')],
+              ['Graphics (GPU)', (this.dom.hwGpuVal ? this.dom.hwGpuVal.textContent : '--%')],
+              ['Memory (RAM)', (this.dom.hwRamVal ? this.dom.hwRamVal.textContent : '--%')],
+              ['Storage (Disk)', (this.dom.hwDiskVal ? this.dom.hwDiskVal.textContent : '--%')]
             ])
           };
 
@@ -4923,6 +5164,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     },
 
     renderNews: function(items) {
+      this.clearNewsTimers();
+
       if (Array.isArray(items) && items.length > 0) {
         this.newsItems = items;
       } else if (!this.newsItems || this.newsItems.length === 0) {
@@ -4946,10 +5189,6 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       this.attachNewsDotListeners();
 
       // Start rotation cycle if not paused
-      if (this.newsTimer) {
-        clearInterval(this.newsTimer);
-        this.newsTimer = null;
-      }
       var rotSec = (global.LOCAL_WALLY_CONFIG && typeof global.LOCAL_WALLY_CONFIG.newsRotateIntervalSeconds === 'number')
         ? Math.max(3, global.LOCAL_WALLY_CONFIG.newsRotateIntervalSeconds)
         : 7;
@@ -5009,12 +5248,15 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
               if (i === activeIdx) {
                 dots[i].classList.add('is-active');
                 dots[i].setAttribute('aria-selected', 'true');
+                dots[i].setAttribute('tabindex', '0');
               } else {
                 dots[i].classList.remove('is-active');
                 dots[i].setAttribute('aria-selected', 'false');
+                dots[i].setAttribute('tabindex', '-1');
               }
             } else {
               dots[i].style.display = 'none';
+              dots[i].setAttribute('tabindex', '-1');
             }
           }
         }
@@ -5031,7 +5273,11 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         this.dom.hudNewsLink.classList.add('is-fading');
       }
 
-      setTimeout(function() {
+      if (this.newsTransitionTimer) {
+        clearTimeout(this.newsTransitionTimer);
+      }
+      this.newsTransitionTimer = setTimeout(function() {
+        self.newsTransitionTimer = null;
         if (self.isPlaybackPaused) return;
         self.currentNewsIdx = (self.currentNewsIdx + 1) % self.newsItems.length;
         self.displayNewsItem(self.currentNewsIdx);
@@ -5143,6 +5389,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (this.isPlaybackPaused) return;
       if (this.isRunning) return;
       this.isRunning = true;
+      if (this.animationFrameId) {
+        cancelAnimationFrame(this.animationFrameId);
+        this.animationFrameId = null;
+      }
       this.lastFrameTime = performance.now();
       this.fpsTimer = performance.now();
       this.frameCount = 0;
@@ -5186,7 +5436,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         }
       }
 
-      this.loop(this.lastFrameTime);
+      if (!this._boundLoop) {
+        this._boundLoop = this.loop.bind(this);
+      }
+      this.animationFrameId = requestAnimationFrame(this._boundLoop);
     },
 
     stopLoop: function() {
@@ -5195,6 +5448,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         cancelAnimationFrame(this.animationFrameId);
         this.animationFrameId = null;
       }
+      this.clearNewsTimers();
       if (this.clockInterval) {
         clearInterval(this.clockInterval);
         this.clockInterval = null;
@@ -5202,10 +5456,6 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (this.hwFallbackTimer) {
         clearInterval(this.hwFallbackTimer);
         this.hwFallbackTimer = null;
-      }
-      if (this.newsTimer) {
-        clearInterval(this.newsTimer);
-        this.newsTimer = null;
       }
       if (this.syncInterval) {
         clearInterval(this.syncInterval);
@@ -5221,7 +5471,11 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     },
 
     loop: function(currentTime) {
-      if (!this.isRunning || this.isPlaybackPaused) return;
+      if (!this.isRunning || this.isPlaybackPaused) {
+        this.animationFrameId = null;
+        return;
+      }
+      this.animationFrameId = null;
 
       var elapsed = currentTime - this.lastFrameTime;
       // Cap at 60 FPS (skip frames if called faster than ~16ms on 120Hz/144Hz/240Hz monitors)

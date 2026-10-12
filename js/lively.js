@@ -163,6 +163,18 @@
       }
     },
 
+    emitPlaybackChange: function(data) {
+      try {
+        var info = typeof data === 'string' ? JSON.parse(data) : data;
+        if (info && typeof info.IsPaused !== 'undefined') {
+          this.hostPaused = !!info.IsPaused;
+          this.updatePlaybackState();
+        }
+      } catch (err) {
+        console.warn('[LivelyBridge] Failed to parse playback payload:', err);
+      }
+    },
+
     initialized: false,
 
     init: function() {
@@ -172,15 +184,7 @@
 
       // 1. Lively Host Native Playback Listener
       global.livelyWallpaperPlaybackChanged = function(data) {
-        try {
-          var info = typeof data === 'string' ? JSON.parse(data) : data;
-          if (info && typeof info.IsPaused !== 'undefined') {
-            self.hostPaused = !!info.IsPaused;
-            self.updatePlaybackState();
-          }
-        } catch (err) {
-          console.warn('[LivelyBridge] Failed to parse playback payload:', err);
-        }
+        self.emitPlaybackChange(data);
       };
 
       // 2. Lively Host Native Property Listener
@@ -221,6 +225,12 @@
   };
 
   // Immediate global hook fallback in case host invokes before init()
+  global.livelyWallpaperPlaybackChanged = function(data) {
+    if (global.LivelyBridge && global.LivelyBridge.emitPlaybackChange) {
+      global.LivelyBridge.emitPlaybackChange(data);
+    }
+  };
+
   global.livelyPropertyListener = function(name, val) {
     if (global.LivelyBridge && global.LivelyBridge.emitProperty) {
       global.LivelyBridge.emitProperty(name, val);

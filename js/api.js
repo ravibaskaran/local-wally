@@ -516,11 +516,11 @@
      * strictly preserving legitimate zero and negative numbers.
      */
     normalizeForecastPoints: function(points, weather, aqi, hourlyAqi) {
-      if (!points || !points.length || points.length < 8) {
-        return this.generateSyntheticForecast(weather, aqi);
+      if (!points || !points.length) {
+        return [];
       }
 
-      function safeNum(val, fallback) {
+      function parseNum(val) {
         if (typeof val === 'number' && Number.isFinite(val)) {
           return val;
         }
@@ -528,17 +528,9 @@
           var num = Number(val);
           if (Number.isFinite(num)) return num;
         }
-        return fallback;
+        return null;
       }
 
-      var baseTempC = safeNum(weather && weather.tempC, 20.0);
-      var baseTempF = safeNum(weather && weather.tempF, Math.round(((baseTempC * 9 / 5) + 32) * 10) / 10);
-      var baseAppC = safeNum(weather && weather.apparentC, baseTempC);
-      var baseAppF = safeNum(weather && weather.apparentF, baseTempF);
-      var baseWindK = safeNum(weather && weather.windSpeedKm, 10.0);
-      var baseWindM = safeNum(weather && weather.windSpeedMph, Math.round(baseWindK * 0.621371 * 10) / 10);
-      var baseHum = safeNum(weather && weather.humidity, 55);
-      var basePrecip = safeNum(weather && weather.precipitationMm, 0.0);
       var hasValidAqi = (aqi && aqi.available !== false && typeof aqi.europeanAqi === 'number' && Number.isFinite(aqi.europeanAqi));
       var baseAqi = hasValidAqi ? aqi.europeanAqi : null;
 
@@ -546,22 +538,27 @@
         var pt = points[i];
         if (!pt) continue;
 
-        // Sanitize temperatures (preserving sub-zero and 0 values)
-        pt.tempC = safeNum(pt.tempC, baseTempC);
-        pt.tempF = safeNum(pt.tempF, Math.round(((pt.tempC * 9 / 5) + 32) * 10) / 10);
-        pt.apparentC = safeNum(pt.apparentC, pt.tempC);
-        pt.apparentF = safeNum(pt.apparentF, pt.tempF);
+        // Preserve actual values; missing remains null
+        var tC = parseNum(pt.tempC != null ? pt.tempC : pt.temperature_2m);
+        pt.tempC = tC;
+        pt.tempF = (tC != null) ? Math.round(((tC * 9 / 5) + 32) * 10) / 10 : null;
 
-        // Sanitize precipitation probability and amount
-        pt.precipProb = Math.max(0, Math.min(100, Math.round(safeNum(pt.precipProb, 0))));
-        pt.precipMm = Math.max(0, safeNum(pt.precipMm, basePrecip));
+        var appC = parseNum(pt.apparentC != null ? pt.apparentC : pt.apparent_temperature);
+        pt.apparentC = appC;
+        pt.apparentF = (appC != null) ? Math.round(((appC * 9 / 5) + 32) * 10) / 10 : null;
 
-        // Sanitize wind speed
-        pt.windSpeedKm = Math.max(0, safeNum(pt.windSpeedKm, baseWindK));
-        pt.windSpeedMph = Math.max(0, safeNum(pt.windSpeedMph, Math.round(pt.windSpeedKm * 0.621371 * 10) / 10));
+        var pProb = parseNum(pt.precipProb != null ? pt.precipProb : pt.precipitation_probability);
+        pt.precipProb = (pProb != null) ? Math.max(0, Math.min(100, Math.round(pProb))) : null;
 
-        // Sanitize humidity (bounded [0, 100])
-        pt.humidity = Math.max(0, Math.min(100, Math.round(safeNum(pt.humidity, baseHum))));
+        var pMm = parseNum(pt.precipMm != null ? pt.precipMm : pt.precipitation);
+        pt.precipMm = (pMm != null && pMm >= 0) ? Math.round(pMm * 10) / 10 : null;
+
+        var wKm = parseNum(pt.windSpeedKm != null ? pt.windSpeedKm : pt.wind_speed_10m);
+        pt.windSpeedKm = (wKm != null && wKm >= 0) ? Math.round(wKm * 10) / 10 : null;
+        pt.windSpeedMph = (pt.windSpeedKm != null) ? Math.round(pt.windSpeedKm * 0.621371 * 10) / 10 : null;
+
+        var hum = parseNum(pt.humidity != null ? pt.humidity : pt.relative_humidity_2m);
+        pt.humidity = (hum != null) ? Math.max(0, Math.min(100, Math.round(hum))) : null;
 
         // Bind & sanitize AQI (never invent fallback 22 or Good)
         var ptAqiVal = baseAqi;
@@ -647,35 +644,35 @@
         var timeArr = hourly.time || [];
         var count = Math.min(24, timeArr.length);
         var step = count >= 8 ? Math.floor(count / 8) : 1;
-        for (var i = 0; i < 8; i++) {
+        for (var i = 0; i < 8 && i < count; i++) {
           var idx = Math.min(i * step, count - 1);
           if (idx >= 0 && timeArr[idx]) {
             var tStr = timeArr[idx];
             var ptDate = new Date(tStr);
             var h = !isNaN(ptDate.getTime()) ? ptDate.getHours() : ((new Date().getHours() + i * 3) % 24);
             var lbl = (i === 0) ? 'Now' : ((h % 12 || 12) + (h >= 12 ? ' PM' : ' AM'));
-            var ptTempC = (hourly.temperature_2m && hourly.temperature_2m[idx] != null) ? hourly.temperature_2m[idx] : tempC;
-            var ptAppC = (hourly.apparent_temperature && hourly.apparent_temperature[idx] != null) ? hourly.apparent_temperature[idx] : ptTempC;
-            var ptPrecipProb = (hourly.precipitation_probability && hourly.precipitation_probability[idx] != null) ? hourly.precipitation_probability[idx] : 0;
-            var ptPrecipMm = (hourly.precipitation && hourly.precipitation[idx] != null) ? hourly.precipitation[idx] : 0.0;
-            var ptWindKm = (hourly.wind_speed_10m && hourly.wind_speed_10m[idx] != null) ? hourly.wind_speed_10m[idx] : weather.windSpeedKm;
-            var ptHum = (hourly.relative_humidity_2m && hourly.relative_humidity_2m[idx] != null) ? hourly.relative_humidity_2m[idx] : weather.humidity;
-            var ptWmo = (hourly.weather_code && hourly.weather_code[idx] != null) ? hourly.weather_code[idx] : wmo;
+            var ptTempC = (hourly.temperature_2m && hourly.temperature_2m[idx] != null && Number.isFinite(hourly.temperature_2m[idx])) ? hourly.temperature_2m[idx] : null;
+            var ptAppC = (hourly.apparent_temperature && hourly.apparent_temperature[idx] != null && Number.isFinite(hourly.apparent_temperature[idx])) ? hourly.apparent_temperature[idx] : null;
+            var ptPrecipProb = (hourly.precipitation_probability && hourly.precipitation_probability[idx] != null && Number.isFinite(hourly.precipitation_probability[idx])) ? hourly.precipitation_probability[idx] : null;
+            var ptPrecipMm = (hourly.precipitation && hourly.precipitation[idx] != null && Number.isFinite(hourly.precipitation[idx])) ? hourly.precipitation[idx] : null;
+            var ptWindKm = (hourly.wind_speed_10m && hourly.wind_speed_10m[idx] != null && Number.isFinite(hourly.wind_speed_10m[idx])) ? hourly.wind_speed_10m[idx] : null;
+            var ptHum = (hourly.relative_humidity_2m && hourly.relative_humidity_2m[idx] != null && Number.isFinite(hourly.relative_humidity_2m[idx])) ? hourly.relative_humidity_2m[idx] : null;
+            var ptWmo = (hourly.weather_code && hourly.weather_code[idx] != null && Number.isFinite(hourly.weather_code[idx])) ? hourly.weather_code[idx] : wmo;
 
             hourlyForecast.push({
               time: (h < 10 ? '0' : '') + h + ':00',
               isoTime: tStr,
               label: lbl,
               hour: h,
-              tempC: Math.round(ptTempC * 10) / 10,
-              tempF: Math.round(((ptTempC * 9 / 5) + 32) * 10) / 10,
-              apparentC: Math.round(ptAppC * 10) / 10,
-              apparentF: Math.round(((ptAppC * 9 / 5) + 32) * 10) / 10,
-              precipProb: Math.round(ptPrecipProb),
-              precipMm: Math.round(ptPrecipMm * 10) / 10,
-              windSpeedKm: Math.round(ptWindKm * 10) / 10,
-              windSpeedMph: Math.round((ptWindKm * 0.621371) * 10) / 10,
-              humidity: Math.round(ptHum),
+              tempC: (ptTempC != null) ? Math.round(ptTempC * 10) / 10 : null,
+              tempF: (ptTempC != null) ? Math.round(((ptTempC * 9 / 5) + 32) * 10) / 10 : null,
+              apparentC: (ptAppC != null) ? Math.round(ptAppC * 10) / 10 : null,
+              apparentF: (ptAppC != null) ? Math.round(((ptAppC * 9 / 5) + 32) * 10) / 10 : null,
+              precipProb: (ptPrecipProb != null) ? Math.max(0, Math.min(100, Math.round(ptPrecipProb))) : null,
+              precipMm: (ptPrecipMm != null) ? Math.round(ptPrecipMm * 10) / 10 : null,
+              windSpeedKm: (ptWindKm != null) ? Math.round(ptWindKm * 10) / 10 : null,
+              windSpeedMph: (ptWindKm != null) ? Math.round((ptWindKm * 0.621371) * 10) / 10 : null,
+              humidity: (ptHum != null) ? Math.max(0, Math.min(100, Math.round(ptHum))) : null,
               aqi: null,
               aqiColor: '#94a3b8',
               aqiCategory: 'Unavailable',
@@ -756,26 +753,26 @@
             var ptDate = new Date(tStr);
             var h = !isNaN(ptDate.getTime()) ? ptDate.getHours() : ((new Date().getHours() + p * 3) % 24);
             var lbl = (p === 0) ? 'Now' : ((h % 12 || 12) + (h >= 12 ? ' PM' : ' AM'));
-            var ptT = ptDetails.air_temperature != null ? ptDetails.air_temperature : tempC;
-            var ptWind = ptDetails.wind_speed != null ? Math.round(ptDetails.wind_speed * 3.6 * 10) / 10 : windSpeedKm;
-            var ptHum = ptDetails.relative_humidity != null ? ptDetails.relative_humidity : humidity;
-            var ptP = (ptNext.details && ptNext.details.precipitation_amount != null) ? ptNext.details.precipitation_amount : 0.0;
-            var ptProb = (ptNext.details && ptNext.details.probability_of_precipitation != null) ? ptNext.details.probability_of_precipitation : (ptP > 0 ? 65 : 0);
+            var ptT = (ptDetails.air_temperature != null && Number.isFinite(ptDetails.air_temperature)) ? ptDetails.air_temperature : null;
+            var ptWind = (ptDetails.wind_speed != null && Number.isFinite(ptDetails.wind_speed)) ? Math.round(ptDetails.wind_speed * 3.6 * 10) / 10 : null;
+            var ptHum = (ptDetails.relative_humidity != null && Number.isFinite(ptDetails.relative_humidity)) ? ptDetails.relative_humidity : null;
+            var ptP = (ptNext.details && ptNext.details.precipitation_amount != null && Number.isFinite(ptNext.details.precipitation_amount)) ? ptNext.details.precipitation_amount : null;
+            var ptProb = (ptNext.details && ptNext.details.probability_of_precipitation != null && Number.isFinite(ptNext.details.probability_of_precipitation)) ? ptNext.details.probability_of_precipitation : null;
 
             hourlyForecast.push({
               time: (h < 10 ? '0' : '') + h + ':00',
               isoTime: tStr,
               label: lbl,
               hour: h,
-              tempC: Math.round(ptT * 10) / 10,
-              tempF: Math.round(((ptT * 9 / 5) + 32) * 10) / 10,
-              apparentC: Math.round(ptT * 10) / 10,
-              apparentF: Math.round(((ptT * 9 / 5) + 32) * 10) / 10,
-              precipProb: Math.round(ptProb),
-              precipMm: Math.round(ptP * 10) / 10,
-              windSpeedKm: ptWind,
-              windSpeedMph: Math.round(ptWind * 0.621371 * 10) / 10,
-              humidity: Math.round(ptHum),
+              tempC: (ptT != null) ? Math.round(ptT * 10) / 10 : null,
+              tempF: (ptT != null) ? Math.round(((ptT * 9 / 5) + 32) * 10) / 10 : null,
+              apparentC: (ptT != null) ? Math.round(ptT * 10) / 10 : null,
+              apparentF: (ptT != null) ? Math.round(((ptT * 9 / 5) + 32) * 10) / 10 : null,
+              precipProb: (ptProb != null) ? Math.max(0, Math.min(100, Math.round(ptProb))) : null,
+              precipMm: (ptP != null) ? Math.round(ptP * 10) / 10 : null,
+              windSpeedKm: (ptWind != null) ? ptWind : null,
+              windSpeedMph: (ptWind != null) ? Math.round(ptWind * 0.621371 * 10) / 10 : null,
+              humidity: (ptHum != null) ? Math.max(0, Math.min(100, Math.round(ptHum))) : null,
               aqi: null,
               aqiColor: '#94a3b8',
               aqiCategory: 'Unavailable',
@@ -890,15 +887,16 @@
             var dt = item.dt ? new Date(item.dt * 1000) : new Date(Date.now() + i * 3 * 3600000);
             var h = dt.getHours();
             var lbl = (i === 0) ? 'Now' : ((h % 12 || 12) + (h >= 12 ? ' PM' : ' AM'));
-            var ptT = (iMain.temp != null) ? iMain.temp : tempC;
-            var ptApp = (iMain.feels_like != null) ? iMain.feels_like : ptT;
-            var ptRawWind = (iWind.speed != null) ? iWind.speed : (iWind.wind_speed != null ? iWind.wind_speed : 2.8);
-            var ptWind = Math.round(ptRawWind * 3.6 * 10) / 10;
-            var ptHum = (iMain.humidity != null) ? iMain.humidity : humidity;
-            var ptProb = item.pop != null ? Math.round(item.pop * 100) : 0;
-            var ptP = 0.0;
+            var ptT = (iMain.temp != null && Number.isFinite(iMain.temp)) ? iMain.temp : null;
+            var ptApp = (iMain.feels_like != null && Number.isFinite(iMain.feels_like)) ? iMain.feels_like : null;
+            var ptRawWind = (iWind.speed != null && Number.isFinite(iWind.speed)) ? iWind.speed : (iWind.wind_speed != null && Number.isFinite(iWind.wind_speed) ? iWind.wind_speed : null);
+            var ptWind = (ptRawWind != null) ? Math.round(ptRawWind * 3.6 * 10) / 10 : null;
+            var ptHum = (iMain.humidity != null && Number.isFinite(iMain.humidity)) ? iMain.humidity : null;
+            var ptProb = (item.pop != null && Number.isFinite(item.pop)) ? Math.max(0, Math.min(100, Math.round(item.pop * 100))) : null;
+            var ptP = null;
             if (item.rain) {
-              ptP = item.rain['1h'] != null ? item.rain['1h'] : (item.rain['3h'] != null ? item.rain['3h'] / 3 : 0.0);
+              if (item.rain['1h'] != null && Number.isFinite(item.rain['1h'])) ptP = item.rain['1h'];
+              else if (item.rain['3h'] != null && Number.isFinite(item.rain['3h'])) ptP = item.rain['3h'] / 3;
             }
 
             hourlyForecast.push({
@@ -906,15 +904,15 @@
               isoTime: item.dt ? new Date(item.dt * 1000).toISOString() : null,
               label: lbl,
               hour: h,
-              tempC: Math.round(ptT * 10) / 10,
-              tempF: Math.round(((ptT * 9 / 5) + 32) * 10) / 10,
-              apparentC: Math.round(ptApp * 10) / 10,
-              apparentF: Math.round(((ptApp * 9 / 5) + 32) * 10) / 10,
+              tempC: (ptT != null) ? Math.round(ptT * 10) / 10 : null,
+              tempF: (ptT != null) ? Math.round(((ptT * 9 / 5) + 32) * 10) / 10 : null,
+              apparentC: (ptApp != null) ? Math.round(ptApp * 10) / 10 : null,
+              apparentF: (ptApp != null) ? Math.round(((ptApp * 9 / 5) + 32) * 10) / 10 : null,
               precipProb: ptProb,
-              precipMm: Math.round(ptP * 10) / 10,
+              precipMm: (ptP != null) ? Math.round(ptP * 10) / 10 : null,
               windSpeedKm: ptWind,
-              windSpeedMph: Math.round(ptWind * 0.621371 * 10) / 10,
-              humidity: Math.round(ptHum),
+              windSpeedMph: (ptWind != null) ? Math.round(ptWind * 0.621371 * 10) / 10 : null,
+              humidity: (ptHum != null) ? Math.max(0, Math.min(100, Math.round(ptHum))) : null,
               aqi: null,
               aqiColor: '#94a3b8',
               aqiCategory: 'Unavailable',
