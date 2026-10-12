@@ -1252,3 +1252,24 @@ Replaces the fixed moon row with three nocturnal cards:
   - News card title (`#hud-news-title`), source label, and accessibility attributes update dynamically based on the active provider (`Google News`, `NewsAPI`, `Currents News`).
   - Fallback articles are labeled `Google News`, preserving honest provider status.
   - Direct publisher links are validated and prioritized over aggregator wrapper URLs.
+
+---
+
+## 32. Production Code Audit & Performance Architecture (v0.8.1)
+
+### 32.1 Security & Protocol Hardening
+- **Strict HTTPS Protocol Enforcement**: All external links (`#hud-news-link`, `#unsplash-credit`) are validated with `/^https:\/\//i`. Insecure `http://` links default safely to secure URLs with `target="_blank"` and `rel="noopener noreferrer"`.
+- **Credential & Token Sanitization**: Network timeout rejections (`ApiService.fetchWithTimeout`) redact query parameters (`safeUrl = url.split('?')[0]`), guaranteeing API tokens never leak to console logs or telemetry envelopes.
+- **HTML Injection Defense**: All floating popover titles (`showHoverPopover`) are sanitized with `App.escapeHtml(content.title)` prior to DOM injection.
+- **Preloader Callback Cleanup**: Preload image instances in `updateBackground` explicitly detach `onload = null` and `onerror = null` to prevent memory leaks and dangling closure references.
+
+### 32.2 Zero-Allocation Render Loop & Memory Architecture
+- **In-Memory Cache Age Tracking**: `CacheManager` caches envelope timestamps in memory (`this._cachedTimestamp`), eliminating `localStorage.getItem` reads and `JSON.parse` object allocations during 1-second clock updates.
+- **Sparkline Path Attribute Caching**: `SvgSparklineEngine` caches `_lastLineD` and `_lastAreaD` strings, skipping redundant DOM mutations during identical telemetry samples and pre-calculating horizontal coordinates without `.toFixed()` allocations.
+- **Ephemeris Deduplication**: Solar and lunar ephemeris (`SunCalc.getPosition`, `SunCalc.getMoonPosition`, `SunCalc.getMoonIllumination`) are computed once per update cycle in `App.updateClock` and shared directly with `SkyEngine` and `SolarLightingEngine`.
+- **Pre-Parsed Celestial Palette Vectors**: Color constants in `SkyEngine` are pre-converted to numeric RGB vectors on script initialization, eliminating string parsing and regex operations during continuous 60 FPS lerp evaluations.
+
+### 32.3 Compositor & Process Parking (True 0.0% CPU)
+- **Lifecycle Animation Suspension**: `App.startLoop()` and `stopLoop()` dynamically toggle `.is-paused` on `document.body`. This binds to `.is-paused * { animation-play-state: paused !important; }` in CSS, ensuring that infinite CSS keyframe animations (such as charging pulses) suspend completely when the wallpaper sleeps.
+- **High-Refresh Display Calibration**: The frame-skip threshold is calibrated to `14.5ms`, guaranteeing smooth 60 FPS pacing without dropping frames on 120Hz, 144Hz, or 240Hz monitors.
+- **Zero-Asset Audio Synthesis**: The Pomodoro timer synthesizes a dual-tone audio chime (587.33 Hz → 880 Hz) using the browser's native Web Audio API (`AudioContext`), delivering clean completion cues without bundling external audio assets.

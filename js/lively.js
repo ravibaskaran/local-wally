@@ -153,7 +153,7 @@
     },
 
     emitAudioData: function(audioArray) {
-      if (!audioArray) return;
+      if (!audioArray || typeof audioArray.length !== 'number' || audioArray.length <= 0) return;
       for (var i = 0; i < this.listeners.audioData.length; i++) {
         try {
           this.listeners.audioData[i](audioArray);

@@ -270,6 +270,32 @@ local-wally/
 
 ## 🛡️ Recent Updates & Quality Improvements
 
+### Version 0.8.1 — Comprehensive Production Code Audit & Performance Hardening
+- **Security & Protocol Enforcement**:
+  - Enforced strict `https://` protocol checks across all external news and photo links (`a#hud-news-link`, `a#unsplash-credit`), falling back to trusted secure defaults and enforcing `target="_blank"` and `rel="noopener noreferrer"`.
+  - Redacted query parameters and authentication credentials in network timeout rejections (`ApiService.fetchWithTimeout`), preventing token leakage in error logs.
+  - Sanitized background image preloader errors and neutralized dangling callbacks (`onload = null`, `onerror = null`).
+  - Added HTML escaping (`App.escapeHtml`) to floating popover titles (`showHoverPopover`) against potential script injection.
+- **Ephemeris & Unit Precision**:
+  - Resolved temperature unit evaluation in Feels-Like Peak and Atmospheric Popover (`this.tempUnit === 'F'`), restoring accurate Fahrenheit rendering.
+  - Night Card 3 (Next Sky Event) checks tomorrow's dawn/sunrise when all of today's transits have elapsed.
+  - Added robust timezone fallbacks (`HH:MM` 24h local) and guarded SunCalc coordinates against `NaN`.
+- **UI Data Binding & Drawer Repairs**:
+  - Restored telemetry in Weather Detail Drawer by binding to canonical normalized properties (`tempF`/`tempC`, `apparentF`/`apparentC`, `precipitationMm`).
+  - Corrected Forecast Drawer metrics mapping across tabs (`temp`, `feels_like`, `precip`, `wind`, `humidity`, `aqi`).
+  - Repaired News Drawer article links to read `nItem.link` with HTTPS validation.
+- **Performance & Resource Optimization**:
+  - **Zero-Storage-Churn Clock**: `CacheManager` caches snapshot timestamps in memory, eliminating redundant `localStorage.getItem` and `JSON.parse` operations every 1,000ms.
+  - **True 0.0% CPU When Parked**: Dynamically toggles `.is-paused` class on `<body>` when the wallpaper sleeps, suspending all CSS keyframe animations (`animation-play-state: paused !important`).
+  - **SVG Sparkline Attribute Caching**: `SvgSparklineEngine` caches path attributes (`_lastLineD`, `_lastAreaD`), pre-calculates X-coordinates, and eliminates per-segment `.toFixed(1)` string allocations.
+  - **Deduplicated Astronomical Ephemeris**: Centralized SunCalc calculations in `App.updateClock`, sharing coordinates across sky and solar shaders to eliminate redundant trigonometric math.
+  - **Sky Color Lerp Optimization**: Pre-parsed celestial color palettes into numeric RGB vectors, eliminating string parsing and regex operations in 60 FPS lerp loops.
+  - **Hardware Frame Pacing**: Calibrated frame skip threshold to `14.5ms` to lock at smooth 60 FPS on high-refresh 120Hz/144Hz monitors.
+- **Enhanced Subsystems**:
+  - **Web Audio Pomodoro Chime**: Added synthesized dual-tone bell (587.33 Hz → 880 Hz) and desktop notification on interval completion without adding external audio files.
+  - **Dynamic Audio Spectrum**: Broadened audio visualizer band mapping to adapt across input buffer sizes and prevent stalling on vocal/acoustic tracks.
+  - **Idempotent Bindings**: Guarded window and Lively event listeners against duplicate registration.
+
 ### Version 0.8 — Multi-Source Wallpaper Providers & Localized News Engines
 - **Multi-Source Wallpaper Engine**: Support for multiple wallpaper providers selectable via Lively Settings or `config.js`:
   - **Unsplash** (Default): Keyless high-resolution curated CDN fallbacks or custom developer API key.

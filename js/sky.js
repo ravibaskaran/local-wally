@@ -210,15 +210,18 @@
       var normMoonAlt = Math.max(0, Math.min(1.2, safeMoonAltitude / 1.1));
       var moonY = Math.round((h * 0.75) - (normMoonAlt * (h * 0.55)) - 30);
 
+      var safePhase = (typeof mIllum.phase === 'number' && Number.isFinite(mIllum.phase)) ? mIllum.phase : 0.5;
+      var safeFraction = (typeof mIllum.fraction === 'number' && Number.isFinite(mIllum.fraction)) ? mIllum.fraction : 0.5;
+
       // Visual phase text descriptor
       var phaseText = 'Moon';
-      if (moonIllum.phase < 0.05 || moonIllum.phase > 0.95) phaseText = 'New Moon';
-      else if (moonIllum.phase < 0.22) phaseText = 'Waxing Crescent';
-      else if (moonIllum.phase < 0.28) phaseText = 'First Quarter';
-      else if (moonIllum.phase < 0.45) phaseText = 'Waxing Gibbous';
-      else if (moonIllum.phase < 0.55) phaseText = 'Full Moon';
-      else if (moonIllum.phase < 0.72) phaseText = 'Waning Gibbous';
-      else if (moonIllum.phase < 0.78) phaseText = 'Last Quarter';
+      if (safePhase < 0.05 || safePhase > 0.95) phaseText = 'New Moon';
+      else if (safePhase < 0.22) phaseText = 'Waxing Crescent';
+      else if (safePhase < 0.28) phaseText = 'First Quarter';
+      else if (safePhase < 0.45) phaseText = 'Waxing Gibbous';
+      else if (safePhase < 0.55) phaseText = 'Full Moon';
+      else if (safePhase < 0.72) phaseText = 'Waning Gibbous';
+      else if (safePhase < 0.78) phaseText = 'Last Quarter';
       else phaseText = 'Waning Crescent';
 
       this.moonEl.setAttribute('title', phaseText);
@@ -228,7 +231,7 @@
       this.moonEl.classList.add('is-active');
 
       if (this.moonDiscEl) {
-        this.moonDiscEl.style.opacity = (0.55 + moonIllum.fraction * 0.45).toFixed(2);
+        this.moonDiscEl.style.opacity = (0.55 + safeFraction * 0.45).toFixed(2);
       }
 
       this.sunEl.style.opacity = '0';
