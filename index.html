@@ -535,6 +535,20 @@
       <div>Frame Time: <span id="diag-frametime">16.6ms</span></div>
       <div>Particles: <span id="diag-particles">0</span></div>
       <div>Cache TTL: <span id="diag-cache-ttl">15m 00s</span></div>
+      <div class="diag-location-section">
+        <div class="diag-backup-title">Location</div>
+        <div id="location-status-label" role="status" aria-live="polite">Location source: Automatic</div>
+        <div class="loc-input-wrap">
+          <input id="location-manual-input" class="loc-manual-input" type="text"
+                 placeholder="Type a city (3+ chars) or &quot;lat, lon&quot;" autocomplete="off"
+                 spellcheck="false" aria-label="Manual location search" aria-expanded="false"
+                 aria-autocomplete="list" role="combobox">
+          <div id="location-suggest-list" class="loc-suggest-list" role="listbox" aria-label="Location suggestions"></div>
+        </div>
+        <div class="diag-backup-actions">
+          <button id="location-use-auto" class="diag-btn" type="button" title="Clear the manual override and return to silent automatic location">Use automatic</button>
+        </div>
+      </div>
       <div class="diag-backup-section">
         <div class="diag-backup-title">Backup &amp; Restore (includes API keys)</div>
         <div class="diag-backup-actions">

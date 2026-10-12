@@ -1838,6 +1838,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         diagImportBtn: document.getElementById('diag-import-settings'),
         diagImportFile: document.getElementById('diag-import-file'),
         diagBackupStatus: document.getElementById('diag-backup-status'),
+        locManageInput: document.getElementById('location-manual-input'),
+        locSuggestList: document.getElementById('location-suggest-list'),
+        locStatusLabel: document.getElementById('location-status-label'),
+        locAutoBtn: document.getElementById('location-use-auto'),
         diagTheme: document.getElementById('diag-theme'),
         diagFps: document.getElementById('diag-fps'),
         diagFrametime: document.getElementById('diag-frametime'),
@@ -2081,6 +2085,48 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         this.dom.diagImportFile.addEventListener('change', function() {
           var picked = self.dom.diagImportFile.files && self.dom.diagImportFile.files[0];
           self.importSettingsFile(picked);
+        });
+      }
+
+      // Manual location management (v0.8.7): suggestions dropdown, keyboard
+      // navigation, Enter to apply, automatic-location switch back.
+      if (this.dom.locManageInput) {
+        this.dom.locManageInput.addEventListener('input', function() {
+          self._handleLocationInput();
+        });
+        this.dom.locManageInput.addEventListener('blur', function() {
+          // mousedown-selection on the list fires first (preventDefault);
+          // delayed hide covers outside-click closure.
+          setTimeout(function() { self.hideLocationSuggestions(); }, 150);
+        });
+        this.dom.locManageInput.addEventListener('keydown', function(e) {
+          if (e.key === 'ArrowDown') { e.preventDefault(); self.moveLocationSuggestion(1); }
+          else if (e.key === 'ArrowUp') { e.preventDefault(); self.moveLocationSuggestion(-1); }
+          else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (self._locSuggestActive >= 0 && self._locSuggestOptions[self._locSuggestActive]) {
+              self.selectLocationSuggestion(self._locSuggestActive);
+            } else {
+              self._applyManualLocationFromInput();
+            }
+          } else if (e.key === 'Escape') {
+            self.hideLocationSuggestions();
+          }
+        });
+      }
+      if (this.dom.locAutoBtn) {
+        this.dom.locAutoBtn.addEventListener('click', function() {
+          self.useAutomaticLocation();
+        });
+      }
+
+      // Adopt silently-detected location changes (travel, reboot elsewhere):
+      // the persisted-location boot path detects city changes in the
+      // background without any prompt; refresh atmosphere for the new place.
+      if (global.ApiService && global.ApiService.onLocationChanged) {
+        global.ApiService.onLocationChanged(function() {
+          if (self.showDiagnostics) self.updateLocationDiagnostics();
+          self.loadAtmosphere(true);
         });
       }
 
@@ -3140,10 +3186,204 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           this.dom.diagPanel.classList.add('is-active');
           this.updateGpuDiagnostics();
           this.updateThemeDiagnostics();
+          this.updateLocationDiagnostics();
         } else {
           this.dom.diagPanel.classList.remove('is-active');
+          this.hideLocationSuggestions();
         }
       }
+    },
+
+    // ---- Manual location management (v0.8.7, diagnostic panel) -------------
+
+    updateLocationDiagnostics: function() {
+      var self = this;
+      if (!this.dom.locStatusLabel) return;
+      var manual = (global.ApiService && global.ApiService._readManualRecord) ? global.ApiService._readManualRecord() : null;
+      if (manual && manual.entry) {
+        var label = manual.entry.type === 'coords'
+          ? 'Manual location: ' + manual.entry.latitude + ', ' + manual.entry.longitude
+          : 'Manual location: ' + manual.entry.name;
+        this.setDomText(this.dom.locStatusLabel, label);
+      } else if (global.ApiService && global.ApiService.getLocation) {
+        this.setDomText(this.dom.locStatusLabel, 'Location source: Automatic (detecting...)');
+        global.ApiService.getLocation().then(function(loc) {
+          if (!self.showDiagnostics) return;
+          this.setDomText(self.dom.locStatusLabel,
+            'Location source: Automatic — ' + loc.city + (loc.country ? ', ' + loc.country : '') +
+            ' (' + loc.source + ')');
+        }.bind(this)).catch(function() {
+          if (!self.showDiagnostics) return;
+          self.setDomText(self.dom.locStatusLabel, 'Location source: Automatic — unavailable');
+        });
+      }
+    },
+
+    _locSuggestDebounce: null,
+    _locSuggestOptions: [],
+    _locSuggestActive: -1,
+
+    renderLocationSuggestions: function(options) {
+      var self = this;
+      var listEl = this.dom.locSuggestList;
+      var inputEl = this.dom.locManageInput;
+      if (!listEl) return;
+      this._locSuggestOptions = options || [];
+      this._locSuggestActive = -1;
+      listEl.textContent = '';
+      if (!this._locSuggestOptions.length) {
+        listEl.classList.remove('is-open');
+        if (inputEl) inputEl.setAttribute('aria-expanded', 'false');
+        return;
+      }
+      for (var i = 0; i < this._locSuggestOptions.length; i++) {
+        var opt = this._locSuggestOptions[i];
+        var item = document.createElement('div');
+        item.className = 'loc-suggest-item';
+        item.setAttribute('role', 'option');
+        // Escaped text nodes only — no HTML construction from remote place data.
+        var nameSpan = document.createElement('span');
+        nameSpan.textContent = opt.name + (opt.admin1 ? ', ' + opt.admin1 : '');
+        var countrySpan = document.createElement('span');
+        countrySpan.className = 'loc-suggest-country';
+        countrySpan.textContent = opt.country || opt.country_code || '';
+        item.appendChild(nameSpan);
+        item.appendChild(countrySpan);
+        item.setAttribute('data-loc-idx', String(i));
+        item.addEventListener('mousedown', function(e) {
+          // mousedown (not click) so the input doesn't blur before selection
+          e.preventDefault();
+          self.selectLocationSuggestion(parseFloat(this.getAttribute('data-loc-idx')));
+        });
+        listEl.appendChild(item);
+      }
+      listEl.classList.add('is-open');
+      if (inputEl) inputEl.setAttribute('aria-expanded', 'true');
+    },
+
+    hideLocationSuggestions: function() {
+      if (this._locSuggestDebounce) {
+        clearTimeout(this._locSuggestDebounce);
+        this._locSuggestDebounce = null;
+      }
+      this._locSuggestOptions = [];
+      this._locSuggestActive = -1;
+      if (this.dom.locSuggestList) {
+        this.dom.locSuggestList.textContent = '';
+        this.dom.locSuggestList.classList.remove('is-open');
+      }
+      if (this.dom.locManageInput) {
+        this.dom.locManageInput.setAttribute('aria-expanded', 'false');
+      }
+    },
+
+    moveLocationSuggestion: function(delta) {
+      var self = this;
+      var listEl = this.dom.locSuggestList;
+      if (!listEl || !this._locSuggestOptions.length) return;
+      var n = this._locSuggestOptions.length;
+      this._locSuggestActive = ((this._locSuggestActive + delta) % n + n) % n;
+      var items = listEl.querySelectorAll ? listEl.querySelectorAll('.loc-suggest-item') : [];
+      for (var i = 0; i < items.length; i++) {
+        if (i === this._locSuggestActive) items[i].classList.add('is-active');
+        else items[i].classList.remove('is-active');
+      }
+    },
+
+    selectLocationSuggestion: function(idx) {
+      var self = this;
+      var opt = this._locSuggestOptions[idx];
+      if (!opt || !global.ApiService) return;
+      this.hideLocationSuggestions();
+      var input = this.dom.locManageInput;
+      if (input) input.value = opt.name + (opt.country ? ', ' + opt.country : '');
+      this.setDomText(this.dom.locStatusLabel, 'Resolving "' + opt.name + '"...');
+      global.ApiService.setManualLocation(opt.name, opt).then(function(res) {
+        if (!res.ok) {
+          self.setDomText(self.dom.locStatusLabel, 'Manual location rejected: ' + res.error);
+          return;
+        }
+        var resolved = res.location;
+        self.setDomText(self.dom.locStatusLabel,
+          'Manual location: ' + resolved.city + (resolved.country ? ', ' + resolved.country : '') + ' — refreshing...');
+        self.loadAtmosphere(true);
+      }).catch(function(err) {
+        self.setDomText(self.dom.locStatusLabel, 'Manual location failed: ' + (err && err.message));
+      });
+    },
+
+    useAutomaticLocation: function() {
+      this.hideLocationSuggestions();
+      var hadManual = false;
+      if (global.ApiService && global.ApiService._readManualRecord) {
+        hadManual = !!global.ApiService._readManualRecord();
+      }
+      if (global.ApiService && global.ApiService.clearManualLocation) {
+        global.ApiService.clearManualLocation();
+      }
+      var input = this.dom.locManageInput;
+      if (input) input.value = '';
+      this.setDomText(this.dom.locStatusLabel, hadManual ? 'Switching back to automatic location...' : 'Already using automatic location');
+      if (hadManual) this.loadAtmosphere(true);
+    },
+
+    _handleLocationInput: function() {
+      var self = this;
+      if (this._locSuggestDebounce) {
+        clearTimeout(this._locSuggestDebounce);
+        this._locSuggestDebounce = null;
+      }
+      var input = this.dom.locManageInput;
+      if (!input || !global.ApiService || typeof global.ApiService._geocodeCity !== 'function') return;
+      var text = String(input.value || '').trim();
+      if (text.length < 3) {
+        this.hideLocationSuggestions();
+        return;
+      }
+      // Coordinates typed directly: no autocomplete needed; Enter applies.
+      if (/^\s*-?\d{1,3}/.test(text) && text.indexOf(',') !== -1) {
+        this.hideLocationSuggestions();
+        this.setDomText(this.dom.locStatusLabel, 'Coordinates mode — press Enter to set this location');
+        return;
+      }
+      this._locSuggestDebounce = setTimeout(function() {
+        self._locSuggestDebounce = null;
+        global.ApiService._geocodeCity(text, 6).then(function(list) {
+          if (self.showDiagnostics) self.renderLocationSuggestions(list);
+        }).catch(function() {
+          if (self.showDiagnostics) self.renderLocationSuggestions([]);
+        });
+      }, 350);
+    },
+
+    /**
+     * Applies the raw input (city name or "lat, lon") on Enter when no
+     * suggestion row is highlighted — the manual path behind the
+     * autocomplete dropdown.
+     */
+    _applyManualLocationFromInput: function() {
+      var self = this;
+      var input = this.dom.locManageInput;
+      if (!input || !global.ApiService) return;
+      this.hideLocationSuggestions();
+      var text = String(input.value || '').trim();
+      if (!text) {
+        this.setDomText(this.dom.locStatusLabel, 'Type a city name or "lat, lon" first');
+        return;
+      }
+      this.setDomText(this.dom.locStatusLabel, 'Resolving "' + text + '"...');
+      global.ApiService.setManualLocation(text).then(function(res) {
+        if (!res.ok) {
+          self.setDomText(self.dom.locStatusLabel, 'Manual location rejected: ' + res.error);
+          return;
+        }
+        var resolved = res.location;
+        self.setDomText(self.dom.locStatusLabel,
+          'Manual location: ' + resolved.city + (resolved.country ? ', ' + resolved.country : '') + ' — refreshing...');
+        if (self.showDiagnostics) self.loadAtmosphere(true);
+      }).catch(function(err) {
+        self.setDomText(self.dom.locStatusLabel, 'Manual location failed: ' + (err && err.message));
+      });
     },
 
     /**

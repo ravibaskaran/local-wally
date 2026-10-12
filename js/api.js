@@ -120,65 +120,115 @@
       return base + '?auto=format&fit=crop&w=' + width + '&h=' + height + '&q=85';
     },
 
+    // ---- Location cascade (v0.8.7) ------------------------------------------
+    // Order: manual entry → persisted auto location (prompt-free, instant) →
+    // silent auto-detection. HTML5 Geolocation is consulted ONLY when the
+    // permission state is already 'granted' — a wallpaper never raises a
+    // permission dialog; without a prior grant the silent IP lookup runs.
+
+    _LOCATION_AUTO_STORE_KEY: 'LIVELY_HUD_LOCATION_AUTO',
+    _LOCATION_MANUAL_CACHE_KEY: 'LIVELY_HUD_LOCATION_MANUAL',
+    _GEODING_BASE: 'https://geocoding-api.open-meteo.com/v1/search',
+
+    _locationChangedListeners: [],
+    _locationBgRefreshInFlight: false,
+
     /**
-     * Resolves geographical coordinates.
-     * Tries HTML5 Geolocation with 4s timeout, then falls back silently to IP-based lookup.
-     * Ensures city, latitude, and longitude are cleanly returned and formatted.
-     * @returns {Promise<{latitude: number, longitude: number, city: string, region: string, country: string, source: string}>}
+     * Registers a callback for adopted location changes detected silently in
+     * the background after boot painted a persisted location.
+     */
+    onLocationChanged: function(cb) {
+      if (typeof cb === 'function') this._locationChangedListeners.push(cb);
+    },
+
+    _notifyLocationChanged: function(loc) {
+      for (var i = 0; i < this._locationChangedListeners.length; i++) {
+        try {
+          this._locationChangedListeners[i](loc);
+        } catch (e) {
+          console.error('[ApiService] Location change listener error:', e);
+        }
+      }
+    },
+
+    /**
+     * Resolves geographical coordinates for the whole pipeline.
+     * Cascade:
+     *   1. Manual location (user entry via the diagnostic panel) — wins when
+     *      set; geocoded once and cached, boots stay instant and offline-safe.
+     *   2. Persisted auto location — instant paint, no detection, no prompts;
+     *      a silent background re-detect adopts city changes via
+     *      onLocationChanged listeners.
+     *   3. Silent detection — HTML5 Geolocation only when its permission is
+     *      already 'granted' (never prompts), then the keyless IP lookup
+     *      (ipapi.co), then config.defaultLocation.
+     * @returns {Promise<{latitude, longitude, city, region, country, countryCode, source}>}
      */
     getLocation: function() {
-      return new Promise(function(resolve) {
-        var resolved = false;
+      var self = this; // used by the manual-fallback catch below
 
-        function finish(result) {
-          if (!resolved) {
-            resolved = true;
-            resolve(result);
-          }
+      var manual = this._readManualRecord();
+      if (manual && manual.entry) {
+        // A broken/offline manual entry never breaks the atmosphere pipeline:
+        // fall back to silent automatic detection without persisting.
+        return this._resolveManual(manual).catch(function(manualErr) {
+          console.warn('[ApiService] Manual location unavailable, falling back to automatic:', (manualErr && manualErr.message) || manualErr);
+          return self._runLocationDetect(false);
+        });
+      }
+
+      var persisted = this._readPersistedLocation();
+      if (persisted && persisted.location) {
+        this._scheduleBackgroundLocationRefresh(persisted);
+        return Promise.resolve(persisted.location);
+      }
+
+      return this._runLocationDetect(true);
+    },
+
+    _runLocationDetect: function(persist) {
+      var self = this;
+
+      var finish = function(loc) {
+        if (persist) {
+          self._writePersistedLocation(loc);
         }
+        return Promise.resolve(loc);
+      };
+      return new Promise(function(resolve) {
+        var settled = false;
+        var finishOnce = function(result) {
+          if (settled) return;
+          settled = true;
+          finish(result).then(resolve, resolve);
+        };
 
         function formatLocation(lat, lon, city, region, country, countryCode, source) {
-          var defaultLoc = (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.defaultLocation) || {};
-          var defLat = typeof defaultLoc.latitude === 'number' ? defaultLoc.latitude : 35.6762;
-          var defLon = typeof defaultLoc.longitude === 'number' ? defaultLoc.longitude : 139.6503;
-          var defCity = defaultLoc.city || 'Tokyo';
-          var defCountry = defaultLoc.country || 'Japan';
-
-          var numLat = parseFloat(lat);
-          var numLon = parseFloat(lon);
-
-          if (isNaN(numLat) || isNaN(numLon)) {
-            numLat = defLat;
-            numLon = defLon;
-            city = city || defCity;
-            country = country || defCountry;
-            countryCode = countryCode || 'US';
-          }
-          return {
-            latitude: Math.round(numLat * 10000) / 10000,
-            longitude: Math.round(numLon * 10000) / 10000,
-            city: (city && String(city).trim()) || 'Local Area',
-            region: (region && String(region).trim()) || '',
-            country: (country && String(country).trim()) || '',
-            countryCode: (countryCode && String(countryCode).trim().toUpperCase()) || 'US',
-            source: source || 'unknown'
-          };
+          return self._formatLocation(lat, lon, city, region, country, countryCode, source);
         }
 
         // Helper: fetch with safety timeout to prevent hanging on dead networks
         function fetchJsonWithTimeout(url, timeoutMs) {
-          return ApiService.fetchWithTimeout(url, timeoutMs || 3500, { cache: 'no-store' })
-            .then(function(res) {
-              if (!res.ok) throw new Error('HTTP ' + res.status);
-              return res.json();
-            });
+          return self._fetchJsonWithTimeout(url, timeoutMs);
         }
 
-        // 1. Try HTML5 Geolocation (4s timeout)
-        if (typeof navigator !== 'undefined' && navigator.geolocation) {
+        // 1. HTML5 Geolocation — silently only when already granted (v0.8.7):
+        //    navigator.permissions.query performs no prompt; any other state
+        //    ('prompt', 'denied', unsupported API) skips GPS without asking.
+        var gpsProbe = Promise.resolve(null);
+        if (typeof navigator !== 'undefined' && navigator.geolocation && navigator.permissions &&
+            typeof navigator.permissions.query === 'function') {
+          gpsProbe = navigator.permissions.query({ name: 'geolocation' });
+        }
+
+        gpsProbe.then(function(status) {
+          if (!status || status.state !== 'granted' || typeof navigator === 'undefined' || !navigator.geolocation) {
+            fallbackToIp(finishOnce);
+            return;
+          }
           var geoTimeout = setTimeout(function() {
-            if (!resolved) {
-              fallbackToIp(finish);
+            if (!settled) {
+              fallbackToIp(finishOnce);
             }
           }, 4000);
 
@@ -193,7 +243,7 @@
                   // Reverse lookup city/country via ipapi.co to enrich GPS coordinates
                   fetchJsonWithTimeout('https://ipapi.co/json/', 3000)
                     .then(function(data) {
-                      finish(formatLocation(
+                      finishOnce(formatLocation(
                         gpsLat,
                         gpsLon,
                         data.city || 'Local Area',
@@ -204,26 +254,26 @@
                       ));
                     })
                     .catch(function() {
-                      finish(formatLocation(gpsLat, gpsLon, 'Local Area', '', '', 'US', 'gps'));
+                      finishOnce(formatLocation(gpsLat, gpsLon, 'Local Area', '', '', 'US', 'gps'));
                     });
                 } else {
-                  fallbackToIp(finish);
+                  fallbackToIp(finishOnce);
                 }
               },
               function(err) {
                 clearTimeout(geoTimeout);
                 // Silently fall back to IP locator
-                fallbackToIp(finish);
+                fallbackToIp(finishOnce);
               },
               { timeout: 4000, maximumAge: 600000, enableHighAccuracy: false }
             );
           } catch (e) {
             clearTimeout(geoTimeout);
-            fallbackToIp(finish);
+            fallbackToIp(finishOnce);
           }
-        } else {
-          fallbackToIp(finish);
-        }
+        }, function() {
+          fallbackToIp(finishOnce);
+        });
 
         function fallbackToIp(cb) {
           fetchJsonWithTimeout('https://ipapi.co/json/', 3500)
@@ -255,6 +305,321 @@
             });
         }
       });
+    },
+
+    /**
+     * Silent background re-detect for boots that painted a persisted
+     * location. Adopts only when CITY (or country) actually changed —
+     * coordinate jitter never flips the user's town. Notifies
+     * onLocationChanged listeners so the HUD re-syncs for the new place.
+     */
+    _scheduleBackgroundLocationRefresh: function(persisted) {
+      var self = this;
+      if (this._locationBgRefreshInFlight) return;
+      this._locationBgRefreshInFlight = true;
+
+      var done = function(loc) {
+        self._locationBgRefreshInFlight = false;
+        if (!loc) return;
+        var prev = persisted.location;
+        // Source-quality gate: only adopt candidates at least as trustworthy
+        // as what the persisted record holds. Offline config-defaults and
+        // un-enriched degraded GPS ('Local Area') never overwrite a real
+        // persisted city — they'd pin the wrong town until the next success.
+        var qualified = (loc.source === 'ip' || loc.source === 'gps') &&
+          !/^(local( area)?|metropolitan|manual area)$/i.test(loc.city || '');
+        var changed =
+          String(prev.city).toLowerCase() !== String(loc.city).toLowerCase() ||
+          String(prev.countryCode || '').toUpperCase() !== String(loc.countryCode || '').toUpperCase();
+        if (qualified && changed) {
+          self._writePersistedLocation(loc);
+          self._notifyLocationChanged(loc);
+        }
+      };
+
+      Promise.resolve()
+        .then(function() { return self._runLocationDetect(false); })
+        .then(done, function() { self._locationBgRefreshInFlight = false; });
+    },
+
+    _readPersistedLocation: function() {
+      try {
+        var raw = global.localStorage && global.localStorage.getItem(this._LOCATION_AUTO_STORE_KEY);
+        if (!raw) return null;
+        var rec = JSON.parse(raw);
+        if (!rec || !rec.location || typeof rec.location.latitude !== 'number' ||
+            typeof rec.location.longitude !== 'number') {
+          return null;
+        }
+        return rec;
+      } catch (e) {
+        return null;
+      }
+    },
+
+    _writePersistedLocation: function(loc) {
+      try {
+        global.localStorage && global.localStorage.setItem(
+          this._LOCATION_AUTO_STORE_KEY,
+          JSON.stringify({ location: loc, detectedAt: new Date().toISOString() })
+        );
+      } catch (e) {
+        // Storage unavailable — detection stays ephemeral (rule: memory-first)
+      }
+    },
+
+    /**
+     * Reads the user's manual-location record, or null.
+     * Record: { entry: {type:'name', name} | {type:'coords', latitude, longitude},
+     *          resolved: {location object} | null }
+     */
+    _readManualRecord: function() {
+      try {
+        var raw = global.localStorage && global.localStorage.getItem(this._LOCATION_MANUAL_CACHE_KEY);
+        if (raw) {
+          var rec = JSON.parse(raw);
+          if (rec && rec.entry) {
+            // Self-heal against corrupt/hand-crafted records: reject entries
+            // that lack the fields their type requires instead of feeding
+            // undefined into coordinate math downstream.
+            if (rec.entry.type === 'coords' &&
+                typeof rec.entry.latitude === 'number' && Number.isFinite(rec.entry.latitude) &&
+                typeof rec.entry.longitude === 'number' && Number.isFinite(rec.entry.longitude)) {
+              return rec;
+            }
+            if (rec.entry.type === 'name' &&
+                rec.entry.name && String(rec.entry.name).trim() && String(rec.entry.name).length <= 80) {
+              return rec;
+            }
+            console.warn('[ApiService] Discarding invalid manual location record');
+            return null;
+          }
+        }
+      } catch (e) {
+        // fall through to memory-only record
+      }
+      return this._memoryManualRecord || null;
+    },
+
+    _writeManualRecord: function(rec) {
+      try {
+        global.localStorage && global.localStorage.setItem(
+          this._LOCATION_MANUAL_CACHE_KEY,
+          JSON.stringify(rec)
+        );
+      } catch (e) {
+        // Storage unavailable — manual entry stays memory-only this session
+        this._memoryManualRecord = rec;
+      }
+    },
+
+    /**
+     * Sets the manual location override (Feature 1). Accepts either a city
+     * name ("Bengaluru") or "lat, lon" coordinates. City entries are geocoded
+     * via the keyless Open-Meteo geocoding API (CORS-open) and cached so
+     * boots use them without any network. Returns a Promise of
+     * { ok:true, location } or { ok:false, error }.
+     */
+    setManualLocation: function(text, preResolved) {
+      var self = this;
+      var raw = String(text || '').trim();
+      if (!raw) {
+        return Promise.reject(new Error('Location entry is empty'));
+      }
+
+      // Coordinates first: "-12.9716, 77.5946"
+      var coords = raw.match(/^(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)$/);
+      if (coords) {
+        var lat = parseFloat(coords[1]);
+        var lon = parseFloat(coords[2]);
+        if (Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+          return Promise.reject(new Error('Coordinates out of range'));
+        }
+        // Best-effort reverse geocode gives the pin a real city/country
+        // (cached in the record). Without it, the record stays city-less and
+        // the news chain skips to world news rather than guessing a region.
+        return this._reverseGeocode(lat, lon)
+          .catch(function() { return null; })
+          .then(function(place) {
+            var rec = place ? {
+              entry: { type: 'coords', latitude: lat, longitude: lon },
+              resolved: self._formatLocation(place.latitude, place.longitude, place.name, place.admin1 || '', place.country || '', place.country_code || '', 'manual')
+            } : {
+              entry: { type: 'coords', latitude: lat, longitude: lon },
+              resolved: self._formatLocation(lat, lon, 'Manual Area', '', '', '', 'manual')
+            };
+            self._writeManualRecord(rec);
+            return { ok: true, location: rec.resolved };
+          });
+      }
+
+      if (raw.length > 80) {
+        return Promise.reject(new Error('Location name too long'));
+      }
+      // A suggestion already carries its coordinates — skip the re-geocode
+      // (and its re-ranking surprises): clicking "Bengaluru, India" must land
+      // exactly on the row the user picked.
+      if (preResolved && typeof preResolved.latitude === 'number' && Number.isFinite(preResolved.latitude) &&
+          typeof preResolved.longitude === 'number' && Number.isFinite(preResolved.longitude)) {
+        var direct = {
+          entry: { type: 'name', name: preResolved.name || raw },
+          resolved: this._formatLocation(
+            preResolved.latitude, preResolved.longitude,
+            preResolved.name || raw, preResolved.admin1 || '',
+            preResolved.country || '', preResolved.country_code || 'US', 'manual'
+          )
+        };
+        this._writeManualRecord(direct);
+        return Promise.resolve({ ok: true, location: direct.resolved });
+      }
+      return this._geocodeCity(raw, 1).then(function(list) {
+        if (!list || !list.length) {
+          return { ok: false, error: 'No matching place found — check spelling' };
+        }
+        var top = list[0];
+        var rec = {
+          entry: { type: 'name', name: raw },
+          resolved: self._formatLocation(
+            top.latitude, top.longitude, top.name, top.admin1 || '',
+            top.country || '', top.country_code || 'US', 'manual'
+          )
+        };
+        self._writeManualRecord(rec);
+        return { ok: true, location: rec.resolved };
+      });
+    },
+
+    clearManualLocation: function() {
+      try {
+        global.localStorage && global.localStorage.removeItem(this._LOCATION_MANUAL_CACHE_KEY);
+      } catch (e) {
+        // best effort
+      }
+      this._memoryManualRecord = null;
+    },
+
+    /**
+     * Resolves the stored manual record (used on boot). Falls back to auto
+     * detection when geocoding fails at boot time.
+     */
+    _resolveManual: function(rec) {
+      var self = this;
+      if (rec.entry.type === 'coords') {
+        var rec2 = {
+          entry: rec.entry,
+          resolved: this._formatLocation(rec.entry.latitude, rec.entry.longitude, 'Manual Area', '', '', 'US', 'manual')
+        };
+        return Promise.resolve(rec2.resolved);
+      }
+      if (rec.resolved &&
+          typeof rec.resolved.latitude === 'number' && typeof rec.resolved.longitude === 'number') {
+        return Promise.resolve(rec.resolved);
+      }
+      // Cache miss (first boot after import without resolved payload): re-geocode once.
+      return this._geocodeCity(rec.entry.name, 1).then(function(list) {
+        if (!list || !list.length) {
+          throw new Error('No matching place for "' + rec.entry.name + '"');
+        }
+        var top = list[0];
+        var resolved = self._formatLocation(
+          top.latitude, top.longitude, top.name, top.admin1 || '',
+          top.country || '', top.country_code || 'US', 'manual'
+        );
+        self._writeManualRecord({ entry: rec.entry, resolved: resolved });
+        return resolved;
+      });
+    },
+
+    _REVERSE_GEO_BASE: 'https://api.bigdatacloud.net/data/reverse-geocode-client',
+
+    /**
+     * Keyless reverse geocode (BigDataCloud client API, CORS-open) so a
+     * coordinates pin resolves to a real city/country once and stays cached.
+     * Best-effort: callers degrade to the honest 'Manual Area' record.
+     */
+    _reverseGeocode: function(lat, lon) {
+      var url = this._REVERSE_GEO_BASE + '?latitude=' + encodeURIComponent(lat) +
+        '&longitude=' + encodeURIComponent(lon) + '&localityLanguage=en';
+      return this._fetchJsonWithTimeout(url, 5000).then(function(data) {
+        if (!data || (!data.city && !data.locality && !data.principalSubdivision)) {
+          throw new Error('No reverse-geocode result');
+        }
+        return {
+          latitude: lat,
+          longitude: lon,
+          name: data.city || data.locality || data.principalSubdivision,
+          admin1: data.principalSubdivision || '',
+          country: data.countryName || '',
+          country_code: data.countryCode || ''
+        };
+      });
+    },
+
+    /**
+     * Keyless autocomplete geocoding (Open-Meteo). Used by the manual-input
+     * suggestions dropdown (min threshold applied by the caller) and by
+     * setManualLocation. Returns [{latitude, longitude, name, admin1,
+     * country, country_code}].
+     */
+    _geocodeCity: function(name, count) {
+      var url = this._GEODING_BASE + '?name=' + encodeURIComponent(name) +
+        '&count=' + (count || 6) + '&language=en&format=json';
+      return this._fetchJsonWithTimeout(url, 5000).then(function(data) {
+        var out = [];
+        var results = (data && data.results) || [];
+        for (var i = 0; i < results.length && out.length < (count || 6); i++) {
+          var r = results[i];
+          if (typeof r.latitude !== 'number' || typeof r.longitude !== 'number' || !r.name) continue;
+          out.push({
+            latitude: r.latitude,
+            longitude: r.longitude,
+            name: String(r.name),
+            admin1: r.admin1 ? String(r.admin1) : '',
+            country: r.country ? String(r.country) : '',
+            country_code: r.country_code ? String(r.country_code) : ''
+          });
+        }
+        return out;
+      });
+    },
+
+    _formatLocation: function(lat, lon, city, region, country, countryCode, source) {
+      var defaultLoc = (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.defaultLocation) || {};
+      var defLat = typeof defaultLoc.latitude === 'number' ? defaultLoc.latitude : 35.6762;
+      var defLon = typeof defaultLoc.longitude === 'number' ? defaultLoc.longitude : 139.6503;
+      var defCity = defaultLoc.city || 'Tokyo';
+      var defCountry = defaultLoc.country || 'Japan';
+
+      var numLat = parseFloat(lat);
+      var numLon = parseFloat(lon);
+
+      if (isNaN(numLat) || isNaN(numLon)) {
+        numLat = defLat;
+        numLon = defLon;
+        city = city || defCity;
+        country = country || defCountry;
+        countryCode = countryCode || 'US';
+      }
+      return {
+        latitude: Math.round(numLat * 10000) / 10000,
+        longitude: Math.round(numLon * 10000) / 10000,
+        city: (city && String(city).trim()) || 'Local Area',
+        region: (region && String(region).trim()) || '',
+        country: (country && String(country).trim()) || '',
+        countryCode: (countryCode && String(countryCode).trim().toUpperCase()) || '',
+        source: source || 'unknown'
+      };
+    },
+
+    /**
+     * Fetch helper with safety timeout to prevent hanging on dead networks.
+     */
+    _fetchJsonWithTimeout: function(url, timeoutMs) {
+      return ApiService.fetchWithTimeout(url, timeoutMs || 3500, { cache: 'no-store' })
+        .then(function(res) {
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          return res.json();
+        });
     },
 
     /**
@@ -1986,12 +2351,16 @@
         cleanCountry = 'US';
       }
 
-      var cityUsable = !!(cityName && String(cityName).trim()) && !/^(local( area)?|metropolitan)$/i.test(cityName);
+      var cityUsable = !!(cityName && String(cityName).trim()) && !/^(local( area)?|manual area|metropolitan)$/i.test(cityName);
       var geoUrl = 'https://news.google.com/rss/headlines/section/geo/' + encodeURIComponent(cleanCity) +
         '?hl=en&gl=' + cleanCountry + '&ceid=' + cleanCountry + ':en';
       // Country-level edition (was hardcoded US) — keyless users outside the US
       // get their own regional news instead of American headlines.
-      var fallbackUrl = 'https://news.google.com/rss?hl=en&gl=' + cleanCountry + '&ceid=' + cleanCountry + ':en';
+      // Country-level news edition (was hardcoded US; empty country = world
+      // edition) — local news for any region, honest for city-less pins.
+      var fallbackUrl = (cleanCountry)
+        ? 'https://news.google.com/rss?hl=en&gl=' + cleanCountry + '&ceid=' + cleanCountry + ':en'
+        : 'https://news.google.com/rss?hl=en';
 
       function requestXml(rssUrl) {
         // Public CORS gateways, tried in order. Each leg is independently

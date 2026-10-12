@@ -1400,3 +1400,24 @@ Replaces the fixed moon row with three nocturnal cards:
 
 ### 37.5 Verification
 - New scratch suite `test_v086_backup.js`: payload shape (whitelist + storage filter), parse guards, apply semantics (whitelist/emitter replay/charset skip/storage filter/honest counts), and a machine-to-machine round trip. Full 7-suite battery re-run green; `node --check` clean; scratch file SHA-256 reported in release notes.
+
+## 38. Location Cascade: Manual Control & Dialog-Free Auto Detection (v0.8.7)
+
+### 38.1 Resolution Order (js/api.js, single choke point `getLocation()`)
+1. **Manual override** (localStorage `LIVELY_HUD_LOCATION_MANUAL`, record `{entry:{type:'name'-or-'coords'}, resolved}`): wins over everything; geocoded ONCE via the keyless CORS-open Open-Meteo geocoding API and cached (boots instant, offline-safe); coordinate entries additionally reverse-geocoded once via the keyless BigDataCloud client API. A manual entry that cannot resolve logs a warning and falls through to silent auto — never a rejected pipeline.
+2. **Persisted auto location** (localStorage `LIVELY_HUD_LOCATION_AUTO`): instant paint; a silent background re-detect adopts REAL city/country changes via `onLocationChanged` → App re-syncs with `loadAtmosphere(true)`.
+3. **Silent detection** (`_runLocationDetect`): HTML5 geolocation ONLY when `navigator.permissions.query({name:'geolocation'})` reports `state === 'granted'` — a query never prompts; `prompt`/`denied`/missing-API (and query rejections) skip instantly to the keyless IP lookup (`ipapi.co`), then `config.defaultLocation`.
+
+### 38.2 No-Dialog Guarantee & Persistence Rationale
+- The v0.7+ chain called `getCurrentPosition` unconditionally on every boot — the source of permission prompts on the wallpaper (Windows/WebView2 consent). v0.8.7 removes the ask entirely: GPS is consulted only where the OS already granted it (silent), IP lookup needs no permission, and persistence removes detection from warm boots altogether. The one function boundary makes the future Lively-native path (`--area-weather`, marked NOT READY upstream in the official wiki) a drop-in when it matures.
+- Adoption gate: background candidates qualify only with `source === 'ip'|'gps'` AND a non-placeholder city (`Local Area`/`Manual Area`/`Metropolitan` excluded) — coordinate jitter never flips the town and offline config-defaults never overwrite real persisted cities (outage defaults persist for instant paint and self-heal on the first successful later detect).
+
+### 38.3 Manual Location UX (diagnostic panel, `D`)
+- **Location** section: status line (current source + place), a combobox input, an absolutely-positioned listbox of Open-Meteo suggestions (`City, Region — Country`), keyboard navigation (ArrowUp/Down/Enter/Escape), mousedown selection, blur/outside-click close, `aria-expanded` managed. Typing raw `lat, lon` (range-validated) applies on Enter without suggestions.
+- Choosing a suggestion passes ITS coordinates into the record (no re-geocode re-ranking surprises). `Use automatic` clears the record and re-syncs. No LivelyProperties entry was added — the localStorage record is the single source of truth and is carried by backup/restore automatically.
+
+### 38.4 News-Chain Honesty for City-less Pins
+- The regional-news `cityUsable` guard now also excludes `Manual Area`; coordinate pins without a resolvable city skip GDELT and geo-RSS entirely and use the country edition — or the world edition (`news.google.com/rss?hl=en`) when no country is known — instead of fabricated or wrong-region headlines.
+
+### 38.5 Verification
+- New scratch suite `test_v087_location.js` (9 sections: manual precedence, coords/city/invalid paths + rejections, prompt-state zero-GPS, granted-state silent GPS, persisted-instant boots + adoption + jitter immunity, cache-miss recovery + broken-manual fallthrough, outage-default persistence/non-adoption, broken Permissions API, backup prefix sanity). Full 9-suite battery green, clean exits, `node --check` clean. Fresh-context adversarial diff review verdict FIX-FIRST → all findings applied (source-quality adoption gate; no forged `'US'` region on coordinate pins; suggestion-click coordinate passthrough; corrupt-record self-heal; broken-manual pipeline fall-through; aria/polish nits); scratch SHA-256 in release notes.
