@@ -142,63 +142,66 @@
           </div>
         </section>
 
-        <!-- Solar & Lunar Ephemeris Block -->
-        <section id="hud-ephemeris-card" class="hud-celestial-block hud-card-interactive" aria-label="Solar and Lunar Ephemeris" tabindex="0" role="button" aria-haspopup="dialog" title="Solar & Lunar Ephemeris: Celestial tracking and moon illumination (Click to inspect ephemeris)">
-          <!-- Day Row: Sunrise | Solar Noon | Sunset -->
-          <div id="hud-ephemeris-sun-row" class="hud-ephemeris-sun">
-            <div class="ephemeris-item" title="Sunrise">
-              <svg class="bento-icon ephemeris-icon sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6"/><path d="m4.93 10.93 4.24-4.24"/><path d="m19.07 10.93-4.24-4.24"/><path d="M2 18h20"/><path d="M20 22H4"/><path d="m16 6-4-4-4 4"/></svg>
+        <!-- Dynamic Day / Night Ephemeris Block -->
+        <section id="hud-ephemeris-card" class="hud-celestial-block hud-card-interactive" aria-label="Day and Night Ephemeris Telemetry" tabindex="0" role="button" aria-haspopup="dialog" title="Day & Night Ephemeris: Glanceable outlook, celestial tracking, and solar cycles (Click to inspect details)">
+          <!-- Daytime 3-Card Row: Rain Outlook | Feels-Like Peak | Golden Hour / Daylight Left -->
+          <div id="hud-ephemeris-sun-row" class="hud-ephemeris-grid hud-ephemeris-sun">
+            <div id="ephemeris-day-rain" class="ephemeris-item" tabindex="0" role="group" aria-label="Rain Outlook" title="Rain Outlook">
+              <svg class="bento-icon ephemeris-icon rain-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M16 14v6"/><path d="M8 14v6"/><path d="M12 16v6"/></svg>
               <div class="ephemeris-meta">
-                <span class="ephemeris-label">Sunrise</span>
-                <span id="ephemeris-sunrise" class="ephemeris-val">--:--</span>
+                <span class="ephemeris-label">Rain Outlook</span>
+                <span id="ephemeris-rain-val" class="ephemeris-val">No Rain</span>
+                <span id="ephemeris-rain-sub" class="ephemeris-sub">Clear next 6h</span>
               </div>
             </div>
-            <div class="ephemeris-item" title="Solar Noon">
-              <svg class="bento-icon ephemeris-icon noon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+            <div id="ephemeris-day-peak" class="ephemeris-item" tabindex="0" role="group" aria-label="Feels-Like Peak" title="Feels-Like Peak Temperature">
+              <svg class="bento-icon ephemeris-icon peak-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/><path d="M12 8v4"/></svg>
               <div class="ephemeris-meta">
-                <span class="ephemeris-label">Noon</span>
-                <span id="ephemeris-noon" class="ephemeris-val">--:--</span>
+                <span class="ephemeris-label">Feels Peak</span>
+                <span id="ephemeris-peak-val" class="ephemeris-val">--°</span>
+                <span id="ephemeris-peak-sub" class="ephemeris-sub">at --:--</span>
               </div>
             </div>
-            <div class="ephemeris-item" title="Sunset">
-              <svg class="bento-icon ephemeris-icon sunset-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 10V2"/><path d="m4.93 10.93 4.24-4.24"/><path d="m19.07 10.93-4.24-4.24"/><path d="M2 18h20"/><path d="M20 22H4"/><path d="m16 14-4 4-4-4"/></svg>
+            <div id="ephemeris-day-sun" class="ephemeris-item" tabindex="0" role="group" aria-label="Golden Hour and Daylight Remaining" title="Daylight Remaining & Golden Hour">
+              <svg class="bento-icon ephemeris-icon sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
               <div class="ephemeris-meta">
-                <span class="ephemeris-label">Sunset</span>
-                <span id="ephemeris-sunset" class="ephemeris-val">--:--</span>
+                <span id="ephemeris-daylight-label" class="ephemeris-label">Daylight Left</span>
+                <span id="ephemeris-daylight-val" class="ephemeris-val">--:--</span>
+                <span id="ephemeris-daylight-sub" class="ephemeris-sub">until sunset</span>
               </div>
+              <span id="ephemeris-sunrise" style="display:none">--:--</span>
+              <span id="ephemeris-noon" style="display:none">--:--</span>
+              <span id="ephemeris-sunset" style="display:none">--:--</span>
             </div>
           </div>
-          <!-- Night Row: Moonrise | Moon Phase | Moonset -->
-          <div id="hud-ephemeris-moon-row" class="hud-ephemeris-moon-row is-hidden">
-            <div class="ephemeris-item" title="Moonrise">
-              <svg class="bento-icon ephemeris-icon moonrise-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m16 6-4-4-4 4"/><path d="M12 2v6"/><path d="M2 18h20"/><path d="M20 22H4"/><path d="M12 10a4 4 0 0 1 4 4c0 1.25-.5 2.5-1.5 3.3"/></svg>
+
+          <!-- Nighttime 3-Card Row: Next Golden Hour | Moon Phase & Visibility | Next Sky Event -->
+          <div id="hud-ephemeris-moon-row" class="hud-ephemeris-grid hud-ephemeris-moon-row is-hidden">
+            <div id="ephemeris-night-golden" class="ephemeris-item" tabindex="0" role="group" aria-label="Next Golden Hour Window" title="Next Golden Hour">
+              <svg class="bento-icon ephemeris-icon golden-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="m16 6-4-4-4 4"/><path d="M12 2v6"/><path d="M2 18h20"/><path d="M20 22H4"/></svg>
               <div class="ephemeris-meta">
-                <span class="ephemeris-label">Moonrise</span>
-                <span id="ephemeris-moonrise" class="ephemeris-val">--:--</span>
+                <span class="ephemeris-label">Golden Hour</span>
+                <span id="ephemeris-golden-val" class="ephemeris-val">--:--</span>
+                <span id="ephemeris-golden-sub" class="ephemeris-sub">tomorrow</span>
               </div>
             </div>
-            <div class="ephemeris-item ephemeris-moon-phase-item" title="Moon Phase & Illumination">
+            <div id="ephemeris-night-moon" class="ephemeris-item ephemeris-moon-phase-item" tabindex="0" role="group" aria-label="Moon Phase and Visibility Outlook" title="Moon Phase & Visibility Outlook">
               <span id="ephemeris-night-moon-glyph" class="moon-glyph" aria-hidden="true">🌕</span>
               <div class="ephemeris-meta">
                 <span id="ephemeris-night-moon-phase" class="ephemeris-label">Moon Phase</span>
                 <span id="ephemeris-night-moon-illum" class="ephemeris-val">--%</span>
+                <span id="ephemeris-night-moon-status" class="ephemeris-sub">Above horizon</span>
               </div>
             </div>
-            <div class="ephemeris-item" title="Moonset">
-              <svg class="bento-icon ephemeris-icon moonset-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m16 14-4 4-4-4"/><path d="M12 10v8"/><path d="M2 18h20"/><path d="M20 22H4"/><path d="M12 2a4 4 0 0 0-4 4c0 1.25.5 2.5 1.5 3.3"/></svg>
+            <div id="ephemeris-night-event" class="ephemeris-item" tabindex="0" role="group" aria-label="Next Sky Event" title="Next Sky Event">
+              <svg class="bento-icon ephemeris-icon event-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
               <div class="ephemeris-meta">
-                <span class="ephemeris-label">Moonset</span>
-                <span id="ephemeris-moonset" class="ephemeris-val">--:--</span>
+                <span id="ephemeris-event-label" class="ephemeris-label">Next Sky Event</span>
+                <span id="ephemeris-event-val" class="ephemeris-val">Dawn</span>
+                <span id="ephemeris-event-sub" class="ephemeris-sub">at --:--</span>
               </div>
-            </div>
-          </div>
-          <div id="hud-ephemeris-moon" class="hud-ephemeris-moon">
-            <div class="moon-badge">
-              <span id="ephemeris-moon-glyph" class="moon-glyph" aria-hidden="true">🌕</span>
-              <div class="moon-text-group">
-                <span id="ephemeris-moon-phase" class="moon-phase-name">Full Moon</span>
-                <span class="moon-illumination">Illumination <strong id="ephemeris-moon-illum">--%</strong></span>
-              </div>
+              <span id="ephemeris-moonrise" style="display:none">--:--</span>
+              <span id="ephemeris-moonset" style="display:none">--:--</span>
             </div>
           </div>
         </section>
@@ -428,12 +431,12 @@
             </a>
             <div class="hud-news-footer">
               <span class="hud-news-indicator-label">Live Dispatch</span>
-              <div id="hud-news-dots" class="hud-news-dots" aria-hidden="true" style="display: none;">
-                <span class="news-dot is-active"></span>
-                <span class="news-dot"></span>
-                <span class="news-dot"></span>
-                <span class="news-dot"></span>
-                <span class="news-dot"></span>
+              <div id="hud-news-dots" class="hud-news-dots" role="tablist" aria-label="News headlines" style="display: none;">
+                <button class="news-dot is-active" type="button" role="tab" aria-selected="true" aria-label="Story 1" data-idx="0"></button>
+                <button class="news-dot" type="button" role="tab" aria-selected="false" aria-label="Story 2" data-idx="1"></button>
+                <button class="news-dot" type="button" role="tab" aria-selected="false" aria-label="Story 3" data-idx="2"></button>
+                <button class="news-dot" type="button" role="tab" aria-selected="false" aria-label="Story 4" data-idx="3"></button>
+                <button class="news-dot" type="button" role="tab" aria-selected="false" aria-label="Story 5" data-idx="4"></button>
               </div>
             </div>
           </div>
@@ -539,6 +542,8 @@
 
     <!-- Background Photo Attribution -->
     <a id="unsplash-credit" class="unsplash-attribution" href="https://unsplash.com" target="_blank" rel="noopener">Photo via Unsplash</a>
+    <!-- Contextual Floating Hover Popover -->
+    <div id="hud-hover-popover" class="hud-hover-popover" role="tooltip" aria-hidden="true"></div>
   </div>
 
   <!-- Scripts: Ordered for Dependency Resolution -->

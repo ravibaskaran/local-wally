@@ -639,7 +639,8 @@
           windSpeedKm: current.wind_speed_10m != null ? Math.round(current.wind_speed_10m * 10) / 10 : 10.0,
           windSpeedMph: current.wind_speed_10m != null ? Math.round((current.wind_speed_10m * 0.621371) * 10) / 10 : 6.2,
           precipitationMm: current.precipitation != null ? current.precipitation : 0.0,
-          isDay: current.is_day != null ? current.is_day : 1
+          isDay: current.is_day != null ? current.is_day : 1,
+          timezone: data.timezone || null
         };
 
         var hourlyForecast = [];
@@ -736,7 +737,8 @@
           windSpeedKm: windSpeedKm,
           windSpeedMph: Math.round(windSpeedKm * 0.621371 * 10) / 10,
           precipitationMm: Math.round(precipMm * 10) / 10,
-          isDay: sym.indexOf('night') === -1 ? 1 : 0
+          isDay: sym.indexOf('night') === -1 ? 1 : 0,
+          timezone: (data && data.timezone) || null
         };
 
         var hourlyForecast = [];
@@ -868,7 +870,8 @@
           windSpeedKm: windSpeedKm,
           windSpeedMph: Math.round(windSpeedKm * 0.621371 * 10) / 10,
           precipitationMm: Math.round(precipMm * 10) / 10,
-          isDay: (weather0.icon && weather0.icon.indexOf('n') !== -1) ? 0 : 1
+          isDay: (weather0.icon && weather0.icon.indexOf('n') !== -1) ? 0 : 1,
+          timezone: data.timezone || null
         };
 
         var hourlyForecast = [];

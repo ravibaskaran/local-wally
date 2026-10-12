@@ -943,6 +943,34 @@ html, body {
   filter: drop-shadow(0 0 5px rgba(167, 139, 250, 0.5));
 }
 
+.ephemeris-item .peak-icon {
+  width: 15px;
+  height: 15px;
+  stroke: #f43f5e;
+  filter: drop-shadow(0 0 5px rgba(244, 63, 94, 0.5));
+}
+
+.ephemeris-item .rain-icon {
+  width: 15px;
+  height: 15px;
+  stroke: #38bdf8;
+  filter: drop-shadow(0 0 5px rgba(56, 189, 248, 0.5));
+}
+
+.ephemeris-item .golden-icon {
+  width: 15px;
+  height: 15px;
+  stroke: #fbbf24;
+  filter: drop-shadow(0 0 5px rgba(251, 191, 36, 0.5));
+}
+
+.ephemeris-item .event-icon {
+  width: 15px;
+  height: 15px;
+  stroke: #c084fc;
+  filter: drop-shadow(0 0 5px rgba(192, 132, 252, 0.5));
+}
+
 .hw-icon {
   width: 13px;
   height: 13px;
@@ -1144,6 +1172,7 @@ html, body {
   border-bottom: 1px solid var(--divider-color);
 }
 
+.hud-ephemeris-grid,
 .hud-ephemeris-sun,
 .hud-ephemeris-moon-row {
   display: grid;
@@ -1151,6 +1180,7 @@ html, body {
   gap: 6px;
 }
 
+.hud-ephemeris-grid.is-hidden,
 .hud-ephemeris-sun.is-hidden,
 .hud-ephemeris-moon-row.is-hidden,
 .hud-ephemeris-moon.is-hidden {
@@ -1207,6 +1237,17 @@ html, body {
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
+}
+
+.ephemeris-sub {
+  font-size: 0.54rem;
+  font-weight: 400;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  margin-top: 1px;
 }
 
 .hud-ephemeris-moon {
@@ -1899,9 +1940,18 @@ html, body {
 .news-dot {
   width: 4px;
   height: 4px;
+  padding: 0;
+  border: none;
   border-radius: 50%;
   background: var(--card-border);
+  cursor: pointer;
+  outline: none;
   transition: all 0.3s ease;
+}
+
+.news-dot:focus-visible {
+  outline: 1.5px solid var(--accent-cyan);
+  outline-offset: 1px;
 }
 
 .news-dot.is-active {
@@ -2289,6 +2339,81 @@ html, body {
   padding: 1px 4px;
   font-family: inherit;
   font-size: 0.6rem;
+}
+
+/* ==========================================================================
+   Contextual Floating Hover Popover
+   ========================================================================== */
+
+.hud-hover-popover {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  max-width: 260px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid var(--card-border, rgba(255, 255, 255, 0.12));
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  color: var(--text-primary);
+  font-family: inherit;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(4px);
+  transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s ease;
+}
+
+.hud-hover-popover.is-visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.hud-popover-title {
+  margin: 0 0 4px 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--accent-cyan);
+}
+
+.hud-popover-body {
+  font-size: 0.65rem;
+  line-height: 1.35;
+  color: var(--text-secondary);
+}
+
+.hud-popover-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 5px;
+}
+
+.hud-popover-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.62rem;
+}
+
+.hud-popover-row-label {
+  color: var(--text-muted);
+}
+
+.hud-popover-row-val {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-hover-popover {
+    transition: none !important;
+    transform: none !important;
+  }
 }
 
 /* Diagnostic / FPS Overlay */

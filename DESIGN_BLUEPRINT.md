@@ -1127,4 +1127,55 @@ Local Wally v0.6.4 introduces proxy-free regional news ingestion via GDELT DOC 2
   - Maintained backward-compatible properties (`this.activeStarCount = 0`, `this.showStars = false`) so external callers and host properties continue operating cleanly.
   - Preserved 0% CPU/GPU parked animation loop behavior during clear/fair weather conditions.
 
+---
 
+## 29. v0.7.2 Dynamic Day/Night Cards, Ephemeris Precision & Progressive Disclosure
+
+### 29.1 Astronomical Solar Altitude Day/Night State Detection
+- **Physical Detection**: Eliminated dependencies on fixed clock hours or stale/mismatched API cache flags (`weather.isDay`) by deriving daytime and nighttime states from physical solar altitude via bundled SunCalc:
+  $$\text{altitude} > -0.01454\text{ rad} \quad (\approx -0.833^\circ)$$
+  representing the standard astronomical solar upper limb refraction threshold at the horizon.
+- **Location & Timezone Grounding**: Calculations execute using the user's selected or geolocated coordinates (`latitude`, `longitude`) and format using explicit IANA timezone identifiers (`Intl.DateTimeFormat(..., { timeZone })`) with cached formatter lookups to avoid instantiation overhead.
+- **Polar & Solstice Resilience**: Seamlessly handles high-latitude polar day (midnight sun, where sunset is undefined) and polar night (where sunrise is undefined), displaying clear fallback states (`Polar Day` / `Polar Night`) instead of invalid timestamp representations.
+
+### 29.2 Dynamic Daytime 3-Card Ephemeris Presentation
+Replaces the fixed `Sunrise / Noon / Sunset` text row with three responsive, glanceable acrylic cards:
+1. **Rain Outlook (`#ephemeris-day-rain`)**:
+   - Inspects the upcoming 6-hour hourly precipitation probability and accumulation horizon.
+   - Highlights the earliest imminent rain time (e.g., `Rain ~15:00`) and peak probability percentage (`65%`).
+   - Displays clear dry-sky confirmation (`No Rain Expected` / `Dry next 6h`) when conditions are clear, or `Unavailable` when forecast telemetry is absent.
+2. **Feels-Like Peak (`#ephemeris-day-peak`)**:
+   - Computes the maximum apparent ("feels like") temperature from the current hour through local midnight.
+   - Displays the peak value with degree symbol (e.g., `28°`) and local occurrence time (`at 15:00`).
+   - Gracefully reports `--` / `Unavailable` when forecast data is missing rather than falsifying current temperature.
+3. **Daylight Left / Golden Hour (`#ephemeris-day-sun`)**:
+   - Tracks morning and evening golden hour windows and remaining solar daylight until local sunset.
+   - Displays dynamic countdown timers (e.g., `4h 12m left` or active golden hour indicator).
+   - Reports `All Day` during polar day and `None` during polar night.
+
+### 29.3 Dynamic Nighttime 3-Card Ephemeris Presentation
+Replaces the fixed moon row with three nocturnal cards:
+1. **Next Golden Hour (`#ephemeris-night-golden`)**:
+   - Computes the next local morning golden hour window following sunset.
+   - Shows local start time and countdown (e.g., `in 8h 24m` / `06:12 - 06:48`).
+2. **Moon Phase & Visibility Outlook (`#ephemeris-night-moon`)**:
+   - Renders astronomical phase glyph (🌑 to 🌘) and localized human-readable phase name (e.g., `Waxing Crescent`).
+   - Displays illuminated fraction percentage (`14%`) and synodic waxing/waning direction.
+   - Derives whether the moon is currently above the local horizon via `SunCalc.getMoonPosition(now, lat, lng).altitude > 0`.
+   - Incorporates forecast cloud cover as an explicitly labeled visibility factor (e.g., `Visible · Clear Skies` or `Hidden · Overcast`).
+3. **Next Sky Event (`#ephemeris-night-event`)**:
+   - Evaluates the nearest upcoming celestial transit among astronomical dawn, sunrise, moonset, or moonrise.
+   - Automatically prevents duplicate reporting with Card 1 (Golden Hour) by selecting the next distinct transit.
+   - Includes bundled high-precision 2026 NASA astronomical calendar events (Orionids, Geminids, Perseids, Solstices, Equinoxes).
+
+### 29.4 Progressive Disclosure Floating Hover Popover (`#hud-hover-popover`)
+- **Acrylic Floating Surface**: A unified floating acrylic popover element positioned directly before closing `</body>` tags, featuring 12px backdrop blur, hardware-accelerated transitions, and high-contrast glass typography.
+- **Contextual Intelligence**: Progressive disclosure across 22 HUD and companion dock elements (weather, metrics, day/night cards, AQI, hardware sparklines, battery, news, Pomodoro, and media player).
+- **Viewport Clamping**: Dynamic coordinate clamping enforces minimum 8px margins from all viewport boundaries, preventing screen clipping across multi-monitor setups and 720p through 4K displays.
+- **Accessibility & Focus Integration**: Dual pointer hover (`pointerenter` / `pointerleave`) and keyboard focus (`focusin` / `focusout`) listeners; dynamically binds `aria-describedby="hud-hover-popover"` to focused controls; dismisses immediately on <kbd>Escape</kbd>.
+- **Zero Network Egress**: Popover content is constructed entirely from existing client-side cache and telemetry state—zero background fetches on cursor motion.
+
+### 29.5 Interactive Live News Dots
+- **Accessible Controls**: Converted static pagination indicators into accessible `<button class="news-dot" type="button" role="tab" aria-selected="..." data-idx="...">` elements within a `role="tablist"` container.
+- **Metadata Hover Preview**: Hovering over any dot immediately reveals the story publisher domain and relative publication age (`2h ago`) within the floating hover popover.
+- **Instant Story Selection**: Clicking or pressing <kbd>Enter</kbd> / <kbd>Space</kbd> on a dot immediately selects and transitions to that story, resetting the automatic 7-second rotation timer to avoid jarring mid-read slide changes.

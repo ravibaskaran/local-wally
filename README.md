@@ -69,8 +69,14 @@ Most animated wallpapers are notorious resource hogs. They run heavy video loops
   - **MET Norway / Yr.no**: European meteorological service (client-side queries route reliably via Open-Meteo).
   - **OpenWeatherMap**: Keyed integration with automatic free fallbacks.
 - **Air Quality Monitoring**: Real-time European Air Quality Index (AQI) with pollutant levels (PM2.5 / PM10) via Open-Meteo or WAQI ground stations.
-- **Sun & Moon Tracker**: Real-time sunrise, solar noon, and sunset times, plus current moon phase glyphs (🌑 to 🌘) with exact illumination percentages.
+- **Dynamic Day & Night Ephemeris Cards**: Replaced static solar/lunar rows with three glanceable, context-adaptive cards automatically determined by physical astronomical solar altitude (`altitude > -0.01454` radians):
+  - **Daytime**: (1) **Rain Outlook** (imminent precipitation window & peak probability or clear-sky status), (2) **Feels-Like Peak** (daily maximum apparent temperature & time), (3) **Daylight Left** (remaining hours to sunset or active golden hour countdown).
+  - **Nighttime**: (1) **Next Golden Hour** (morning window start/end and countdown), (2) **Moon Phase & Visibility Outlook** (astronomical emoji glyph, illumination %, waxing/waning status, horizon altitude, and forecast cloud factor), (3) **Next Sky Event** (dawn, sunrise, moonset, or NASA 2026 meteor shower/solstice calendar).
 - **Zero-Config Location**: Automatically finds your city via Windows location or secure IP lookup, with safe offline defaults if internet access is interrupted.
+
+### 🔍 Progressive Disclosure Hover Popovers & Accessibility
+- **Floating Acrylic Hover Cards**: Hovering or focusing any of the 22 HUD and companion dock elements displays a floating glass popover (`#hud-hover-popover`) with 12px blur, progressive disclosure telemetry, and viewport boundary clamping (prevents edge clipping).
+- **Full Keyboard & Touch Accessibility**: Focus seamlessly via <kbd>Tab</kbd> with dynamic `aria-describedby` binding, or dismiss instantly with <kbd>Esc</kbd>. Zero network requests on hover.
 
 ### 📊 Space-Efficient 24-Hour Forecast Chart
 - **Compact & Glare-Free**: An inline vector weather chart that shows you exactly what to expect over the next 24 hours without cluttering your desktop.
@@ -88,9 +94,9 @@ Most animated wallpapers are notorious resource hogs. They run heavy video loops
 - **Smooth Mini Graphs (Sparklines)**: Real-time 40-point history graphs that update smoothly with zero noticeable CPU usage.
 - **Smart Laptop Battery Meter**: Shows battery percentage and charging state (⚡). Automatically hides itself on desktop PCs so no space is wasted.
 
-### 📰 Regional News Headlines
-- Delivers the latest regional news headlines directly to your desktop.
-- Automatically rotates stories smoothly every few seconds, with one-click links to read full articles in your browser.
+### 📰 Regional News Headlines & Interactive Dots
+- Delivers the latest regional news headlines directly to your desktop with smooth auto-rotation every 7 seconds.
+- **Interactive Story Dots**: Hovering any dot reveals the publisher outlet and publish age in the floating popover; clicking or keyboard-activating (<kbd>Enter</kbd> / <kbd>Space</kbd>) instantly switches stories and resets the rotation timer. Direct outbound links to full articles in your browser.
 
 ---
 
@@ -261,6 +267,14 @@ local-wally/
 ---
 
 ## 🛡️ Recent Updates & Quality Improvements
+
+### Version 0.7.2 — Dynamic Day/Night Cards, Ephemeris Precision & Progressive Disclosure
+- **Dynamic 3-Card Daytime & Nighttime Ephemeris**: Replaced fixed static solar/lunar rows with three glanceable, context-adaptive cards automatically determined by physical astronomical solar altitude (`altitude > -0.01454` rad) rather than fixed clock hours or stale API cache flags:
+  - **Daytime**: Rain Outlook (6h window, peak rain time & probability), Feels-Like Peak (daily max apparent temperature & occurrence time), and Daylight Left / Golden Hour countdown.
+  - **Nighttime**: Next Morning Golden Hour countdown, Moon Phase & Visibility Outlook (astronomical emoji, illumination %, waxing/waning, altitude, and forecast cloud factor), and Next Sky Event (dawn, sunrise, moonset, or NASA 2026 meteor shower/solstice calendar).
+- **Progressive Disclosure Floating Hover Popover (`#hud-hover-popover`)**: Hovering or focusing any of the 22 HUD and companion dock elements displays a dedicated acrylic popover with 12px blur, progressive disclosure telemetry, viewport boundary clamping (prevents off-screen clipping), and full keyboard/touch support (<kbd>Tab</kbd> navigation, <kbd>Esc</kbd> dismissal). Zero network requests on hover.
+- **Interactive Live News Dots**: Upgraded news pagination dots to accessible `<button class="news-dot" type="button" role="tab">` controls within a `role="tablist"` container. Hovering any dot previews the publisher and relative article age; clicking or pressing <kbd>Enter</kbd> / <kbd>Space</kbd> immediately transitions to that story and resets the rotation timer.
+- **Polar Resilience & Timezone Alignment**: Formats all solar and lunar instants using explicit IANA timezone identifiers with cached formatters, handling polar day (midnight sun) and polar night without invalid date representations.
 
 ### Version 0.7.1 — Hover Tooltip Restoration, Clean Moon Ephemeris & Hardware Efficiency
 - **Restored Mouse Hover Tooltips Across All Cards**: Restored native hover tooltips across all 9 HUD & companion cards (`#hud-weather-card`, `#hud-metrics-row`, `#hud-forecast-card`, `#hud-ephemeris-card`, `#hud-aqi-card`, `#hud-hw-block`, `#hud-news-block`, `#pomodoro-card`, and `#media-card`) with rich static labels in HTML and zero-allocation dynamic DOM `.title` attribute updates on incoming telemetry.
