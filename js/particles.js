@@ -17,9 +17,7 @@
     : 1800;
   var MAX_PRECIP = Math.max(100, Math.min(5000, cfgMaxPrecip));
   var MAX_SPLASHES = 120;
-  var MAX_STARS = 0; // Disabled: unnecessary blinking stars removed from wallpaper UI
 
-  var COLOR_STAR = 'rgba(255, 255, 255, 0.85)';
   var COLOR_SNOW = 'rgba(255, 255, 255, 0.82)';
   var COLOR_STORM_RAIN = 'rgba(215, 235, 255, 0.65)';
   var COLOR_RAIN = 'rgba(225, 240, 255, 0.45)';
@@ -154,13 +152,7 @@
     this.sActive = new Uint8Array(MAX_SPLASHES);
     this.splashRingIndex = 0;
 
-    // Pre-allocated Struct-of-Arrays for Starfield
-    this.stX = new Float32Array(MAX_STARS);
-    this.stY = new Float32Array(MAX_STARS);
-    this.stSize = new Float32Array(MAX_STARS);
-    this.stBaseAlpha = new Float32Array(MAX_STARS);
-    this.stPhase = new Float32Array(MAX_STARS);
-    this.stSpeed = new Float32Array(MAX_STARS);
+    // Starfield disabled: zero-allocation placeholder for backward compatibility
     this.activeStarCount = 0;
 
     this.initPools();
@@ -169,17 +161,6 @@
 
   ParticleEngine.prototype.initPools = function() {
     var i;
-    // Initialize stars uniformly
-    for (i = 0; i < MAX_STARS; i++) {
-      this.stX[i] = random() * this.width;
-      this.stY[i] = random() * (this.height * 0.75); // Upper three quarters
-      this.stSize[i] = 0.6 + random() * 1.4;
-      this.stBaseAlpha[i] = 0.2 + random() * 0.7;
-      this.stPhase[i] = random() * TWO_PI;
-      this.stSpeed[i] = 0.02 + random() * 0.04;
-    }
-    this.activeStarCount = MAX_STARS;
-
     // Initialize precipitation slots
     for (i = 0; i < MAX_PRECIP; i++) {
       this.resetPrecipParticle(i, true);
@@ -246,12 +227,6 @@
 
     if (this.ctx) {
       this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    }
-
-    // Rescale star positions to fit screen bounds
-    for (var i = 0; i < MAX_STARS; i++) {
-      this.stX[i] = random() * w;
-      this.stY[i] = random() * (h * 0.75);
     }
   };
 
@@ -371,17 +346,7 @@
       }
     }
 
-    // 1. Update Starfield
-    if (this.showStars) {
-      for (i = 0; i < this.activeStarCount; i++) {
-        this.stPhase[i] += this.stSpeed[i] * timeScale;
-        if (this.stPhase[i] > TWO_PI) {
-          this.stPhase[i] -= TWO_PI;
-        }
-      }
-    }
-
-    // 2. Update Precipitation Particles
+    // 1. Update Precipitation Particles
     var count = this.activePrecipCount;
     var isSnow = (this.mode === 'SNOW');
 
@@ -454,7 +419,6 @@
   };
 
   ParticleEngine.prototype.hasActiveAnimation = function() {
-    if (this.showStars) return true;
     if (this.activePrecipCount > 0) return true;
     if (this.lightningAlpha > 0.005) return true;
     for (var i = 0; i < MAX_SPLASHES; i++) {
@@ -483,24 +447,7 @@
 
     var i;
 
-    // 1. Draw Starfield (Single Batched Fill)
-    if (this.showStars) {
-      ctx.fillStyle = COLOR_STAR;
-      ctx.beginPath();
-      for (i = 0; i < this.activeStarCount; i++) {
-        var a = this.stBaseAlpha[i] * (0.4 + 0.6 * sin(this.stPhase[i]));
-        if (a > 0.15) {
-          var sx = this.stX[i];
-          var sy = this.stY[i];
-          var sr = this.stSize[i];
-          ctx.moveTo(sx + sr, sy);
-          ctx.arc(sx, sy, sr, 0, TWO_PI);
-        }
-      }
-      ctx.fill();
-    }
-
-    // 2. Draw Precipitation
+    // 1. Draw Precipitation
     var count = this.activePrecipCount;
     if (count > 0) {
       if (this.mode === 'SNOW') {

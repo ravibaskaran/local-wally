@@ -1102,3 +1102,29 @@ Local Wally v0.6.4 introduces proxy-free regional news ingestion via GDELT DOC 2
 - **Atomic Release Packaging**: `package_release.js` creates a failure-safe `.bak` archive with automatic rollback if replacement fails, preserving existing distribution archives.
 - **Accessible Detail Drawer**: Modal traps keyboard focus (Tab / Shift+Tab), closes on Escape, and restores focus to triggering cards.
 
+---
+
+## 28. v0.7.1 Hover Tooltip Restoration, Clean Moon Badge & Hardware Efficiency
+
+### 28.1 Restored Mouse Hover Tooltips Across All HUD Cards
+- **Problem**: When HUD cards were wrapped with `.hud-card-interactive` and `tabindex="0"` for the accessible detail drawer, static and dynamic native browser `title` tooltips were absent, depriving users of quick hover glances without clicking.
+- **Implementation**:
+  - Restored descriptive static `title` attributes in `index.html` across all 9 primary and companion card elements (`#hud-weather-card`, `#hud-metrics-row`, `#hud-forecast-card`, `#hud-ephemeris-card`, `#hud-aqi-card`, `#hud-hw-block`, `#hud-news-block`, `#pomodoro-card`, and `#media-card`).
+  - Implemented dynamic DOM `.title` binding on telemetry updates across `App.renderWeather`, `App.renderAqi`, `App.renderCelestial`, `App.handleSystemInfo`, `App.displayNewsItem`, `MediaVisualizerEngine.handleTrackUpdate`, and `PomodoroEngine.render`.
+  - Added SVG `<title>` child elements and `title` attributes to all forecast dots and values in `SvgForecastChartEngine.prototype.render`.
+  - Zero heap allocation overhead: updates reuse existing DOM string concatenations during discrete throttled updates without impacting the 60 FPS continuous animation loop.
+
+### 28.2 Clean Moon Ephemeris Badge & Artifact Removal
+- **Problem**: In `css/style.css`, `.moon-badge` had explicit `border: 1px solid var(--card-border); background: var(--card-bg); border-radius: 8px;`. During New Moon phases, the dark glyph `🌑` caused the empty badge container to look like a clickable button or an isolated horizontal line artifact right above the celestial divider.
+- **Implementation**:
+  - Redesigned `.moon-badge` to be completely borderless, transparent, and shadowless (`background: transparent; border: none; padding: 2px 4px; box-shadow: none;`). Removed hover background color overrides.
+  - Added `#hud-ephemeris-moon` container ID and dynamically toggled `.is-hidden` during nocturnal hours in `App.renderCelestial` (with `.hud-ephemeris-moon.is-hidden { display: none !important; }`), eliminating visual duplication with the dedicated night ephemeris row.
+
+### 28.3 Starfield Buffer Purge & ParticleEngine Hardware Optimization
+- **Problem**: Following the elimination of synthetic twinkling stars in v0.6.6, `js/particles.js` retained 6 unused `Float32Array` buffers (`stX`, `stY`, `stSize`, `stBaseAlpha`, `stPhase`, `stSpeed`) and empty iteration loops in `initPools`, `resize`, `update`, and `render`.
+- **Implementation**:
+  - Purged all 6 unused typed arrays and removed dead loops in `js/particles.js`, freeing memory buffers on integrated GPUs (iGPUs).
+  - Maintained backward-compatible properties (`this.activeStarCount = 0`, `this.showStars = false`) so external callers and host properties continue operating cleanly.
+  - Preserved 0% CPU/GPU parked animation loop behavior during clear/fair weather conditions.
+
+

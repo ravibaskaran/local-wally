@@ -1152,7 +1152,8 @@ html, body {
 }
 
 .hud-ephemeris-sun.is-hidden,
-.hud-ephemeris-moon-row.is-hidden {
+.hud-ephemeris-moon-row.is-hidden,
+.hud-ephemeris-moon.is-hidden {
   display: none !important;
 }
 
@@ -1215,15 +1216,16 @@ html, body {
 .moon-badge {
   display: flex;
   align-items: center;
-  background: var(--card-bg);
-  border: 1px solid var(--card-border);
-  border-radius: 8px;
-  padding: 3px 8px;
-  transition: background 0.2s ease;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 2px 4px;
+  box-shadow: none;
+  transition: opacity 0.2s ease;
 }
 
 .moon-badge:hover {
-  background: var(--card-hover-bg);
+  background: transparent;
 }
 
 .moon-glyph {
