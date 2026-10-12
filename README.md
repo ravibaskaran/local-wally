@@ -40,7 +40,7 @@ Most animated wallpapers are notorious resource hogs. They run heavy video loops
 - **Precise & Battery-Safe**: Uses real wall-clock timestamps so it never loses time or drifts, even if your PC is under heavy load. If you open a full-screen app, the timer pauses background animations and picks right back up when you return.
 
 ### ☀️ Realistic Day, Night & Solar Lighting
-- **Living Landscapes**: Beautiful landscape photos that change throughout the day, overlaid with real-time solar lighting based on the actual position of the sun in your sky:
+- **Multi-Source Living Landscapes**: Choose between Unsplash (keyless default), Wallhaven, Pexels, Pixabay, or automatic round-robin source rotation. High-resolution landscape photography matches your screen resolution and updates with live weather conditions, overlaid with real-time solar lighting:
   - **Sunrise & Sunset**: Warm amber and rose horizon glows.
   - **Golden Hour**: Radiant warm sunlight wash across the landscape.
   - **Midday**: Crisp daylight glow with realistic directional sunlight flares.
@@ -94,9 +94,11 @@ Most animated wallpapers are notorious resource hogs. They run heavy video loops
 - **Smooth Mini Graphs (Sparklines)**: Real-time 40-point history graphs that update smoothly with zero noticeable CPU usage.
 - **Smart Laptop Battery Meter**: Shows battery percentage and charging state (⚡). Automatically hides itself on desktop PCs so no space is wasted.
 
-### 📰 Regional News Headlines & Interactive Dots
-- Delivers the latest regional news headlines directly to your desktop with smooth auto-rotation every 7 seconds.
-- **Interactive Story Dots**: Hovering any dot reveals the publisher outlet and publish age in the floating popover; clicking or keyboard-activating (<kbd>Enter</kbd> / <kbd>Space</kbd>) instantly switches stories and resets the rotation timer. Direct outbound links to full articles in your browser.
+### 📰 Multi-Source Regional News & Interactive Dots
+- **Flexible News Providers**: Choose between Google News (GDELT DOC 2.0 keyless default & fallback), NewsAPI, Currents News, or automatic rotation across configured sources.
+- **15-Minute Cache Firewall**: Prevents rate-limit exhaustion and battery drain with strict client-side caching and in-flight de-duplication across reloads and UI interactions.
+- **Dynamic Source Labeling**: Header and accessibility tags dynamically update to reflect the active provider (`Google News`, `NewsAPI`, `Currents News`).
+- **Interactive Story Dots**: Hovering any dot reveals the publisher outlet and publish age in the floating popover; clicking or keyboard-activating (<kbd>Enter</kbd> / <kbd>Space</kbd>) instantly switches stories and resets the rotation timer. Direct safe `https:` outbound links to full publisher articles in your browser.
 
 ---
 
@@ -267,6 +269,23 @@ local-wally/
 ---
 
 ## 🛡️ Recent Updates & Quality Improvements
+
+### Version 0.8 — Multi-Source Wallpaper Providers & Localized News Engines
+- **Multi-Source Wallpaper Engine**: Support for multiple wallpaper providers selectable via Lively Settings or `config.js`:
+  - **Unsplash** (Default): Keyless high-resolution curated CDN fallbacks or custom developer API key.
+  - **Wallhaven**: Keyed landscape wallpapers (`https://wallhaven.cc/api/v1/search`) filtered to SFW landscapes and resolution thresholds.
+  - **Pexels**: Keyed landscape photography via official REST API (`https://api.pexels.com/v1/search`).
+  - **Pixabay**: Keyed horizontal landscape photography via official API (`https://pixabay.com/api/`).
+  - **Rotate Configured Sources**: Automatically rotates through configured/keyed providers in stable round-robin order (`Unsplash → Wallhaven → Pexels → Pixabay`), with persistent cursor tracking, bounded recent history (max 80 images), and single Unsplash fallback.
+- **Aspect Ratio Closeness & Candidate Ranking**: Evaluates candidates by aspect ratio closeness to the native display viewport, adequate resolution, and non-recent status.
+- **Contextual Weather Query Mapping**: Maps live weather conditions (`Clear`, `Cloudy`, `Rain`, `Snow`, `Fog`, `Storm`) directly to landscape queries without transmitting coordinates to image services.
+- **Multi-Provider Regional News**:
+  - **Google News** (Default & Fallback): GDELT DOC 2.0 direct publisher news with Google News RSS fallback.
+  - **NewsAPI**: Keyed headlines via `/v2/everything` with city/country disambiguation and safe `https:` link validation.
+  - **Currents News**: Keyed global news search via `/v1/search` with ISO-2 lowercase country filtering.
+  - **Automatic News Rotation**: Cycles among Google News and configured keyed providers on each refresh cycle.
+- **15-Minute News Cache Firewall**: Enforces a strict 15-minute client-side cache firewall surviving reloads, preventing redundant requests on property changes, and de-duplicating in-flight requests.
+- **Dynamic Semantic Card Labeling**: News card header (`#hud-news-title`), source attribution, and accessibility labels update dynamically to reflect the active provider (`Google News`, `NewsAPI`, `Currents News`).
 
 ### Version 0.7.3 — Audit Hardening, Ephemeris Precision & Popover Safety
 - **News Listener Delegation & Invalidation Lifecycle**: Replaced per-render listener attachment with a single delegated event listener on the `#hud-news-dots` container. Invalides and clears both rotation and transition timeouts (`clearNewsTimers()`) on manual dot clicks, preventing stale ~300ms transition callbacks from overriding user selections. Implemented roving `tabindex` and full arrow key navigation across news tabs.

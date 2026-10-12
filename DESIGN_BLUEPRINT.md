@@ -1217,3 +1217,38 @@ Replaces the fixed moon row with three nocturnal cards:
 - **Zero-Load Parking**: `stopLoop()` halts `clockInterval`, `hwFallbackTimer`, `syncInterval`, and news timers, ensuring true 0% CPU and 0% GPU load during Lively Wallpaper sleep/game modes.
 - **Early Lively Lifecycle Hook**: Added early `global.livelyWallpaperPlaybackChanged` fallback in `js/lively.js` prior to `init()`, and reconciled initial document visibility (`document.hidden`).
 
+---
+
+## 31. v0.8 Multi-Source Wallpaper Providers & Localized News Architecture
+
+### 31.1 Multi-Provider Wallpaper Architecture
+- **Supported Providers**:
+  - **Unsplash** (Default): Keyless high-resolution curated CDN fallbacks + optional developer API key.
+  - **Wallhaven**: Keyed landscape wallpaper search (`https://wallhaven.cc/api/v1/search`), filtered to general/SFW landscape ratios (`16x9,16x10,21x9`) and native resolution thresholds.
+  - **Pexels**: Keyed landscape photography via official REST API (`https://api.pexels.com/v1/search`) with `Authorization` header.
+  - **Pixabay**: Keyed horizontal landscape photography via official API (`https://pixabay.com/api/`).
+  - **Rotate Configured Sources**: Cycles through configured (keyed) providers in stable round-robin order (`Unsplash → Wallhaven → Pexels → Pixabay`). Persists cursor to `localStorage`, advances after every attempt to prevent broken provider traps, and bounds to at most 1 primary request + at most 1 Unsplash fallback.
+- **Aspect Ratio Closeness & Candidate Ranking**:
+  - Computes target screen aspect ratio from device resolution ($W / H$).
+  - Evaluates candidates by aspect ratio difference $|(W_c / H_c) - (W / H)|$, resolution sufficiency ($W_c \ge 0.75W, H_c \ge 0.75H$), and filters against recent history.
+- **Bounded Recent Wallpaper History**:
+  - Maintains a strict 80-item recent ID/URL history (`local_wally_recent_wallpapers` in `localStorage`) to prevent repeats during rotation.
+- **Weather Condition Mapping**:
+  - Maps real-time weather categories to landscape search terms (`Clear` $\to$ clear sky / night sky, `Cloudy/Overcast` $\to$ cloudy, `Rain/Drizzle` $\to$ rainy, `Snow` $\to$ snowy, `Fog/Mist` $\to$ misty, `Storm/Thunderstorm` $\to$ stormy, unknown $\to$ neutral nature landscape). Never transmits GPS coordinates to image services.
+- **Credential Redaction & Privacy**:
+  - API keys are never written to source files or logged. Query-based provider keys (Pixabay) are automatically scrubbed via `sanitizeUrl()` before logging or error rejection.
+
+### 31.2 Localized News Providers & 15-Minute Cache Firewall
+- **Supported News Providers**:
+  - **Google News** (Default & Fallback): GDELT DOC 2.0 direct publisher news with Google News RSS fallback.
+  - **NewsAPI**: Keyed headlines via `/v2/everything` with `X-Api-Key` header, local city & country disambiguation, and safe `https:` link validation. Client-side CORS/426 restrictions on developer tiers automatically fall back once to Google News.
+  - **Currents News**: Keyed global news search via `/v1/search` with Bearer auth, keyword targeting, and ISO-2 lowercase country filtering.
+  - **Rotation Mode**: If $\ge 1$ keyed provider is configured or rotation is explicitly selected, cycles between Google News and configured sources during refresh cycles.
+- **15-Minute Cache Firewall**:
+  - Enforces `15 * 60 * 1000` ms cache lifetime in `localStorage` (`LIVELY_HUD_NEWS_SNAPSHOT`).
+  - Reloads, UI renders, hovers, story clicks, and property updates are strictly prevented from bypassing the firewall.
+  - In-flight request de-duplication (`_activeNewsPromise`) guarantees zero parallel duplicate requests.
+- **Dynamic Semantic Card Labeling**:
+  - News card title (`#hud-news-title`), source label, and accessibility attributes update dynamically based on the active provider (`Google News`, `NewsAPI`, `Currents News`).
+  - Fallback articles are labeled `Google News`, preserving honest provider status.
+  - Direct publisher links are validated and prioritized over aggregator wrapper URLs.

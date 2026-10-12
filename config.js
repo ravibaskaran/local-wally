@@ -63,11 +63,24 @@
     hwUpdateIntervalSeconds: 10,
 
     // --------------------------------------------------------------------------
-    // 8. UNSPLASH DEVELOPER API ACCESS KEY (OPTIONAL)
+    // 8. WALLPAPER PROVIDER & ACCESS KEYS
     // --------------------------------------------------------------------------
+    // Provider used for background wallpaper photography.
+    // Default: 'unsplash' | Options: 'unsplash', 'wallhaven', 'pexels', 'pixabay', 'rotate'
+    wallpaperProvider: 'unsplash',
+
     // Custom Unsplash API Access Key for unlimited live contextual landscape photo queries.
     // Default: '' (When empty, high-res curated CDN photography is utilized with zero API keys)
     unsplashApiKey: '',
+
+    // Custom Wallhaven API Key (optional/blank by default)
+    wallhavenApiKey: '',
+
+    // Custom Pexels API Key (optional/blank by default)
+    pexelsApiKey: '',
+
+    // Custom Pixabay API Key (optional/blank by default)
+    pixabayApiKey: '',
 
     // --------------------------------------------------------------------------
     // 9. MAXIMUM PROCEDURAL PRECIPITATION PARTICLES
@@ -162,13 +175,23 @@
     enableDynamicSolarLighting: true,
 
     // --------------------------------------------------------------------------
-    // 20. REGIONAL NEWS DISPATCH BLOCK DISPLAY
+    // 20. REGIONAL NEWS DISPATCH BLOCK DISPLAY & PROVIDER
     // --------------------------------------------------------------------------
-    // Toggles the regional Google News RSS block in the secondary column.
+    // Toggles the regional news block in the secondary column.
     // When false, the news carousel timer is halted (0% CPU) and the hardware
     // monitor expands to occupy the secondary Bento column.
     // Default: true | Options: true, false
     showNewsFeed: true,
+
+    // Regional News Provider
+    // Default: 'google-news' | Options: 'google-news', 'newsapi', 'currents', 'rotate'
+    newsProvider: 'google-news',
+
+    // Custom NewsAPI key (optional/blank by default)
+    newsApiKey: '',
+
+    // Custom Currents News API key (optional/blank by default)
+    currentsApiKey: '',
 
     // --------------------------------------------------------------------------
     // 21. HARDWARE SYSTEM TELEMETRY MONITOR DISPLAY

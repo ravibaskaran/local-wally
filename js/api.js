@@ -76,7 +76,14 @@
     openweathermapApiKey: (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.openweathermapApiKey) || '',
     aqiProvider: (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.aqiProvider) || 'open-meteo',
     waqiApiKey: (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.waqiApiKey) || '',
+    wallpaperProvider: (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.wallpaperProvider) || 'unsplash',
     unsplashApiKey: (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.unsplashApiKey) || '',
+    wallhavenApiKey: (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.wallhavenApiKey) || '',
+    pexelsApiKey: (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.pexelsApiKey) || '',
+    pixabayApiKey: (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.pixabayApiKey) || '',
+    newsProvider: (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.newsProvider) || 'google-news',
+    newsApiKey: (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.newsApiKey) || '',
+    currentsApiKey: (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.currentsApiKey) || '',
 
     /**
      * Detects native physical display dimensions
@@ -1149,14 +1156,119 @@
       return adapter(lat, lon, options);
     },
 
-    /**
-     * Contextual Image Loader with Unsplash API integration and curated fallbacks.
-     * Enforces dynamic native resolution matching (&w=${width}&h=${height}&fit=crop&q=85)
-     * for seamless 1:1 pixel screen fill.
-     */
-    fetchContextualImage: function(weatherCategory, isDay, customKeyword) {
-      var self = this;
-      return new Promise(function(resolve) {
+    getWallpaperRotateCursor: function() {
+      try {
+        if (typeof localStorage !== 'undefined') {
+          var val = parseInt(localStorage.getItem('local_wally_wallpaper_rotate_cursor'), 10);
+          if (!isNaN(val) && val >= 0) return val;
+        }
+      } catch (e) {}
+      return 0;
+    },
+
+    setWallpaperRotateCursor: function(cursor) {
+      try {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('local_wally_wallpaper_rotate_cursor', String(cursor));
+        }
+      } catch (e) {}
+    },
+
+    getRecentWallpapers: function() {
+      try {
+        if (typeof localStorage !== 'undefined') {
+          var raw = localStorage.getItem('local_wally_recent_wallpapers');
+          if (raw) {
+            var parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) return parsed;
+          }
+        }
+      } catch (e) {}
+      return [];
+    },
+
+    addRecentWallpaper: function(idOrUrl) {
+      if (!idOrUrl || typeof idOrUrl !== 'string') return;
+      try {
+        if (typeof localStorage !== 'undefined') {
+          var recents = this.getRecentWallpapers();
+          var idx = recents.indexOf(idOrUrl);
+          if (idx !== -1) {
+            recents.splice(idx, 1);
+          }
+          recents.unshift(idOrUrl);
+          if (recents.length > 80) {
+            recents = recents.slice(0, 80);
+          }
+          localStorage.setItem('local_wally_recent_wallpapers', JSON.stringify(recents));
+        }
+      } catch (e) {}
+    },
+
+    mapWeatherToQuery: function(weatherCategory, isDay, customKeyword) {
+      if (customKeyword && typeof customKeyword === 'string' && customKeyword.trim()) {
+        return customKeyword.trim();
+      }
+      var cat = (weatherCategory || '').toUpperCase();
+      switch (cat) {
+        case 'CLEAR':
+          return isDay ? 'clear sky landscape' : 'night sky landscape';
+        case 'CLOUDY':
+        case 'OVERCAST':
+          return 'cloudy landscape';
+        case 'RAIN':
+        case 'DRIZZLE':
+          return 'rainy landscape';
+        case 'SNOW':
+          return 'snowy landscape';
+        case 'FOG':
+        case 'MIST':
+          return 'misty landscape';
+        case 'THUNDERSTORM':
+        case 'STORM':
+          return 'stormy landscape';
+        default:
+          return 'nature landscape';
+      }
+    },
+
+    rankWallpaperCandidates: function(candidates, targetWidth, targetHeight) {
+      if (!Array.isArray(candidates) || candidates.length === 0) return [];
+      var targetAspect = targetWidth / targetHeight;
+      var recentSet = new Set(this.getRecentWallpapers());
+
+      return candidates.slice().sort(function(a, b) {
+        var aInRecent = recentSet.has(a.id) || recentSet.has(a.url);
+        var bInRecent = recentSet.has(b.id) || recentSet.has(b.url);
+
+        if (aInRecent && !bInRecent) return 1;
+        if (!aInRecent && bInRecent) return -1;
+
+        var aHasDims = (typeof a.width === 'number' && a.width > 0 && typeof a.height === 'number' && a.height > 0);
+        var bHasDims = (typeof b.width === 'number' && b.width > 0 && typeof b.height === 'number' && b.height > 0);
+
+        if (aHasDims && bHasDims) {
+          var aAspect = a.width / a.height;
+          var bAspect = b.width / b.height;
+          var aDiff = Math.abs(aAspect - targetAspect);
+          var bDiff = Math.abs(bAspect - targetAspect);
+
+          var aSufficient = a.width >= targetWidth * 0.75 && a.height >= targetHeight * 0.75;
+          var bSufficient = b.width >= targetWidth * 0.75 && b.height >= targetHeight * 0.75;
+          if (aSufficient && !bSufficient) return -1;
+          if (!aSufficient && bSufficient) return 1;
+
+          return aDiff - bDiff;
+        }
+        if (aHasDims && !bHasDims) return -1;
+        if (!aHasDims && bHasDims) return 1;
+        return 0;
+      });
+    },
+
+    WallpaperAdapter: {
+      unsplash: function(weatherCategory, isDay, query, nativeRes) {
+        var self = this;
         var key = (self.unsplashApiKey || '').trim();
         var fallbackSet;
 
@@ -1172,27 +1284,29 @@
           fallbackSet = isDay ? CURATED_LANDSCAPES.CLEAR_DAY : CURATED_LANDSCAPES.CLEAR_NIGHT;
         }
 
-        var nativeRes = self.getNativeResolution();
         var defaultFallbackUrl = fallbackSet[Math.floor(Math.random() * fallbackSet.length)];
         var formattedFallbackUrl = self.formatImageUrl(defaultFallbackUrl, nativeRes.width, nativeRes.height);
 
-        // If no user API key, return curated scenic landscape formatted with native resolution immediately
         if (!key) {
-          resolve({
+          return Promise.resolve({
+            provider: 'unsplash',
+            id: 'curated-' + Math.floor(Math.random() * 100000),
             url: formattedFallbackUrl,
+            sourceUrl: 'https://unsplash.com',
             photographer: 'Ambient Nature',
-            photographerUrl: 'https://unsplash.com'
+            photographerUrl: 'https://unsplash.com',
+            width: nativeRes.width,
+            height: nativeRes.height,
+            description: 'Ambient nature landscape'
           });
-          return;
         }
 
-        var searchQuery = customKeyword || (isDay ? 'nature landscape' : 'night sky landscape');
         var apiUrl = 'https://api.unsplash.com/photos/random?query=' +
-          encodeURIComponent(searchQuery) +
+          encodeURIComponent(query) +
           '&orientation=landscape&featured=true' +
           '&w=' + nativeRes.width + '&h=' + nativeRes.height;
 
-        self.fetchWithTimeout(apiUrl, 6000, {
+        return self.fetchWithTimeout(apiUrl, 6000, {
           headers: {
             'Authorization': 'Client-ID ' + key,
             'Accept-Version': 'v1'
@@ -1206,24 +1320,230 @@
             if (photo && photo.urls && (photo.urls.raw || photo.urls.full || photo.urls.regular)) {
               var sourceUrl = photo.urls.raw || photo.urls.full || photo.urls.regular;
               var finalUrl = self.formatImageUrl(sourceUrl, nativeRes.width, nativeRes.height);
-              resolve({
+              return {
+                provider: 'unsplash',
+                id: photo.id ? String(photo.id) : '',
                 url: finalUrl,
+                sourceUrl: (photo.links && photo.links.html) || 'https://unsplash.com',
                 photographer: (photo.user && photo.user.name) || 'Unsplash Artist',
-                photographerUrl: (photo.user && photo.user.links && photo.user.links.html) || 'https://unsplash.com'
-              });
-            } else {
-              throw new Error('Invalid Unsplash payload');
+                photographerUrl: (photo.user && photo.user.links && photo.user.links.html) || 'https://unsplash.com',
+                width: photo.width || nativeRes.width,
+                height: photo.height || nativeRes.height,
+                description: photo.description || photo.alt_description || ''
+              };
             }
+            throw new Error('Invalid Unsplash payload');
           })
           .catch(function(err) {
             console.warn('[ApiService] Unsplash query failed, using resolution-scaled fallback:', err.message);
-            resolve({
+            return {
+              provider: 'unsplash',
+              id: 'curated-' + Math.floor(Math.random() * 100000),
               url: formattedFallbackUrl,
+              sourceUrl: 'https://unsplash.com',
               photographer: 'Ambient Nature',
-              photographerUrl: 'https://unsplash.com'
-            });
+              photographerUrl: 'https://unsplash.com',
+              width: nativeRes.width,
+              height: nativeRes.height,
+              description: 'Ambient nature landscape'
+            };
           });
-      });
+      },
+
+      wallhaven: function(query, nativeRes) {
+        var self = this;
+        var key = (self.wallhavenApiKey || '').trim();
+        if (!key) {
+          return Promise.reject(new Error('Wallhaven API key missing'));
+        }
+
+        var apiUrl = 'https://wallhaven.cc/api/v1/search?q=' + encodeURIComponent(query) +
+          '&categories=100&purity=100&sorting=random&order=desc&ratios=16x9,16x10,21x9' +
+          '&atleast=' + nativeRes.width + 'x' + nativeRes.height;
+
+        return self.fetchWithTimeout(apiUrl, 6000, {
+          headers: {
+            'X-API-Key': key
+          }
+        })
+          .then(function(res) {
+            if (!res.ok) throw new Error('Wallhaven HTTP ' + res.status);
+            return res.json();
+          })
+          .then(function(data) {
+            if (!data || !Array.isArray(data.data) || data.data.length === 0) {
+              throw new Error('No Wallhaven wallpapers found');
+            }
+            var candidates = data.data.map(function(item) {
+              return {
+                provider: 'wallhaven',
+                id: String(item.id),
+                url: item.path,
+                sourceUrl: item.url || ('https://wallhaven.cc/w/' + item.id),
+                photographer: 'Wallhaven Community',
+                photographerUrl: item.url || 'https://wallhaven.cc',
+                width: item.dimension_x,
+                height: item.dimension_y,
+                description: 'Wallhaven wallpaper #' + item.id
+              };
+            });
+            var ranked = self.rankWallpaperCandidates(candidates, nativeRes.width, nativeRes.height);
+            return ranked[0];
+          });
+      },
+
+      pexels: function(query, nativeRes) {
+        var self = this;
+        var key = (self.pexelsApiKey || '').trim();
+        if (!key) {
+          return Promise.reject(new Error('Pexels API key missing'));
+        }
+
+        var apiUrl = 'https://api.pexels.com/v1/search?query=' + encodeURIComponent(query) +
+          '&orientation=landscape&per_page=20';
+
+        return self.fetchWithTimeout(apiUrl, 6000, {
+          headers: {
+            'Authorization': key
+          }
+        })
+          .then(function(res) {
+            if (!res.ok) throw new Error('Pexels HTTP ' + res.status);
+            return res.json();
+          })
+          .then(function(data) {
+            if (!data || !Array.isArray(data.photos) || data.photos.length === 0) {
+              throw new Error('No Pexels photos found');
+            }
+            var candidates = data.photos.map(function(photo) {
+              var chosenUrl = (photo.src && (photo.src.large2x || photo.src.original || photo.src.landscape)) || '';
+              return {
+                provider: 'pexels',
+                id: String(photo.id),
+                url: chosenUrl,
+                sourceUrl: photo.url || 'https://www.pexels.com',
+                photographer: photo.photographer || 'Pexels Creator',
+                photographerUrl: photo.photographer_url || photo.url || 'https://www.pexels.com',
+                width: photo.width,
+                height: photo.height,
+                description: photo.alt || ''
+              };
+            });
+            var ranked = self.rankWallpaperCandidates(candidates, nativeRes.width, nativeRes.height);
+            return ranked[0];
+          });
+      },
+
+      pixabay: function(query, nativeRes) {
+        var self = this;
+        var key = (self.pixabayApiKey || '').trim();
+        if (!key) {
+          return Promise.reject(new Error('Pixabay API key missing'));
+        }
+
+        var apiUrl = 'https://pixabay.com/api/?key=' + encodeURIComponent(key) +
+          '&q=' + encodeURIComponent(query) +
+          '&image_type=photo&orientation=horizontal&safesearch=true&per_page=20';
+
+        return self.fetchWithTimeout(apiUrl, 6000)
+          .then(function(res) {
+            if (!res.ok) throw new Error('Pixabay HTTP ' + res.status);
+            return res.json();
+          })
+          .then(function(data) {
+            if (!data || !Array.isArray(data.hits) || data.hits.length === 0) {
+              throw new Error('No Pixabay photos found');
+            }
+            var candidates = data.hits.map(function(hit) {
+              var chosenUrl = hit.fullHDURL || hit.largeImageURL || hit.imageURL || hit.webformatURL || '';
+              return {
+                provider: 'pixabay',
+                id: String(hit.id),
+                url: chosenUrl,
+                sourceUrl: hit.pageURL || 'https://pixabay.com',
+                photographer: hit.user || 'Pixabay Creator',
+                photographerUrl: hit.pageURL || 'https://pixabay.com',
+                width: hit.imageWidth,
+                height: hit.imageHeight,
+                description: hit.tags || ''
+              };
+            });
+            var ranked = self.rankWallpaperCandidates(candidates, nativeRes.width, nativeRes.height);
+            return ranked[0];
+          });
+      }
+    },
+
+    /**
+     * Unified wallpaper dispatcher supporting Unsplash, Wallhaven, Pexels, Pixabay,
+     * rotation of configured sources, weather relevance, screen fit, and recent history.
+     */
+    fetchWallpaper: function(weatherCategory, isDay, customKeyword) {
+      var self = this;
+      var nativeRes = self.getNativeResolution();
+      var query = self.mapWeatherToQuery(weatherCategory, isDay, customKeyword);
+
+      var eligible = ['unsplash'];
+      if (self.wallhavenApiKey && String(self.wallhavenApiKey).trim().length > 0) eligible.push('wallhaven');
+      if (self.pexelsApiKey && String(self.pexelsApiKey).trim().length > 0) eligible.push('pexels');
+      if (self.pixabayApiKey && String(self.pixabayApiKey).trim().length > 0) eligible.push('pixabay');
+
+      var isRotate = (self.wallpaperProvider === 'rotate');
+      var primary = 'unsplash';
+
+      if (isRotate) {
+        var cursor = self.getWallpaperRotateCursor();
+        primary = eligible[cursor % eligible.length];
+        self.setWallpaperRotateCursor((cursor + 1) % eligible.length);
+      } else {
+        var selected = (self.wallpaperProvider || 'unsplash').toLowerCase();
+        if (selected !== 'unsplash' && eligible.indexOf(selected) === -1) {
+          primary = 'unsplash';
+        } else {
+          primary = selected;
+        }
+      }
+
+      function callProvider(prov) {
+        switch (prov) {
+          case 'wallhaven':
+            return self.WallpaperAdapter.wallhaven.call(self, query, nativeRes);
+          case 'pexels':
+            return self.WallpaperAdapter.pexels.call(self, query, nativeRes);
+          case 'pixabay':
+            return self.WallpaperAdapter.pixabay.call(self, query, nativeRes);
+          case 'unsplash':
+          default:
+            return self.WallpaperAdapter.unsplash.call(self, weatherCategory, isDay, query, nativeRes);
+        }
+      }
+
+      return callProvider(primary)
+        .then(function(candidate) {
+          if (!candidate || !candidate.url) throw new Error('Empty candidate from ' + primary);
+          self.addRecentWallpaper(candidate.id || candidate.url);
+          return candidate;
+        })
+        .catch(function(err) {
+          console.warn('[ApiService] Primary wallpaper provider ' + primary + ' failed:', err.message);
+          if (primary !== 'unsplash') {
+            console.log('[ApiService] Falling back once to Unsplash...');
+            return callProvider('unsplash').then(function(fallbackCandidate) {
+              if (fallbackCandidate && fallbackCandidate.url) {
+                self.addRecentWallpaper(fallbackCandidate.id || fallbackCandidate.url);
+              }
+              return fallbackCandidate;
+            });
+          }
+          throw err;
+        });
+    },
+
+    /**
+     * Backward-compatible alias for fetchWallpaper
+     */
+    fetchContextualImage: function(weatherCategory, isDay, customKeyword) {
+      return this.fetchWallpaper(weatherCategory, isDay, customKeyword);
     },
 
     /**
@@ -1237,27 +1557,42 @@
         {
           title: 'Atmospheric telemetry & localized microclimate network initialized for ' + targetCity,
           source: 'Meteorology Hub',
-          link: 'https://news.google.com'
+          link: 'https://news.google.com',
+          provider: 'google-news',
+          providerName: 'Google News',
+          isWrapper: true
         },
         {
           title: 'Global energy grid resilience metrics show steady gains across smart sectors',
           source: 'Reuters Tech',
-          link: 'https://news.google.com'
+          link: 'https://news.google.com',
+          provider: 'google-news',
+          providerName: 'Google News',
+          isWrapper: true
         },
         {
           title: 'Satellite observations confirm historical seasonal solar irradiance patterns',
           source: 'Science Daily',
-          link: 'https://news.google.com'
+          link: 'https://news.google.com',
+          provider: 'google-news',
+          providerName: 'Google News',
+          isWrapper: true
         },
         {
           title: 'Regional urban infrastructure upgrades incorporate high-efficiency sensors',
           source: 'Associated Press',
-          link: 'https://news.google.com'
+          link: 'https://news.google.com',
+          provider: 'google-news',
+          providerName: 'Google News',
+          isWrapper: true
         },
         {
           title: 'High-precision environmental monitoring standards adopted for smart cities',
           source: 'Nature Ambient',
-          link: 'https://news.google.com'
+          link: 'https://news.google.com',
+          provider: 'google-news',
+          providerName: 'Google News',
+          isWrapper: true
         }
       ];
     },
@@ -1374,7 +1709,10 @@
                 source: sourceName,
                 link: safeUrl,
                 seendate: item.seendate || null,
-                domain: rawDomain || null
+                domain: rawDomain || null,
+                provider: 'google-news',
+                providerName: 'Google News',
+                isWrapper: false
               });
             }
 
@@ -1478,11 +1816,15 @@
             cleanTitle = cleanTitle.substring(0, dashIndex).trim();
           }
 
+          var isWrapper = /news\.google\.com/i.test(safeLink);
           if (cleanTitle) {
             articles.push({
               title: cleanTitle,
               source: sourceName || 'Google News',
-              link: safeLink
+              link: safeLink,
+              provider: 'google-news',
+              providerName: 'Google News',
+              isWrapper: isWrapper
             });
           }
         }
@@ -1509,6 +1851,272 @@
           console.warn('[ApiService] Regional news fetch error, using curated dispatch fallback:', err.message);
           return self.getCuratedNews(cleanCity);
         });
+    },
+
+    NewsAdapter: {
+      'google-news': function(city, countryCode) {
+        return ApiService.fetchRegionalNews(city, countryCode).then(function(articles) {
+          return (articles || []).map(function(a) {
+            return {
+              id: a.link || a.title,
+              title: a.title,
+              description: a.description || a.title,
+              link: a.link,
+              source: a.source || 'Google News',
+              published: a.published || '',
+              provider: 'google-news',
+              providerName: 'Google News',
+              isWrapper: !!a.isWrapper
+            };
+          });
+        });
+      },
+
+      newsapi: function(city, countryCode) {
+        var self = ApiService;
+        var key = (self.newsApiKey || '').trim();
+        if (!key) {
+          return Promise.reject(new Error('NewsAPI key missing'));
+        }
+
+        var cleanCity = (city && String(city).trim()) || 'Local';
+        var cleanCountry = (countryCode && String(countryCode).trim()) || '';
+        var disambiguatedQuery = cleanCountry ? (cleanCity + ' ' + cleanCountry) : cleanCity;
+
+        // NOTE: Official NewsAPI documentation specifies /v2/everything supports 'q', but NOT 'country'.
+        // Country parameter on /v2/everything causes HTTP 400 parameterInvalid.
+        var url = 'https://newsapi.org/v2/everything?q=' + encodeURIComponent(disambiguatedQuery) +
+          '&sortBy=publishedAt&pageSize=10&language=en';
+
+        return self.fetchWithTimeout(url, 6000, {
+          headers: {
+            'X-Api-Key': key
+          }
+        })
+          .then(function(res) {
+            if (!res.ok) throw new Error('NewsAPI HTTP ' + res.status);
+            return res.json();
+          })
+          .then(function(data) {
+            if (!data || !Array.isArray(data.articles) || data.articles.length === 0) {
+              throw new Error('No articles returned from NewsAPI');
+            }
+            var results = [];
+            for (var i = 0; i < data.articles.length && results.length < 5; i++) {
+              var a = data.articles[i];
+              var title = (a.title || '').trim();
+              var link = (a.url || '').trim();
+              if (title && /^https:\/\//i.test(link)) {
+                results.push({
+                  id: link,
+                  title: title,
+                  description: (a.description || title).trim(),
+                  link: link,
+                  source: (a.source && a.source.name) || a.author || 'NewsAPI',
+                  published: a.publishedAt || '',
+                  provider: 'newsapi',
+                  providerName: 'NewsAPI',
+                  isWrapper: false
+                });
+              }
+            }
+            if (results.length === 0) throw new Error('No valid https articles found in NewsAPI response');
+            return results;
+          });
+      },
+
+      currents: function(city, countryCode) {
+        var self = ApiService;
+        var key = (self.currentsApiKey || '').trim();
+        if (!key) {
+          return Promise.reject(new Error('Currents API key missing'));
+        }
+
+        var cleanCity = (city && String(city).trim()) || 'Local';
+        var cleanCountry = (countryCode && String(countryCode).trim().toUpperCase()) || '';
+
+        var url = 'https://api.currentsapi.services/v1/search?keywords=' + encodeURIComponent(cleanCity);
+        if (cleanCountry && cleanCountry.length === 2) {
+          url += '&country=' + encodeURIComponent(cleanCountry.toLowerCase());
+        }
+
+        return self.fetchWithTimeout(url, 6000, {
+          headers: {
+            'Authorization': key
+          }
+        })
+          .then(function(res) {
+            if (!res.ok) throw new Error('Currents HTTP ' + res.status);
+            return res.json();
+          })
+          .then(function(data) {
+            if (!data || !Array.isArray(data.news) || data.news.length === 0) {
+              throw new Error('No articles returned from Currents');
+            }
+            var results = [];
+            for (var i = 0; i < data.news.length && results.length < 5; i++) {
+              var item = data.news[i];
+              var title = (item.title || '').trim();
+              var link = (item.url || '').trim();
+              if (title && /^https:\/\//i.test(link)) {
+                results.push({
+                  id: String(item.id || link),
+                  title: title,
+                  description: (item.description || title).trim(),
+                  link: link,
+                  source: (item.author || '').trim() || 'Currents News',
+                  published: item.published || '',
+                  provider: 'currents',
+                  providerName: 'Currents News',
+                  isWrapper: false
+                });
+              }
+            }
+            if (results.length === 0) throw new Error('No valid https articles found in Currents response');
+            return results;
+          });
+      }
+    },
+
+    NEWS_CACHE_TTL_MS: 15 * 60 * 1000,
+    _activeNewsPromise: null,
+
+    getNewsRotateCursor: function() {
+      try {
+        if (typeof localStorage !== 'undefined') {
+          var val = parseInt(localStorage.getItem('local_wally_news_rotate_cursor'), 10);
+          if (!isNaN(val) && val >= 0) return val;
+        }
+      } catch (e) {}
+      return 0;
+    },
+
+    setNewsRotateCursor: function(cursor) {
+      try {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('local_wally_news_rotate_cursor', String(cursor));
+        }
+      } catch (e) {}
+    },
+
+    getCachedNews: function() {
+      try {
+        if (typeof localStorage !== 'undefined') {
+          var raw = localStorage.getItem('LIVELY_HUD_NEWS_SNAPSHOT');
+          if (raw) {
+            var envelope = JSON.parse(raw);
+            if (envelope && typeof envelope.timestamp === 'number' && Array.isArray(envelope.data)) {
+              return envelope;
+            }
+          }
+        }
+      } catch (e) {}
+      return null;
+    },
+
+    setCachedNews: function(provider, queryKey, articles) {
+      try {
+        if (typeof localStorage !== 'undefined') {
+          var envelope = {
+            timestamp: Date.now(),
+            provider: provider,
+            query: queryKey,
+            data: articles
+          };
+          localStorage.setItem('LIVELY_HUD_NEWS_SNAPSHOT', JSON.stringify(envelope));
+        }
+      } catch (e) {}
+    },
+
+    /**
+     * Regional news dispatcher with 15-minute cache firewall, rotation when keyed providers exist,
+     * in-flight request de-duplication, safe https validation, and single Google News fallback.
+     */
+    fetchNews: function(cityName, countryCode, forceRefresh) {
+      var self = this;
+      var cleanCity = (cityName && String(cityName).trim()) || 'Local Area';
+      var cleanCountry = (countryCode && String(countryCode).trim().toUpperCase()) || 'US';
+      if (cleanCountry.length !== 2) cleanCountry = 'US';
+      var queryKey = cleanCity.toLowerCase() + '_' + cleanCountry.toLowerCase();
+
+      // Check 15-minute cache firewall: survives reloads, prevents duplicate requests
+      var cachedEnvelope = self.getCachedNews();
+      var now = Date.now();
+      if (!forceRefresh && cachedEnvelope && cachedEnvelope.timestamp) {
+        var age = now - cachedEnvelope.timestamp;
+        if (age >= 0 && age < self.NEWS_CACHE_TTL_MS && Array.isArray(cachedEnvelope.data) && cachedEnvelope.data.length > 0) {
+          return Promise.resolve(cachedEnvelope.data);
+        }
+      }
+
+      // In-flight request de-duplication
+      if (self._activeNewsPromise) {
+        return self._activeNewsPromise;
+      }
+
+      var eligible = ['google-news'];
+      if (self.newsApiKey && String(self.newsApiKey).trim().length > 0) {
+        eligible.push('newsapi');
+      }
+      if (self.currentsApiKey && String(self.currentsApiKey).trim().length > 0) {
+        eligible.push('currents');
+      }
+
+      var shouldRotate = (self.newsProvider === 'rotate') || (eligible.length > 1);
+      var primaryProvider = 'google-news';
+
+      if (shouldRotate) {
+        var cursor = self.getNewsRotateCursor();
+        primaryProvider = eligible[cursor % eligible.length];
+        self.setNewsRotateCursor((cursor + 1) % eligible.length);
+      } else {
+        var selected = (self.newsProvider || 'google-news').toLowerCase();
+        if (selected === 'newsapi' && (!self.newsApiKey || !self.newsApiKey.trim())) {
+          primaryProvider = 'google-news';
+        } else if (selected === 'currents' && (!self.currentsApiKey || !self.currentsApiKey.trim())) {
+          primaryProvider = 'google-news';
+        } else {
+          primaryProvider = selected;
+        }
+      }
+
+      function executeAdapter(prov) {
+        var fn = self.NewsAdapter[prov] || self.NewsAdapter['google-news'];
+        return fn.call(self, cleanCity, cleanCountry);
+      }
+
+      self._activeNewsPromise = executeAdapter(primaryProvider)
+        .then(function(articles) {
+          if (!articles || articles.length === 0) throw new Error('No articles from ' + primaryProvider);
+          self.setCachedNews(primaryProvider, queryKey, articles);
+          return articles;
+        })
+        .catch(function(err) {
+          console.warn('[ApiService] Primary news provider ' + primaryProvider + ' failed:', err.message);
+          if (primaryProvider !== 'google-news') {
+            console.log('[ApiService] Falling back once to Google News...');
+            return executeAdapter('google-news').then(function(fallbackArticles) {
+              if (fallbackArticles && fallbackArticles.length > 0) {
+                self.setCachedNews('google-news', queryKey, fallbackArticles);
+                return fallbackArticles;
+              }
+              throw new Error('Google News fallback returned empty feed');
+            });
+          }
+          throw err;
+        })
+        .catch(function(fatalErr) {
+          console.warn('[ApiService] News fetch failed completely, checking cached or curated:', fatalErr.message);
+          if (cachedEnvelope && Array.isArray(cachedEnvelope.data) && cachedEnvelope.data.length > 0) {
+            return cachedEnvelope.data;
+          }
+          return self.getCuratedNews(cleanCity);
+        })
+        .finally(function() {
+          self._activeNewsPromise = null;
+        });
+
+      return self._activeNewsPromise;
     },
 
     /**
@@ -1538,7 +2146,7 @@
 
       return self.getLocation().then(function(loc) {
         // Fetch news asynchronously in the background so it never blocks ready weather updates
-        var newsPromise = self.fetchRegionalNews(loc.city, loc.countryCode || loc.country)
+        var newsPromise = self.fetchNews(loc.city, loc.countryCode || loc.country, forceRefresh)
           .catch(function(err) {
             console.warn('[ApiService] Regional news fetch error (non-fatal):', err.message);
             return [];
@@ -1559,7 +2167,11 @@
           var hourlyForecast = self.normalizeForecastPoints(rawHourly, weather, aqi, hourlyAqi);
           weather.hourlyForecast = hourlyForecast;
 
-          return self.fetchContextualImage(weather.category, weather.isDay, weather.keyword)
+          return self.fetchWallpaper(weather.category, weather.isDay, weather.keyword)
+            .catch(function(bgErr) {
+              console.warn('[ApiService] Wallpaper fetch failed (non-fatal):', bgErr.message);
+              return self.WallpaperAdapter.unsplash.call(self, weather.category, weather.isDay, weather.keyword, self.getNativeResolution());
+            })
             .then(function(bg) {
               var payload = {
                 timestamp: Date.now(),

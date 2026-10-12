@@ -45,10 +45,37 @@
     "step": 1,
     "text": "Data & Wallpaper Refresh Interval (Minutes)"
   },
+  "wallpaperProvider": {
+    "type": "dropdown",
+    "value": 0,
+    "text": "Wallpaper Provider",
+    "items": [
+      "Unsplash",
+      "Wallhaven",
+      "Pexels",
+      "Pixabay",
+      "Rotate configured sources"
+    ]
+  },
   "unsplashApiKey": {
     "type": "textbox",
     "value": "",
     "text": "Unsplash Access Key (Optional)"
+  },
+  "wallhavenApiKey": {
+    "type": "textbox",
+    "value": "",
+    "text": "Wallhaven API Key (Optional)"
+  },
+  "pexelsApiKey": {
+    "type": "textbox",
+    "value": "",
+    "text": "Pexels API Key (Optional)"
+  },
+  "pixabayApiKey": {
+    "type": "textbox",
+    "value": "",
+    "text": "Pixabay API Key (Optional)"
   },
   "weatherSimulation": {
     "type": "dropdown",
@@ -105,6 +132,27 @@
     "type": "checkbox",
     "value": true,
     "text": "Show Regional News Feed"
+  },
+  "newsProvider": {
+    "type": "dropdown",
+    "value": 0,
+    "text": "News Provider",
+    "items": [
+      "Google News",
+      "NewsAPI",
+      "Currents News",
+      "Rotate configured sources"
+    ]
+  },
+  "newsApiKey": {
+    "type": "textbox",
+    "value": "",
+    "text": "NewsAPI Key (Optional)"
+  },
+  "currentsApiKey": {
+    "type": "textbox",
+    "value": "",
+    "text": "Currents API Key (Optional)"
   },
   "showHardwareMonitor": {
     "type": "checkbox",

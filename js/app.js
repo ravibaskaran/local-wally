@@ -1707,6 +1707,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
         // Regional News DOM Nodes
         hudNewsBlock: document.getElementById('hud-news-block'),
+        hudNewsTitle: document.getElementById('hud-news-title'),
         hudNewsLink: document.getElementById('hud-news-link'),
         hudNewsHeadline: document.getElementById('hud-news-headline'),
         hudNewsSource: document.getElementById('hud-news-source'),
@@ -2052,9 +2053,39 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           case 'refreshInterval':
             self.setRefreshInterval(val);
             break;
+          case 'wallpaperProvider':
+            var wallProviders = ['unsplash', 'wallhaven', 'pexels', 'pixabay', 'rotate'];
+            var wpVal = (typeof val === 'number') ? (wallProviders[val] || 'unsplash') : (
+              val === 'Wallhaven' ? 'wallhaven' :
+              val === 'Pexels' ? 'pexels' :
+              val === 'Pixabay' ? 'pixabay' :
+              val === 'Rotate configured sources' ? 'rotate' :
+              String(val).toLowerCase()
+            );
+            if (global.ApiService) global.ApiService.wallpaperProvider = wpVal;
+            self.loadAtmosphere(true);
+            break;
           case 'unsplashApiKey':
             if (global.ApiService) global.ApiService.unsplashApiKey = val;
             self.loadAtmosphere(true);
+            break;
+          case 'wallhavenApiKey':
+            if (global.ApiService) global.ApiService.wallhavenApiKey = val;
+            if (global.ApiService && (global.ApiService.wallpaperProvider === 'wallhaven' || global.ApiService.wallpaperProvider === 'rotate')) {
+              self.loadAtmosphere(true);
+            }
+            break;
+          case 'pexelsApiKey':
+            if (global.ApiService) global.ApiService.pexelsApiKey = val;
+            if (global.ApiService && (global.ApiService.wallpaperProvider === 'pexels' || global.ApiService.wallpaperProvider === 'rotate')) {
+              self.loadAtmosphere(true);
+            }
+            break;
+          case 'pixabayApiKey':
+            if (global.ApiService) global.ApiService.pixabayApiKey = val;
+            if (global.ApiService && (global.ApiService.wallpaperProvider === 'pixabay' || global.ApiService.wallpaperProvider === 'rotate')) {
+              self.loadAtmosphere(true);
+            }
             break;
           case 'weatherSimulation':
             self.setSimulationMode(val);
@@ -2068,6 +2099,22 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             break;
           case 'showNewsFeed':
             self.setShowNewsFeed(val === true || val === 1 || val === 'true');
+            break;
+          case 'newsProvider':
+            var nProviders = ['google-news', 'newsapi', 'currents', 'rotate'];
+            var npVal = (typeof val === 'number') ? (nProviders[val] || 'google-news') : (
+              val === 'NewsAPI' ? 'newsapi' :
+              val === 'Currents News' ? 'currents' :
+              val === 'Rotate configured sources' ? 'rotate' :
+              String(val).toLowerCase()
+            );
+            if (global.ApiService) global.ApiService.newsProvider = npVal;
+            break;
+          case 'newsApiKey':
+            if (global.ApiService) global.ApiService.newsApiKey = val;
+            break;
+          case 'currentsApiKey':
+            if (global.ApiService) global.ApiService.currentsApiKey = val;
             break;
           case 'showHardwareMonitor':
             self.setShowHardwareMonitor(val === true || val === 1 || val === 'true');
@@ -5213,11 +5260,25 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       var item = this.newsItems[idx % this.newsItems.length];
       if (!item) return;
 
+      var providerName = 'Google News';
+      if (item.provider === 'newsapi') {
+        providerName = 'NewsAPI';
+      } else if (item.provider === 'currents') {
+        providerName = 'Currents News';
+      } else if (item.provider === 'google-news') {
+        providerName = 'Google News';
+      } else if (item.providerName) {
+        providerName = item.providerName;
+      }
+
+      if (this.dom.hudNewsTitle) {
+        this.dom.hudNewsTitle.textContent = providerName;
+      }
       if (this.dom.hudNewsHeadline) {
         this.dom.hudNewsHeadline.textContent = item.title;
       }
       if (this.dom.hudNewsSource) {
-        this.dom.hudNewsSource.textContent = item.source || 'Google News';
+        this.dom.hudNewsSource.textContent = item.source || providerName;
       }
       if (this.dom.hudNewsLink) {
         var rawLink = item.link || '';
@@ -5225,11 +5286,17 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           ? rawLink.trim()
           : 'https://news.google.com';
         this.dom.hudNewsLink.href = safeLink;
+        if (item.isWrapper) {
+          this.dom.hudNewsLink.title = 'Open via Google News';
+        } else {
+          this.dom.hudNewsLink.title = 'Open Article (' + (item.source || providerName) + ')';
+        }
       }
 
       if (this.dom.hudNewsBlock) {
         var sourceLabel = item.source ? (' — ' + item.source) : '';
-        this.dom.hudNewsBlock.title = 'Regional Dispatch: ' + (item.title || 'Regional News') + sourceLabel + ' (Click to inspect stories)';
+        this.dom.hudNewsBlock.setAttribute('aria-label', providerName + ' Dispatch');
+        this.dom.hudNewsBlock.title = providerName + ' Dispatch: ' + (item.title || 'Regional News') + sourceLabel + ' (Click to inspect stories)';
       }
 
       if (this.dom.hudNewsDots) {
@@ -5319,8 +5386,15 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
         // Update photo credit
         if (self.dom.unsplashCredit) {
-          self.dom.unsplashCredit.textContent = 'Photo by ' + (bg.photographer || 'Unsplash');
-          self.dom.unsplashCredit.href = bg.photographerUrl || 'https://unsplash.com';
+          var providerLabel = (bg && bg.provider) ? (
+            bg.provider === 'wallhaven' ? 'Wallhaven' :
+            bg.provider === 'pexels' ? 'Pexels' :
+            bg.provider === 'pixabay' ? 'Pixabay' :
+            'Unsplash'
+          ) : 'Unsplash';
+          var photographerName = (bg && bg.photographer) || (providerLabel + ' Artist');
+          self.dom.unsplashCredit.textContent = 'Photo by ' + photographerName + ' (' + providerLabel + ')';
+          self.dom.unsplashCredit.href = (bg && (bg.photographerUrl || bg.sourceUrl)) || 'https://unsplash.com';
         }
 
         // Persist wallpaper URL and photographer credit to eliminate startup blank pop-in
