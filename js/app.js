@@ -1381,61 +1381,61 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     }
     var xs = this.xs;
     var ys = this.ys;
+    // Metric validity is tracked separately from coordinates: missing values
+    // never contribute coordinates, dots, labels, or spline control points (LW09)
+    var valid = this._validBuf && this._validBuf.length >= N ? this._validBuf : (this._validBuf = new Uint8Array(Math.max(32, N)));
     var colors = this.colorMap[tab] || this.colorMap.temp;
 
     for (var i = 0; i < N; i++) {
       var p = pts[i] || {};
-      var v = 0;
+      var v = null;
       var label = '';
       if (tab === 'temp') {
         v = isF ? p.tempF : p.tempC;
-        if (typeof v !== 'number' || !Number.isFinite(v)) {
-          v = minB;
-          label = '--';
-        } else {
-          label = Math.round(v) + '°';
-        }
+        if (typeof v !== 'number' || !Number.isFinite(v)) { v = null; label = '--'; }
+        else { label = Math.round(v) + '°'; }
       } else if (tab === 'feels_like') {
         v = isF ? p.apparentF : p.apparentC;
-        if (typeof v !== 'number' || !Number.isFinite(v)) {
-          v = minB;
-          label = '--';
-        } else {
-          label = Math.round(v) + '°';
-        }
+        if (typeof v !== 'number' || !Number.isFinite(v)) { v = null; label = '--'; }
+        else { label = Math.round(v) + '°'; }
       } else if (tab === 'precip') {
         v = p.precipProb != null ? p.precipProb : null;
-        if (typeof v !== 'number' || !Number.isFinite(v)) {
-          v = minB;
-          label = '--';
-        } else {
-          label = Math.round(v) + '%';
-        }
+        if (typeof v !== 'number' || !Number.isFinite(v)) { v = null; label = '--'; }
+        else { label = Math.round(v) + '%'; }
       } else if (tab === 'wind') {
         v = isF ? p.windSpeedMph : p.windSpeedKm;
-        if (typeof v !== 'number' || !Number.isFinite(v)) {
-          v = minB;
-          label = '--';
-        } else {
-          label = Math.round(v) + (isF ? ' mph' : ' km/h');
-        }
+        if (typeof v !== 'number' || !Number.isFinite(v)) { v = null; label = '--'; }
+        else { label = Math.round(v) + (isF ? ' mph' : ' km/h'); }
       } else if (tab === 'humidity') {
         v = p.humidity != null ? p.humidity : null;
-        if (typeof v !== 'number' || !Number.isFinite(v)) {
-          v = minB;
-          label = '--';
-        } else {
-          label = Math.round(v) + '%';
-        }
+        if (typeof v !== 'number' || !Number.isFinite(v)) { v = null; label = '--'; }
+        else { label = Math.round(v) + '%'; }
       } else if (tab === 'aqi') {
         if (p.aqi != null && Number.isFinite(p.aqi)) {
           v = p.aqi;
           label = 'AQI ' + Math.round(v);
         } else {
-          v = minB;
+          v = null;
           label = '--';
         }
       }
+
+      var dotColor = colors.dot;
+      if (tab === 'aqi') {
+        dotColor = (p.aqi != null && p.aqiColor) ? p.aqiColor : '#94a3b8';
+      }
+
+      if (v === null) {
+        // Missing measurement: hidden dot/labels, no coordinates, never a
+        // substituted minimum value
+        valid[i] = 0;
+        var dotHidden = this.dotPool[i];
+        if (dotHidden) dotHidden.style.visibility = 'hidden';
+        var valHidden = this.valLabelPool[i];
+        if (valHidden) valHidden.style.visibility = 'hidden';
+        continue;
+      }
+      valid[i] = 1;
 
       var norm = (range > 0) ? Math.max(0, Math.min(1, (v - minB) / range)) : 0.5;
       if (!Number.isFinite(norm)) norm = 0.5;
@@ -1444,15 +1444,11 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       xs[i] = Number.isFinite(xVal) ? xVal : xStart;
       ys[i] = Number.isFinite(yVal) ? yVal : yBottom;
 
-      var dotColor = colors.dot;
-      if (tab === 'aqi') {
-        dotColor = (p.aqi != null && p.aqiColor) ? p.aqiColor : '#94a3b8';
-      }
-
       // Update dot
       var dot = this.dotPool[i];
       var dotTooltip = (p.label || p.time || '') + ': ' + label + (tab === 'temp' ? ' Temperature' : tab === 'feels_like' ? ' Feels Like' : tab === 'precip' ? ' Precip Chance' : tab === 'wind' ? ' Wind Speed' : tab === 'humidity' ? ' Humidity' : ' Air Quality');
       if (dot) {
+        dot.style.visibility = 'visible';
         dot.setAttribute('cx', xs[i].toFixed(1));
         dot.setAttribute('cy', ys[i].toFixed(1));
         dot.setAttribute('fill', dotColor);
@@ -1474,6 +1470,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       // Update val text
       var valEl = this.valLabelPool[i];
       if (valEl) {
+        valEl.style.visibility = 'visible';
         valEl.setAttribute('x', xs[i].toFixed(1));
         valEl.setAttribute('y', (ys[i] - 8).toFixed(1));
         valEl.textContent = label;
@@ -1489,41 +1486,60 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
     }
 
-    // Catmull-Rom cubic Bezier path generation
-    var curveD = '';
-    for (var j = 0; j < N - 1; j++) {
-      var p0x = (j === 0) ? xs[0] : xs[j - 1];
-      var p0y = (j === 0) ? ys[0] : ys[j - 1];
-      var p1x = xs[j];
-      var p1y = ys[j];
-      var p2x = xs[j + 1];
-      var p2y = ys[j + 1];
-      var p3x = (j >= N - 2) ? xs[N - 1] : xs[j + 2];
-      var p3y = (j >= N - 2) ? ys[N - 1] : ys[j + 2];
+    // Catmull-Rom cubic Bezier path generation over contiguous VALID runs only:
+    // a missing point always produces a gap, never a bridge or a false dip,
+    // and never acts as a spline control point (LW09)
+    var lineD = '';
+    var areaD = '';
+    var runStart = -1;
+    var r, j;
 
-      var cp1x = (j === 0) ? (p1x + (p2x - p1x) / 6) : (p1x + (p2x - p0x) / 6);
-      var cp1y = (j === 0) ? (p1y + (p2y - p1y) / 6) : (p1y + (p2y - p0y) / 6);
-      var cp2x = (j >= N - 2) ? (p2x - (p2x - p1x) / 6) : (p2x - (p3x - p1x) / 6);
-      var cp2y = (j >= N - 2) ? (p2y - (p2y - p1y) / 6) : (p2y - (p3y - p1y) / 6);
+    function buildRunD(self, s, e) {
+      var seg = '';
+      for (var k = s; k < e; k++) {
+        var p0x = (k === s) ? xs[k] : xs[k - 1];
+        var p0y = (k === s) ? ys[k] : ys[k - 1];
+        var p1x = xs[k];
+        var p1y = ys[k];
+        var p2x = xs[k + 1];
+        var p2y = ys[k + 1];
+        var p3x = (k + 2 > e) ? xs[e] : xs[k + 2];
+        var p3y = (k + 2 > e) ? ys[e] : ys[k + 2];
 
-      if (!Number.isFinite(cp1x)) cp1x = p1x;
-      if (!Number.isFinite(cp1y)) cp1y = p1y;
-      if (!Number.isFinite(cp2x)) cp2x = p2x;
-      if (!Number.isFinite(cp2y)) cp2y = p2y;
+        var cp1x = (k === s) ? (p1x + (p2x - p1x) / 6) : (p1x + (p2x - p0x) / 6);
+        var cp1y = (k === s) ? (p1y + (p2y - p1y) / 6) : (p1y + (p2y - p0y) / 6);
+        var cp2x = (k + 2 > e) ? (p2x - (p2x - p1x) / 6) : (p2x - (p3x - p1x) / 6);
+        var cp2y = (k + 2 > e) ? (p2y - (p2y - p1y) / 6) : (p2y - (p3y - p1y) / 6);
 
-      if (cp1y < yTop - 4) cp1y = yTop - 4; else if (cp1y > yBottom + 4) cp1y = yBottom + 4;
-      if (cp2y < yTop - 4) cp2y = yTop - 4; else if (cp2y > yBottom + 4) cp2y = yBottom + 4;
+        if (!Number.isFinite(cp1x)) cp1x = p1x;
+        if (!Number.isFinite(cp1y)) cp1y = p1y;
+        if (!Number.isFinite(cp2x)) cp2x = p2x;
+        if (!Number.isFinite(cp2y)) cp2y = p2y;
 
-      curveD += ' C ' + cp1x.toFixed(1) + ',' + cp1y.toFixed(1) + ' ' +
-                cp2x.toFixed(1) + ',' + cp2y.toFixed(1) + ' ' +
-                p2x.toFixed(1) + ',' + p2y.toFixed(1);
+        if (cp1y < yTop - 4) cp1y = yTop - 4; else if (cp1y > yBottom + 4) cp1y = yBottom + 4;
+        if (cp2y < yTop - 4) cp2y = yTop - 4; else if (cp2y > yBottom + 4) cp2y = yBottom + 4;
+
+        seg += ' C ' + cp1x.toFixed(1) + ',' + cp1y.toFixed(1) + ' ' +
+               cp2x.toFixed(1) + ',' + cp2y.toFixed(1) + ' ' +
+               p2x.toFixed(1) + ',' + p2y.toFixed(1);
+      }
+      var x0s = xs[s].toFixed(1);
+      var y0s = ys[s].toFixed(1);
+      var xEs = xs[e].toFixed(1);
+      lineD += 'M ' + x0s + ',' + y0s + seg;
+      // Area fill closes independently per run
+      areaD += 'M ' + x0s + ',' + yBase + ' L ' + x0s + ',' + y0s + seg + ' L ' + xEs + ',' + yBase + ' Z';
     }
 
-    var x0 = xs[0].toFixed(1);
-    var y0 = ys[0].toFixed(1);
-    var xLast = xs[N - 1].toFixed(1);
-    var lineD = 'M ' + x0 + ',' + y0 + curveD;
-    var areaD = 'M ' + x0 + ',' + yBase + ' L ' + x0 + ',' + y0 + curveD + ' L ' + xLast + ',' + yBase + ' Z';
+    for (r = 0; r <= N; r++) {
+      var inRun = (r < N) && valid[r] === 1;
+      if (inRun && runStart === -1) {
+        runStart = r;
+      } else if (!inRun && runStart !== -1) {
+        buildRunD(this, runStart, r - 1);
+        runStart = -1;
+      }
+    }
 
     if (this.dom.linePath) {
       this.dom.linePath.setAttribute('d', lineD);
@@ -1623,6 +1639,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     animationFrameId: null,
     isRunning: false,
     lastFrameTime: 0,
+    _paceDeadline: 0,
     fps: 60,
     frameCount: 0,
     fpsTimer: 0,
@@ -2274,15 +2291,17 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
               String(val).toLowerCase()
             );
             if (global.ApiService) global.ApiService.newsProvider = npVal;
-            self.fetchNews(true);
+            // Intent updates immediately, but the news quota firewall decides
+            // network eligibility — property updates cannot bypass it (LW06)
+            self.fetchNews();
             break;
           case 'newsApiKey':
             if (global.ApiService) global.ApiService.newsApiKey = val;
-            self.fetchNews(true);
+            self.fetchNews();
             break;
           case 'currentsApiKey':
             if (global.ApiService) global.ApiService.currentsApiKey = val;
-            self.fetchNews(true);
+            self.fetchNews();
             break;
           case 'showHardwareMonitor':
             self.setShowHardwareMonitor(val === true || val === 1 || val === 'true');
@@ -2395,6 +2414,23 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         'middle-right', 'middle-left', 'middle-top', 'middle-bottom', 'center'
       ];
 
+      // Compositor cleanup: width/top/bottom no longer interpolate — layout
+      // lands discretely and only a transform-only FLIP animation eases the
+      // dock's visible move back to zero (no text/control scaling)
+      var dockForFlip = this.dom.dockMediaFocus;
+      var oldDockRect = null;
+      if (dockForFlip && typeof dockForFlip.getBoundingClientRect === 'function' &&
+          typeof window !== 'undefined' && window.matchMedia &&
+          !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        try {
+          if (dockForFlip.offsetHeight !== 0 || dockForFlip.offsetWidth !== 0) {
+            oldDockRect = dockForFlip.getBoundingClientRect();
+          }
+        } catch (e) {
+          oldDockRect = null;
+        }
+      }
+
       for (var i = 0; i < allPositions.length; i++) {
         this.dom.hud.classList.remove(allPositions[i]);
         if (this.dom.dockMediaFocus) {
@@ -2425,6 +2461,45 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       this.dom.hud.classList.add(targetClass);
       if (this.dom.dockMediaFocus) {
         this.dom.dockMediaFocus.classList.add(targetClass);
+      }
+
+      // FLIP: capture the pre-move rect above, read the post-layout rect now,
+      // and animate only the inverse translation back to zero (transform-only).
+      // Rapid re-positioning cancels the in-flight FLIP first so animations
+      // never stack (CORR-8); the handle is nulled on finish/cancel.
+      if (oldDockRect && dockForFlip && typeof dockForFlip.getBoundingClientRect === 'function' &&
+          typeof dockForFlip.animate === 'function') {
+        try {
+          if (this._dockFlipAnim && typeof this._dockFlipAnim.cancel === 'function') {
+            try { this._dockFlipAnim.cancel(); } catch (eCancel) {}
+          }
+          this._dockFlipAnim = null;
+          var newDockRect = dockForFlip.getBoundingClientRect();
+          var flipDx = (oldDockRect.left || 0) - (newDockRect.left || 0);
+          var flipDy = (oldDockRect.top || 0) - (newDockRect.top || 0);
+          if (flipDx || flipDy) {
+            var app = this;
+            var flipAnim = dockForFlip.animate([
+              { transform: 'translate(' + flipDx + 'px, ' + flipDy + 'px)' },
+              { transform: 'translate(0px, 0px)' }
+            ], {
+              duration: 260,
+              easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)'
+            });
+            this._dockFlipAnim = flipAnim;
+            if (flipAnim && typeof flipAnim === 'object') {
+              var clearHandle = function() {
+                if (app._dockFlipAnim === flipAnim) app._dockFlipAnim = null;
+              };
+              if (typeof flipAnim.onfinish !== 'undefined' || 'onfinish' in flipAnim) {
+                flipAnim.onfinish = clearHandle;
+                flipAnim.oncancel = clearHandle;
+              }
+            }
+          }
+        } catch (e) {
+          // Discrete placement is always correct; FLIP is purely cosmetic
+        }
       }
 
       if (this.contrastMode === 'auto' && this.lastLoadedImage) {
@@ -3111,12 +3186,24 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         var sStr = remS < 10 ? '0' + remS : '' + remS;
 
         if (this.dom.diagCacheTtl) {
-          this.setDomText(this.dom.diagCacheTtl, remM + 'm ' + sStr + 's');
+          // Compact storage-persistence indicator appended to the same label:
+          // shown only while the cache is memory-only (LW16/CORR-6)
+          var ttlText = remM + 'm ' + sStr + 's';
+          if (global.CacheManager && typeof global.CacheManager.isPersisted === 'function' &&
+              !global.CacheManager.isPersisted()) {
+            ttlText += ' · RAM only';
+          }
+          this.setDomText(this.dom.diagCacheTtl, ttlText);
         }
 
         if (this.dom.syncStatus) {
           if (this.simulationMode > 0) {
             this.setDomText(this.dom.syncStatus, 'Sim Mode');
+          } else if (this.state && this.state.isStalePaint) {
+            // Stale-cache paint is on screen: disclose it with the same wording
+            // the news list uses, until a current-generation refresh replaces
+            // the snapshot (LW12/CORR-4)
+            this.setDomText(this.dom.syncStatus, 'Cached');
           } else if (remainingMs > 0) {
             this.setDomText(this.dom.syncStatus, 'Sync in ' + remM + 'm');
           } else {
@@ -3126,8 +3213,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
 
       // Continuously refresh celestial ephemeris, sky gradient, and dynamic solar lighting (every 15s)
+      // A negative elapsed value means the wall clock jumped backward — refresh
+      // immediately so ephemeris state can never freeze on a stale timestamp (LW13)
       var elapsedCelestial = now.getTime() - this.lastCelestialUpdate;
-      if (elapsedCelestial >= 15000 || !this.lastCelestialUpdate) {
+      if (!this.lastCelestialUpdate || elapsedCelestial >= 15000 || elapsedCelestial < 0) {
         var defaultLoc = (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.defaultLocation) || {};
         var lat = typeof defaultLoc.latitude === 'number' ? defaultLoc.latitude : 35.6762;
         var lng = typeof defaultLoc.longitude === 'number' ? defaultLoc.longitude : 139.6503;
@@ -3335,7 +3424,13 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
 
       // 4. Daytime 3-Card Calculations
-      var hourly = (this.state && (this.state.hourlyForecast || (this.state.weather && this.state.weather.hourlyForecast))) || [];
+      // Full-resolution analytics list preferred; old snapshots degrade to the
+      // reduced chart projection (LW08)
+      var stAny = this.state || {};
+      var hourly = stAny.hourlyAnalytics ||
+                   (stAny.weather && stAny.weather.hourlyAnalytics) ||
+                   stAny.hourlyForecast ||
+                   (stAny.weather && stAny.weather.hourlyForecast) || [];
       var rainVal = 'No Rain';
       var rainSub = 'Clear next 6h';
       var rainOutlookDetails = [];
@@ -3365,7 +3460,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             var parsedTime = new Date(pt.time).getTime();
             if (!isNaN(parsedTime)) ptTimeMs = parsedTime;
           }
-          if (ptTimeMs && (ptTimeMs < nowMs - 1800000 || ptTimeMs > horizonMs)) {
+          // Undated or non-finite points never participate in horizon analytics (LW03)
+          if (!Number.isFinite(ptTimeMs)) continue;
+          if (ptTimeMs < nowMs - 1800000 || ptTimeMs > horizonMs) {
             continue;
           }
 
@@ -3413,8 +3510,13 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         var highestTime = null;
         var highestHum = null;
 
-        var startOfDayMs = null;
-        var endOfDayMs = null;
+        // Remaining-day window per DESIGN_BLUEPRINT §29.2: current hour through
+        // LOCAL midnight in the location's IANA timezone. Each point's LOCAL
+        // calendar-date key is computed with one cached formatter per timezone —
+        // no whole-hour boundary search, no fixed 24h arithmetic, DST-exact on
+        // 23h/25h days (LW02). Without a valid timezone the metric reports
+        // unavailable instead of silently borrowing the host timezone.
+        var ymdFmt = null;
         var todayKey = null;
         if (tz) {
           try {
@@ -3427,70 +3529,63 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
                 day: '2-digit'
               });
             }
-            todayKey = self._tzFormatters[tz + '_YMD'].format(now);
-            var nowTime = now.getTime();
-            var probe = nowTime - (nowTime % 3600000);
-            var checkDate = new Date();
-            while (probe > nowTime - 26 * 3600000) {
-              checkDate.setTime(probe - 3600000);
-              if (self._tzFormatters[tz + '_YMD'].format(checkDate) !== todayKey) {
-                startOfDayMs = probe;
-                break;
+            ymdFmt = self._tzFormatters[tz + '_YMD'];
+            todayKey = ymdFmt.format(now);
+          } catch (e) {
+            ymdFmt = null;
+            todayKey = null;
+          }
+        }
+
+        if (!todayKey) {
+          peakVal = 'Unavailable';
+          peakSub = 'No forecast timezone';
+        } else {
+          var nowMsPeak = now.getTime();
+          for (var pi = 0; pi < hourly.length; pi++) {
+            var hPt = hourly[pi];
+            if (!hPt) continue;
+
+            var hPtMs = hPt.timestamp;
+            if (!hPtMs && hPt.isoTime && this.isoTimeHasOffsetRe.test(hPt.isoTime)) {
+              var hParsedIso = new Date(hPt.isoTime).getTime();
+              if (!isNaN(hParsedIso)) hPtMs = hParsedIso;
+            }
+            if (!hPtMs && hPt.time) {
+              var hParsed = new Date(hPt.time).getTime();
+              if (!isNaN(hParsed)) hPtMs = hParsed;
+            }
+            // Undated points never participate (LW03)
+            if (!Number.isFinite(hPtMs)) continue;
+            // From the current interval onward only: a point whose whole-hour
+            // interval already ended is a past reading, never a remaining-day peak
+            if (hPtMs + 3600000 <= nowMsPeak) continue;
+            // Same LOCAL calendar date in the location tz — no tomorrow leak
+            if (ymdFmt.format(new Date(hPtMs)) !== todayKey) continue;
+
+            var appTemp = isF ? hPt.apparentF : hPt.apparentC;
+            if (appTemp == null || isNaN(appTemp)) {
+              var rawApp = hPt.apparent_temperature;
+              if (rawApp != null && !isNaN(rawApp)) {
+                appTemp = isF ? ((rawApp * 9 / 5) + 32) : rawApp;
               }
-              probe -= 3600000;
             }
-            if (startOfDayMs != null) {
-              endOfDayMs = startOfDayMs + 24 * 3600000;
-            }
-          } catch (e) {}
-        }
-        if (startOfDayMs == null) {
-          var d0 = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-          startOfDayMs = d0.getTime();
-          endOfDayMs = startOfDayMs + 86400000;
-        }
-
-        for (var pi = 0; pi < hourly.length; pi++) {
-          var hPt = hourly[pi];
-          if (!hPt) continue;
-
-          // Exclude points outside current day
-          var hPtMs = hPt.timestamp;
-          if (!hPtMs && hPt.isoTime && this.isoTimeHasOffsetRe.test(hPt.isoTime)) {
-            var hParsedIso = new Date(hPt.isoTime).getTime();
-            if (!isNaN(hParsedIso)) hPtMs = hParsedIso;
-          }
-          if (!hPtMs && hPt.time) {
-            var hParsed = new Date(hPt.time).getTime();
-            if (!isNaN(hParsed)) hPtMs = hParsed;
-          }
-
-          if (hPtMs && (hPtMs < startOfDayMs || hPtMs >= endOfDayMs)) {
-            continue;
-          }
-
-          var appTemp = isF ? hPt.apparentF : hPt.apparentC;
-          if (appTemp == null || isNaN(appTemp)) {
-            var rawApp = hPt.apparent_temperature;
-            if (rawApp != null && !isNaN(rawApp)) {
-              appTemp = isF ? ((rawApp * 9 / 5) + 32) : rawApp;
+            if (appTemp != null && !isNaN(appTemp)) {
+              if (appTemp > highestApp) {
+                highestApp = appTemp;
+                highestTime = hPt.time || hPt.label || ((hPt.hour < 10 ? '0' : '') + hPt.hour + ':00');
+                highestHum = hPt.humidity != null ? hPt.humidity : null;
+              }
             }
           }
-          if (appTemp != null && !isNaN(appTemp)) {
-            if (appTemp > highestApp) {
-              highestApp = appTemp;
-              highestTime = hPt.time || hPt.label || ((hPt.hour < 10 ? '0' : '') + hPt.hour + ':00');
-              highestHum = hPt.humidity != null ? hPt.humidity : null;
-            }
-          }
-        }
 
-        if (highestApp !== -Infinity && highestTime) {
-          peakVal = Math.round(highestApp) + '°';
-          peakSub = 'at ' + highestTime;
-          peakDetails.peakTemp = Math.round(highestApp);
-          peakDetails.peakTime = highestTime;
-          peakDetails.peakHumidity = highestHum;
+          if (highestApp !== -Infinity && highestTime) {
+            peakVal = Math.round(highestApp) + '°';
+            peakSub = 'at ' + highestTime;
+            peakDetails.peakTemp = Math.round(highestApp);
+            peakDetails.peakTime = highestTime;
+            peakDetails.peakHumidity = highestHum;
+          }
         }
       }
 
@@ -4282,11 +4377,12 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         case 'news-dot':
           var dotIdx = parseInt(el ? el.getAttribute('data-idx') : '0', 10);
           var story = (this.newsItems && this.newsItems[dotIdx]) || {};
+          var storyAge = this.formatNewsAge(story);
           return {
             title: 'Story ' + (dotIdx + 1) + ' of ' + (this.newsItems ? this.newsItems.length : 1),
             bodyHtml: makeRows([
               ['Headline', story.title || 'Regional Story'],
-              ['Source & Age', (story.timeAgo ? story.timeAgo + ' · ' : '') + (story.source || 'Regional Publisher')],
+              ['Source & Age', (storyAge ? storyAge + ' · ' : '') + (story.source || 'Regional Publisher')],
               ['Action', 'Click or press Enter to view this story now']
             ])
           };
@@ -4510,11 +4606,12 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
               var nItem = newsList[ni];
               var rawUrl = nItem.link || nItem.url || '';
               var safeUrl = (typeof rawUrl === 'string' && /^https:\/\//i.test(rawUrl.trim())) ? rawUrl.trim() : '#';
-              html += '<a class="hud-detail-news-item" href="' + esc(safeUrl) + '" target="_blank" rel="noopener noreferrer">' +
+              var ageLabel = this.formatNewsAge(nItem) || 'Recent';
+              html += '<a class="hud-detail-news-item" data-news-index="' + ni + '" href="' + esc(safeUrl) + '" target="_blank" rel="noopener noreferrer">' +
                 '<p class="hud-detail-news-title">' + esc(nItem.title || 'Untitled Story') + '</p>' +
                 '<div class="hud-detail-news-meta">' +
                   '<span>' + esc(nItem.source || 'Regional Publisher') + '</span>' +
-                  '<span>' + esc(nItem.timeAgo || 'Recent') + '</span>' +
+                  '<span>' + esc(ageLabel) + '</span>' +
                 '</div>' +
               '</a>';
             }
@@ -4522,7 +4619,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           } else {
             html = '<div class="hud-detail-item full-width">' +
               '<span class="hud-detail-item-val">No regional news stories available.</span>' +
-              '<span class="hud-detail-item-sub">GDELT DOC 2.0 query returned 0 articles for current locality.</span>' +
+              '<span class="hud-detail-item-sub">Regional feed returned no usable stories for the current locality.</span>' +
             '</div>';
           }
           break;
@@ -4816,7 +4913,58 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           break;
       }
 
+      // Content signature: skip DOM replacement when the drawer markup is
+      // unchanged — repeated refreshes add no nodes and cannot drop focus (LW01)
+      var sigHash = 5381;
+      for (var si = 0; si < html.length; si++) {
+        sigHash = ((sigHash << 5) + sigHash + html.charCodeAt(si)) | 0;
+      }
+      var contentSig = cardType + ':' + html.length + ':' + sigHash;
+      if (this._detailContentSig === contentSig) {
+        return;
+      }
+      this._detailContentSig = contentSig;
+
+      // Capture focus state inside the drawer before replacement (LW01)
+      var restoreFocusKey = null;
+      var activeEl = (typeof document !== 'undefined' && document.activeElement) ? document.activeElement : null;
+      if (activeEl && bodyEl && typeof bodyEl.contains === 'function' && bodyEl.contains(activeEl)) {
+        var focusIdxAttr = (typeof activeEl.getAttribute === 'function') ? activeEl.getAttribute('data-news-index') : null;
+        if (focusIdxAttr != null) {
+          restoreFocusKey = focusIdxAttr;
+        } else if (bodyEl.querySelectorAll && typeof activeEl.classList === 'object' && activeEl.classList && activeEl.classList.contains &&
+                   activeEl.classList.contains('hud-detail-news-item')) {
+          var focusLinks = bodyEl.querySelectorAll('.hud-detail-news-item');
+          for (var fi = 0; fi < focusLinks.length; fi++) {
+            if (focusLinks[fi] === activeEl) { restoreFocusKey = String(fi); break; }
+          }
+        }
+      }
+
       bodyEl.innerHTML = html;
+
+      // Restore focus to the corresponding replacement link without scrolling;
+      // if the story disappeared, fall back to the drawer's close control —
+      // never the page background (LW01)
+      if (restoreFocusKey != null) {
+        var focusTarget = null;
+        if (bodyEl.querySelector) {
+          try { focusTarget = bodyEl.querySelector('.hud-detail-news-item[data-news-index="' + restoreFocusKey + '"]'); } catch (e) {}
+        }
+        if (!focusTarget && bodyEl.querySelectorAll) {
+          var newLinks = bodyEl.querySelectorAll('.hud-detail-news-item');
+          var fk = parseInt(restoreFocusKey, 10);
+          if (!isNaN(fk) && fk >= 0 && fk < newLinks.length) focusTarget = newLinks[fk];
+        }
+        if (!focusTarget) focusTarget = this.dom.hudDetailClose;
+        if (focusTarget && typeof focusTarget.focus === 'function') {
+          try {
+            focusTarget.focus({ preventScroll: true });
+          } catch (e) {
+            try { focusTarget.focus(); } catch (e2) {}
+          }
+        }
+      }
     },
 
     checkAndSync: function() {
@@ -4840,6 +4988,36 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         return;
       }
       this.isSyncing = true;
+
+      // Paint a validated stale snapshot BEFORE awaiting the network so the HUD
+      // boots into real cached data instead of placeholders (LW12). Rendering
+      // it does not rewrite its timestamp or extend freshness; a successful
+      // current-generation refresh replaces it below.
+      if (!this.state && global.CacheManager && typeof global.CacheManager.getAny === 'function') {
+        try {
+          var staleSnap = global.CacheManager.getAny();
+          if (staleSnap && staleSnap.weather && staleSnap.location) {
+            var curWProv = (global.ApiService && global.ApiService.weatherProvider) || 'open-meteo';
+            var curAProv = (global.ApiService && global.ApiService.aqiProvider) || 'open-meteo';
+            var staleCtxOk = (!staleSnap.weatherProvider || staleSnap.weatherProvider === curWProv) &&
+                             (!staleSnap.aqiProvider || staleSnap.aqiProvider === curAProv);
+            if (staleCtxOk) {
+              staleSnap.fromCache = true;
+              staleSnap.isStalePaint = true;
+              this.state = staleSnap;
+              if (this.isPlaybackPaused) {
+                this.pendingSnapshot = staleSnap;
+              } else {
+                this.renderAll(staleSnap);
+              }
+              console.log('[App] Painted validated stale snapshot before network revalidation');
+            }
+          }
+        } catch (staleErr) {
+          // Missing or corrupt cache falls through to the existing empty state
+          console.warn('[App] Stale snapshot paint skipped:', staleErr && staleErr.message);
+        }
+      }
 
       if (this.dom.btnRefresh) {
         this.dom.btnRefresh.classList.add('is-spinning');
@@ -4895,13 +5073,15 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         });
     },
 
-    fetchNews: function(forceRefresh) {
+    fetchNews: function() {
       var self = this;
       if (!global.ApiService || typeof global.ApiService.fetchNews !== 'function') return Promise.resolve([]);
       var loc = (this.state && this.state.location) || (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.defaultLocation) || {};
       var city = loc.city || 'Local Area';
       var country = loc.countryCode || 'US';
-      return global.ApiService.fetchNews(city, country, forceRefresh)
+      // No force concept: news network eligibility is owned by the ApiService
+      // quota firewall and can never be bypassed from the UI (LW06/CORR-3)
+      return global.ApiService.fetchNews(city, country)
         .then(function(articles) {
           if (articles && articles.length > 0) {
             self.newsItems = articles;
@@ -5073,6 +5253,48 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
     },
 
+    /**
+     * Computes a relative article age AT DISPLAY TIME from the normalized
+     * `publishedMs` (LW15) — no frozen persisted timeAgo strings. Returns ''
+     * when the publish instant is unknown so callers can use their fallback.
+     * Stale-marked cache hits report 'Cached'.
+     * @param {Object} item News article
+     * @param {number} [nowMs]
+     * @returns {string}
+     */
+    formatNewsAge: function(item, nowMs) {
+      if (!item) return '';
+      if (item.stale) return 'Cached';
+      if (typeof item.publishedMs !== 'number' || !Number.isFinite(item.publishedMs)) {
+        return item.timeAgo || '';
+      }
+      var ageMs = (nowMs || Date.now()) - item.publishedMs;
+      if (ageMs < 0) ageMs = 0; // tolerate small clock skew: "Just now"
+      var mins = Math.floor(ageMs / 60000);
+      if (mins < 1) return 'Just now';
+      if (mins < 60) return mins + 'm ago';
+      var hours = Math.floor(mins / 60);
+      if (hours < 24) return hours + 'h ago';
+      var days = Math.floor(hours / 24);
+      return days + 'd ago';
+    },
+
+    /**
+     * Paints a telemetry bar fill via compositable scaleX instead of animated
+     * width (LW17). The element keeps a fixed full width; transform-origin is
+     * left. Legacy inline widths are cleared.
+     * @param {Element} el Fill element
+     * @param {number} pct 0-100 (clamped)
+     */
+    setBarFill: function(el, pct) {
+      if (!el || !el.style) return;
+      var frac = (typeof pct === 'number' && Number.isFinite(pct)) ? (pct / 100) : 0;
+      if (frac < 0) frac = 0;
+      else if (frac > 1) frac = 1;
+      if (el.style.width) el.style.width = '';
+      el.style.transform = 'scaleX(' + frac + ')';
+    },
+
     initBatteryMonitor: function() {
       var self = this;
       if (typeof navigator !== 'undefined' && typeof navigator.getBattery === 'function') {
@@ -5186,7 +5408,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         this.dom.hwBatteryIcon.className = isCharging ? 'hw-battery-badge is-charging' : 'hw-battery-badge';
       }
       if (this.dom.hwBatteryBar) {
-        this.dom.hwBatteryBar.style.width = pct + '%';
+        this.setBarFill(this.dom.hwBatteryBar, pct);
         this.dom.hwBatteryBar.className = 'hw-bar-fill hw-battery-fill' +
           (isCharging ? ' is-charging' : (pct <= 15 ? ' is-low' : (pct <= 30 ? ' is-medium' : '')));
       }
@@ -5215,6 +5437,16 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       var setDomText = (typeof this.setDomText === 'function') ? this.setDomText.bind(this)
         : (typeof App !== 'undefined' && typeof App.setDomText === 'function') ? App.setDomText.bind(App)
         : function(n, t) { if (n && n.textContent !== t) n.textContent = t; };
+      // Bar fills tolerate detached/mock receivers the same way setDomText does
+      var setBar = (typeof this.setBarFill === 'function') ? this.setBarFill.bind(this)
+        : function(el, pct) {
+            if (!el || !el.style) return;
+            var p = (typeof pct === 'number' && Number.isFinite(pct)) ? pct : 0;
+            var frac = p / 100;
+            if (frac < 0) frac = 0; else if (frac > 1) frac = 1;
+            el.style.width = '';
+            el.style.transform = 'scaleX(' + frac + ')';
+          };
 
       this.lastHwUpdate = Date.now();
       this.lastHwData = data;
@@ -5226,7 +5458,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       this.pushHwHistory(this.hwCpuHistory, cpuVal);
 
       if (this.dom.hwCpuVal) setDomText(this.dom.hwCpuVal, cpuVal + '%');
-      if (this.dom.hwCpuBar) this.dom.hwCpuBar.style.width = cpuVal + '%';
+      setBar(this.dom.hwCpuBar, cpuVal);
       if (this.sparklineEngine) this.sparklineEngine.render('cpu', this.hwCpuHistory);
       if (this.dom.hwCpuName) setDomText(this.dom.hwCpuName, cpuName);
 
@@ -5237,7 +5469,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       this.pushHwHistory(this.hwGpuHistory, gpuVal);
 
       if (this.dom.hwGpuVal) setDomText(this.dom.hwGpuVal, gpuVal + '%');
-      if (this.dom.hwGpuBar) this.dom.hwGpuBar.style.width = gpuVal + '%';
+      setBar(this.dom.hwGpuBar, gpuVal);
       if (this.sparklineEngine) this.sparklineEngine.render('gpu', this.hwGpuHistory);
       if (this.dom.hwGpuName) setDomText(this.dom.hwGpuName, gpuName);
 
@@ -5252,7 +5484,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
       this.pushHwHistory(this.hwRamHistory, ramPct);
       if (this.dom.hwRamVal) setDomText(this.dom.hwRamVal, ramPct + '%');
-      if (this.dom.hwRamBar) this.dom.hwRamBar.style.width = ramPct + '%';
+      setBar(this.dom.hwRamBar, ramPct);
       if (this.sparklineEngine) this.sparklineEngine.render('ram', this.hwRamHistory);
       if (this.dom.hwRamDetail) {
         setDomText(this.dom.hwRamDetail, totalRamMb > 0 ? (usedGb + ' / ' + totalGb + ' GB') : 'Physical RAM');
@@ -5267,7 +5499,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         diskVal = Math.max(0, Math.min(100, diskVal));
         this.pushHwHistory(this.hwDiskHistory, diskVal);
         if (this.dom.hwDiskVal) setDomText(this.dom.hwDiskVal, diskVal + '%');
-        if (this.dom.hwDiskBar) this.dom.hwDiskBar.style.width = diskVal + '%';
+        setBar(this.dom.hwDiskBar, diskVal);
         if (this.sparklineEngine) this.sparklineEngine.render('disk', this.hwDiskHistory);
         if (this.dom.hwDiskDetail) setDomText(this.dom.hwDiskDetail, 'Drive C:');
       } else {
@@ -5291,10 +5523,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         this.pushHwHistory(this.hwNetDownHistory, downKbps);
 
         if (this.dom.hwNetDownVal) setDomText(this.dom.hwNetDownVal, this.formatNetworkBandwidth(downKbps));
-        if (this.dom.hwNetDownBar) {
-          var downPct = downKbps <= 0 ? 0 : Math.min(100, Math.max(2, Math.round((downKbps / 50000) * 100)));
-          this.dom.hwNetDownBar.style.width = downPct + '%';
-        }
+        var downPct = downKbps <= 0 ? 0 : Math.min(100, Math.max(2, Math.round((downKbps / 50000) * 100)));
+        setBar(this.dom.hwNetDownBar, downPct);
         if (this.sparklineEngine) this.sparklineEngine.render('netDown', this.hwNetDownHistory);
       }
 
@@ -5304,10 +5534,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         this.pushHwHistory(this.hwNetUpHistory, upKbps);
 
         if (this.dom.hwNetUpVal) setDomText(this.dom.hwNetUpVal, this.formatNetworkBandwidth(upKbps));
-        if (this.dom.hwNetUpBar) {
-          var upPct = upKbps <= 0 ? 0 : Math.min(100, Math.max(2, Math.round((upKbps / 15000) * 100)));
-          this.dom.hwNetUpBar.style.width = upPct + '%';
-        }
+        var upPct = upKbps <= 0 ? 0 : Math.min(100, Math.max(2, Math.round((upKbps / 15000) * 100)));
+        setBar(this.dom.hwNetUpBar, upPct);
         if (this.sparklineEngine) this.sparklineEngine.render('netUp', this.hwNetUpHistory);
       }
 
@@ -5355,7 +5583,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             var quotaGb = (estimate.quota / (1024 * 1024 * 1024)).toFixed(0);
             self.pushHwHistory(self.hwDiskHistory, pct);
             if (self.dom.hwDiskVal) self.setDomText(self.dom.hwDiskVal, pct + '%');
-            if (self.dom.hwDiskBar) self.dom.hwDiskBar.style.width = pct + '%';
+            self.setBarFill(self.dom.hwDiskBar, pct);
             if (self.sparklineEngine) self.sparklineEngine.render('disk', self.hwDiskHistory);
             if (self.dom.hwDiskDetail) self.setDomText(self.dom.hwDiskDetail, usedGb + ' / ' + quotaGb + ' GB');
           } else {
@@ -5373,7 +5601,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       var pct = this.simulatedDiskPct || 28;
       this.pushHwHistory(this.hwDiskHistory, pct);
       if (this.dom.hwDiskVal) this.setDomText(this.dom.hwDiskVal, pct + '%');
-      if (this.dom.hwDiskBar) this.dom.hwDiskBar.style.width = pct + '%';
+      this.setBarFill(this.dom.hwDiskBar, pct);
       if (this.sparklineEngine) this.sparklineEngine.render('disk', this.hwDiskHistory);
       if (this.dom.hwDiskDetail) this.setDomText(this.dom.hwDiskDetail, 'System NVMe');
     },
@@ -5425,21 +5653,21 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       this.pushHwHistory(this.hwNetUpHistory, this.simulatedNetUp);
 
       if (this.dom.hwCpuVal) this.setDomText(this.dom.hwCpuVal, this.simulatedCpuLoad + '%');
-      if (this.dom.hwCpuBar) this.dom.hwCpuBar.style.width = this.simulatedCpuLoad + '%';
+      this.setBarFill(this.dom.hwCpuBar, this.simulatedCpuLoad);
       if (this.dom.hwCpuName) this.setDomText(this.dom.hwCpuName, 'Processor');
 
       if (this.dom.hwGpuVal) this.setDomText(this.dom.hwGpuVal, this.simulatedGpuLoad + '%');
-      if (this.dom.hwGpuBar) this.dom.hwGpuBar.style.width = this.simulatedGpuLoad + '%';
+      this.setBarFill(this.dom.hwGpuBar, this.simulatedGpuLoad);
       if (this.dom.hwGpuName) this.setDomText(this.dom.hwGpuName, 'Graphics 3D');
 
       if (this.dom.hwRamVal) this.setDomText(this.dom.hwRamVal, ramPct + '%');
-      if (this.dom.hwRamBar) this.dom.hwRamBar.style.width = ramPct + '%';
+      this.setBarFill(this.dom.hwRamBar, ramPct);
       if (this.dom.hwRamDetail) {
         this.setDomText(this.dom.hwRamDetail, this.simulatedRamUsed + ' / ' + this.simulatedRamTotal + ' GB');
       }
 
       if (this.dom.hwDiskVal) this.setDomText(this.dom.hwDiskVal, this.simulatedDiskPct + '%');
-      if (this.dom.hwDiskBar) this.dom.hwDiskBar.style.width = this.simulatedDiskPct + '%';
+      this.setBarFill(this.dom.hwDiskBar, this.simulatedDiskPct);
       if (this.dom.hwDiskDetail) this.setDomText(this.dom.hwDiskDetail, 'Drive C:');
 
       // Network Down & Up DOM Updates
@@ -5450,14 +5678,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (this.dom.hwNetDownName) this.setDomText(this.dom.hwNetDownName, 'Download');
       if (this.dom.hwNetUpName) this.setDomText(this.dom.hwNetUpName, 'Upload');
 
-      if (this.dom.hwNetDownBar) {
-        var downPct = this.simulatedNetDown <= 0 ? 0 : Math.min(100, Math.max(2, Math.round((this.simulatedNetDown / 50000) * 100)));
-        this.dom.hwNetDownBar.style.width = downPct + '%';
-      }
-      if (this.dom.hwNetUpBar) {
-        var upPct = this.simulatedNetUp <= 0 ? 0 : Math.min(100, Math.max(2, Math.round((this.simulatedNetUp / 15000) * 100)));
-        this.dom.hwNetUpBar.style.width = upPct + '%';
-      }
+      var downPct = this.simulatedNetDown <= 0 ? 0 : Math.min(100, Math.max(2, Math.round((this.simulatedNetDown / 50000) * 100)));
+      this.setBarFill(this.dom.hwNetDownBar, downPct);
+      var upPct = this.simulatedNetUp <= 0 ? 0 : Math.min(100, Math.max(2, Math.round((this.simulatedNetUp / 15000) * 100)));
+      this.setBarFill(this.dom.hwNetUpBar, upPct);
 
       // Hardware-Accelerated Vector SVG Sparkline Renders
       if (this.sparklineEngine) {
@@ -5478,12 +5702,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     renderNews: function(items) {
       this.clearNewsTimers();
 
+      // Real articles only — the empty/unavailable state renders explicitly
+      // below; no synthetic fallback headlines (LW05)
       if (Array.isArray(items) && items.length > 0) {
         this.newsItems = items;
-      } else if (!this.newsItems || this.newsItems.length === 0) {
-        if (global.ApiService && typeof global.ApiService.getCuratedNews === 'function') {
-          this.newsItems = global.ApiService.getCuratedNews('Local Area');
-        }
       }
 
       if (!this.newsItems || this.newsItems.length === 0) {
@@ -5630,12 +5852,21 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       var self = this;
       var incomingUrl = String(bg.url || '').replace(/["\\\n\r]/g, '');
 
+      // Generation counter: only the newest desired wallpaper may touch the
+      // buffers, credits, contrast state, or persisted boot cache. Obsolete
+      // completions clean up and no-op (LW11).
+      this._bgGeneration = (this._bgGeneration || 0) + 1;
+      var gen = this._bgGeneration;
+
       // Double-buffered cross-fade preloader
       var preloader = new Image();
       preloader.crossOrigin = 'anonymous';
       preloader.onload = function() {
         preloader.onload = null;
         preloader.onerror = null;
+        if (gen !== self._bgGeneration) {
+          return; // superseded by a newer candidate (provider change / newer snapshot)
+        }
         self.lastBgUrl = incomingUrl;
         self.lastLoadedImage = preloader;
         var activeEl = self.currentBgBuffer === 'a' ? self.dom.bgA : self.dom.bgB;
@@ -5692,6 +5923,11 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       preloader.onerror = function(err) {
         preloader.onload = null;
         preloader.onerror = null;
+        // Newest-candidate failure keeps the currently visible image: nothing
+        // to roll back here. Obsolete failures are dropped silently (LW11).
+        if (gen !== self._bgGeneration) {
+          return;
+        }
         var safeErrUrl = (global.ApiService && typeof global.ApiService.sanitizeUrl === 'function')
           ? global.ApiService.sanitizeUrl(incomingUrl)
           : incomingUrl;
@@ -5736,6 +5972,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (this.isPlaybackPaused || !this.isRunning) return;
       if (!this.animationFrameId) {
         this.lastFrameTime = performance.now();
+        this._paceDeadline = 0; // reset pacing state on wake (LW07)
         if (!this._boundLoop) {
           this._boundLoop = this.loop.bind(this);
         }
@@ -5755,6 +5992,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         this.animationFrameId = null;
       }
       this.lastFrameTime = performance.now();
+      this._paceDeadline = 0; // reset pacing state on resume (LW07)
       this.fpsTimer = performance.now();
       this.frameCount = 0;
 
@@ -5844,9 +6082,19 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
       this.animationFrameId = null;
 
-      var elapsed = currentTime - this.lastFrameTime;
-      // Cap at 60 FPS (skip frames if called faster than ~16ms on 120Hz/144Hz/240Hz monitors, allowing 14.5ms for timer jitter on 60Hz)
-      if (elapsed < 14.5) {
+      if (typeof currentTime !== 'number' || !Number.isFinite(currentTime)) {
+        currentTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      }
+      var FRAME_MS = 1000 / 60;
+
+      // 60Hz pacing deadline that PRESERVES the fractional remainder across
+      // frames (LW07): on 144Hz/165Hz displays the old reset-to-currentTime
+      // logic discarded remainder time every frame (144Hz→48fps, 165Hz→55fps).
+      // Re-initialized after wake or when we fell impossibly far behind.
+      if (!this._paceDeadline || this._paceDeadline < currentTime - 10 * FRAME_MS) {
+        this._paceDeadline = currentTime;
+      }
+      if (currentTime < this._paceDeadline - 1) { // 1ms allowance for timer jitter
         if (!this._boundLoop) {
           this._boundLoop = this.loop.bind(this);
         }
@@ -5854,8 +6102,20 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         return;
       }
 
+      // Physics always receive the ACTUAL elapsed time since the previous
+      // RENDERED frame — never the pacing remainder or a fixed step (LW07).
+      var elapsed = this.lastFrameTime ? (currentTime - this.lastFrameTime) : FRAME_MS;
+      if (!Number.isFinite(elapsed) || elapsed < 0) elapsed = FRAME_MS;
+      if (elapsed > 250) elapsed = 250; // long-frame-gap safety clamp (tab wake / GC pause)
       var dt = elapsed * 0.001; // Seconds
       this.lastFrameTime = currentTime;
+
+      // Advance the deadline by one frame interval; if we are still behind,
+      // clamp to scheduling the next frame one interval from now (catch-up guard)
+      this._paceDeadline += FRAME_MS;
+      if (this._paceDeadline <= currentTime) {
+        this._paceDeadline = currentTime + FRAME_MS;
+      }
 
       // 1. Update & Render Particles (Canvas 2D SoA)
       if (this.particles) {

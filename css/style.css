@@ -346,7 +346,7 @@ html, body {
   contain: layout paint style;
   will-change: transform, opacity;
   transform: translate3d(0, 0, 0);
-  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.3s ease, background 0.4s ease, border-color 0.4s ease, box-shadow 3s cubic-bezier(0.4, 0, 0.2, 1), color 0.4s ease, width 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.3s ease, background 0.4s ease, border-color 0.4s ease, box-shadow 3s cubic-bezier(0.4, 0, 0.2, 1), color 0.4s ease;
   pointer-events: auto;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -437,7 +437,7 @@ html, body {
   contain: layout paint style;
   will-change: transform, opacity;
   transform: translate3d(0, 0, 0);
-  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.3s ease, background 0.4s ease, border-color 0.4s ease, box-shadow 3s cubic-bezier(0.4, 0, 0.2, 1), color 0.4s ease, width 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), top 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), bottom 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.3s ease, background 0.4s ease, border-color 0.4s ease, box-shadow 3s cubic-bezier(0.4, 0, 0.2, 1), color 0.4s ease;
   pointer-events: auto;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -1748,9 +1748,11 @@ html, body {
 
 .hw-bar-fill {
   height: 100%;
-  width: 0%;
+  width: 100%;
   border-radius: 2px;
-  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-origin: left center;
+  transform: scaleX(0);
+  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .hw-cpu-fill {
@@ -2417,6 +2419,9 @@ html, body {
   }
   .hw-battery-badge.is-charging {
     animation: none !important;
+  }
+  .hw-bar-fill {
+    transition: none !important;
   }
 }
 

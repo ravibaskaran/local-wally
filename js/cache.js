@@ -37,6 +37,11 @@
     ttlMinutes: initialMinutes,
     _cachedTimestamp: 0,
     _cachedEnvelope: null,
+    // Memoized "storage holds no valid envelope" state: clock ticks must not
+    // re-read and re-parse absent or corrupt storage (LW16).
+    _storageChecked: false,
+    // Best-effort persistence status, reported separately from memory state.
+    _persistenceOk: true,
 
     /**
      * Updates TTL interval in minutes (clamped between 5 and 30 minutes).
@@ -68,50 +73,64 @@
     },
 
     /**
+     * One-shot storage warm-up. Memory is the source of truth for retrieval,
+     * expiry, and age after this; absent/corrupt storage is memoized so failed
+     * or missing persistence never turns into repeated reads (LW16).
+     */
+    _ensureMemory: function() {
+      if (this._cachedEnvelope || this._storageChecked) return;
+      var envelope = null;
+      try {
+        var raw = localStorage.getItem(CACHE_KEY);
+        if (raw) {
+          var parsed = JSON.parse(raw);
+          if (parsed && typeof parsed.timestamp === 'number' && parsed.data) {
+            envelope = parsed;
+          }
+        }
+      } catch (e) {
+        envelope = null;
+      }
+      if (envelope) {
+        this._cachedEnvelope = envelope;
+        this._cachedTimestamp = envelope.timestamp;
+      }
+      this._storageChecked = true;
+    },
+
+    /**
      * Retrieves valid cached snapshot if available and unexpired.
+     * Served from the in-memory envelope; persistence failures do not affect retrieval.
      * @param {Object} [context] Optional provider/location context to enforce identity match
      * @returns {Object|null} Cached data payload or null on miss/expired
      */
     get: function(context) {
-      try {
-        var raw = localStorage.getItem(CACHE_KEY);
-        if (!raw) return null;
+      this._ensureMemory();
+      var envelope = this._cachedEnvelope;
+      if (!envelope) return null;
 
-        var envelope = JSON.parse(raw);
-        if (!envelope || typeof envelope.timestamp !== 'number' || !envelope.data) {
-          this.clear();
-          return null;
-        }
-
-        var age = Date.now() - envelope.timestamp;
-        // Strict boundary: negative age indicates backward clock skew; expire immediately
-        if (age < 0 || age >= this.TTL_MS) {
-          return null;
-        }
-
-        // Validate provider identity context if specified
-        if (context) {
-          var expectedWeather = context.weatherProvider;
-          var expectedAqi = context.aqiProvider;
-          var cachedWeather = envelope.weatherProvider || (envelope.data && envelope.data.weatherProvider);
-          var cachedAqi = envelope.aqiProvider || (envelope.data && envelope.data.aqiProvider);
-
-          if (expectedWeather && (!cachedWeather || expectedWeather !== cachedWeather)) {
-            return null;
-          }
-          if (expectedAqi && (!cachedAqi || expectedAqi !== cachedAqi)) {
-            return null;
-          }
-        }
-
-        this._cachedTimestamp = envelope.timestamp;
-        this._cachedEnvelope = envelope;
-        return envelope.data;
-      } catch (err) {
-        console.warn('[CacheManager] Error reading cache snapshot:', err);
-        this.clear();
+      var age = Date.now() - envelope.timestamp;
+      // Strict boundary: negative age indicates backward clock skew; expire immediately
+      if (!(age >= 0) || age >= this.TTL_MS || !Number.isFinite(age)) {
         return null;
       }
+
+      // Validate provider identity context if specified
+      if (context) {
+        var expectedWeather = context.weatherProvider;
+        var expectedAqi = context.aqiProvider;
+        var cachedWeather = envelope.weatherProvider || (envelope.data && envelope.data.weatherProvider);
+        var cachedAqi = envelope.aqiProvider || (envelope.data && envelope.data.aqiProvider);
+
+        if (expectedWeather && (!cachedWeather || expectedWeather !== cachedWeather)) {
+          return null;
+        }
+        if (expectedAqi && (!cachedAqi || expectedAqi !== cachedAqi)) {
+          return null;
+        }
+      }
+
+      return envelope.data;
     },
 
     /**
@@ -119,81 +138,67 @@
      * @returns {Object|null}
      */
     getAny: function() {
-      try {
-        var raw = localStorage.getItem(CACHE_KEY);
-        if (!raw) return null;
-        var envelope = JSON.parse(raw);
-        return envelope && envelope.data ? envelope.data : null;
-      } catch (e) {
-        return null;
-      }
+      this._ensureMemory();
+      return this._cachedEnvelope ? this._cachedEnvelope.data : null;
     },
 
     /**
-     * Atomically saves data payload with current timestamp and provider identity context
+     * Atomically saves data payload with current timestamp and provider identity context.
+     * The in-memory envelope is published FIRST and independently of persistence
+     * success (LW16): a storage failure never discards a valid snapshot.
      * @param {Object} data
      * @param {Object} [context] Optional provider context
-     * @returns {boolean} Success status
+     * @returns {boolean} True when the memory state was published
      */
     set: function(data, context, ttlMs) {
+      var now = Date.now();
+      var wProv = (typeof context === 'string') ? context : ((context && context.weatherProvider) || (data && data.weatherProvider) || null);
+      var aProv = (context && context.aqiProvider) || (data && data.aqiProvider) || null;
+      var envelope = {
+        timestamp: now,
+        weatherProvider: wProv,
+        aqiProvider: aProv,
+        data: data
+      };
+      // Publish memory state before touching storage
+      this._cachedEnvelope = envelope;
+      this._cachedTimestamp = now;
+      this._storageChecked = true;
       try {
-        var now = Date.now();
-        var wProv = (typeof context === 'string') ? context : ((context && context.weatherProvider) || (data && data.weatherProvider) || null);
-        var aProv = (context && context.aqiProvider) || (data && data.aqiProvider) || null;
-        var envelope = {
-          timestamp: now,
-          weatherProvider: wProv,
-          aqiProvider: aProv,
-          data: data
-        };
         localStorage.setItem(CACHE_KEY, JSON.stringify(envelope));
-        this._cachedTimestamp = now;
-        this._cachedEnvelope = envelope;
-        return true;
+        this._persistenceOk = true;
       } catch (err) {
-        console.warn('[CacheManager] Failed to write to localStorage:', err);
-        return false;
+        this._persistenceOk = false;
+        console.warn('[CacheManager] Failed to write to localStorage (memory state remains active):', err && err.message);
       }
+      return true;
     },
 
     /**
-     * Checks if active cache has expired
+     * Checks if active cache has expired. Served from memory; no storage reads on ticks.
      * @returns {boolean}
      */
     isExpired: function() {
-      try {
-        var raw = localStorage.getItem(CACHE_KEY);
-        if (!raw) return true;
-        var envelope = JSON.parse(raw);
-        if (!envelope || typeof envelope.timestamp !== 'number') return true;
-        var age = Date.now() - envelope.timestamp;
-        return age < 0 || age >= this.TTL_MS;
-      } catch (e) {
-        return true;
-      }
+      this._ensureMemory();
+      if (!this._cachedEnvelope) return true;
+      var age = Date.now() - this._cachedTimestamp;
+      if (!Number.isFinite(age)) return true;
+      return age < 0 || age >= this.TTL_MS;
     },
 
     /**
-     * Returns cache age in milliseconds
+     * Returns cache age in milliseconds. Served from memory; absent state is
+     * memoized so misses do not re-read storage (LW16).
      * @returns {number}
      */
     getAgeMs: function() {
+      this._ensureMemory();
       if (this._cachedTimestamp > 0) {
         var age = Date.now() - this._cachedTimestamp;
+        if (!Number.isFinite(age)) return Infinity;
         return (age >= 0) ? age : Infinity;
       }
-      try {
-        var raw = localStorage.getItem(CACHE_KEY);
-        if (!raw) return Infinity;
-        var envelope = JSON.parse(raw);
-        if (!envelope || typeof envelope.timestamp !== 'number') return Infinity;
-        this._cachedTimestamp = envelope.timestamp;
-        this._cachedEnvelope = envelope;
-        var age = Date.now() - envelope.timestamp;
-        return (age >= 0) ? age : Infinity;
-      } catch (e) {
-        return Infinity;
-      }
+      return Infinity;
     },
 
     /**
@@ -212,11 +217,48 @@
     clear: function() {
       this._cachedTimestamp = 0;
       this._cachedEnvelope = null;
+      this._storageChecked = true;
       try {
         localStorage.removeItem(CACHE_KEY);
       } catch (e) {
         // Ignore quota/access errors
       }
+    },
+
+    /**
+     * Best-effort persistence status, reported separately from memory state:
+     * false means the last write could not reach localStorage and the cache is
+     * currently memory-only (LW16). Surfaced in the diagnostics panel.
+     * @returns {boolean}
+     */
+    isPersisted: function() {
+      return this._persistenceOk !== false;
+    },
+
+    /**
+     * Mutates the current envelope's data in place while PRESERVING its original
+     * timestamp — attaching late-arriving news must not extend atmosphere
+     * freshness (LW16). Persistence stays best-effort.
+     * @param {Function} mutator Receives the cached data object
+     * @returns {boolean} True when a live envelope was mutated
+     */
+    update: function(mutator) {
+      this._ensureMemory();
+      var envelope = this._cachedEnvelope;
+      if (!envelope || !envelope.data) return false;
+      try {
+        mutator(envelope.data);
+      } catch (e) {
+        console.warn('[CacheManager] Update mutator failed:', e && e.message);
+        return false;
+      }
+      try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify(envelope));
+        this._persistenceOk = true;
+      } catch (err) {
+        this._persistenceOk = false;
+      }
+      return true;
     },
 
     /**
@@ -299,13 +341,7 @@
           }
           return pts;
         })(),
-        news: [
-          { title: 'Global Tech & Atmospheric Science Summit Convenes', source: 'Reuters', link: 'https://news.google.com' },
-          { title: 'Local Clean Energy Grid Expansion Begins Ahead of Schedule', source: 'Associated Press', link: 'https://news.google.com' },
-          { title: 'High-Altitude Meteorological Sensors Reveal Seasonal Shift', source: 'Nature Weather', link: 'https://news.google.com' },
-          { title: 'Regional Transport Network Modernization Nears Completion', source: 'Local Chronicle', link: 'https://news.google.com' },
-          { title: 'Urban Greening Project Lowers City Temperature Index', source: 'Science Daily', link: 'https://news.google.com' }
-        ],
+        news: [], // No fabricated offline headlines; empty state renders "unavailable" (LW05)
         background: {
           url: '', // Clean fallback to celestial sky & procedural gradient
           photographer: 'Ambient Nature',
@@ -316,4 +352,27 @@
   };
 
   global.CacheManager = CacheManager;
+
+  // Reconcile with writes from other same-origin instances: a relevant storage
+  // change invalidates the memoized memory state so the next access re-reads
+  // storage. Bound exactly once (LW16).
+  if (typeof global.addEventListener === 'function' && !CacheManager._storageBound) {
+    CacheManager._storageBound = true;
+    global.addEventListener('storage', function(ev) {
+      try {
+        if (!ev || !ev.key) return;
+        if (ev.key === CACHE_KEY) {
+          CacheManager._cachedEnvelope = null;
+          CacheManager._cachedTimestamp = 0;
+          CacheManager._storageChecked = false;
+        } else if (ev.key === TTL_PREF_KEY) {
+          var m = getInitialTtlMinutes();
+          CacheManager.ttlMinutes = m;
+          CacheManager.TTL_MS = m * 60 * 1000;
+        }
+      } catch (e) {
+        // Storage events are advisory only
+      }
+    });
+  }
 })(typeof window !== 'undefined' ? window : this);

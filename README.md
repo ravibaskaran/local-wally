@@ -270,6 +270,24 @@ local-wally/
 
 ## 🛡️ Recent Updates & Quality Improvements
 
+### Version 0.8.3 — News Engine Integrity, Timezone-Correct Forecasts & Render Pacing
+- **News Engine Integrity**:
+  - Every news request is bound to its identity (location query, country, provider/mode): a delayed response can never overwrite another query's cache, visible news, or pending snapshot; equivalent concurrent requests dedupe into one bounded in-flight map.
+  - Unbypassable per-provider 15-minute quota firewall — settings updates, reloads, and global refresh cannot skip it; failed attempts count; rotate mode falls through to the first cooldown-ready provider instead of stalling.
+  - Removed the fabricated-headlines fallback with real-publisher attribution: the terminal state is matching real cached stories (visibly "Cached") or an honest unavailable state. Publication timestamps normalized per provider with a future-guard; article age computed at display time.
+- **Timezone & Forecast Correctness**:
+  - Open-Meteo now uses `timeformat=unixtime` with labels formatted in the location's IANA timezone — DST transitions display correctly (spring-forward skips 02:00); old ISO payloads remain supported.
+  - Feels-Like Peak selects the remaining day by LOCAL calendar date in the location's timezone (correct for +5:30/+5:45 offsets and 23/25-hour DST days), from the current interval onward; unknown timezone reports Unavailable instead of borrowing the host's.
+  - Undated forecast points are rejected from rain/peak analytics; analytics use full-resolution hourly data (the 8-point chart is display-only) so peaks the 3-hourly sampling skipped are detected; charts render honest gaps instead of faking a minimum; AQI aligned by absolute instants.
+- **Rendering & Interaction**:
+  - 60 FPS pacing on high-refresh displays via a remainder-preserving accumulator (144 Hz previously ~48 fps, 165 Hz ~55 fps — now ~60 renders/second in deterministic simulation); physics dt is the actual time since the last rendered frame; single-RAF-chain and parking invariants preserved.
+  - Telemetry bars animate `transform: scaleX()` on a fixed width instead of `width`; HUD/dock position changes are discrete with a transform-only FLIP move (reduced motion = immediate); wallpaper loads are generation-guarded so an older image can never overwrite a newer one.
+  - Open drawers preserve focus (focused story restored without scroll jump, close-button fallback) and scroll on refresh; a validated stale snapshot paints immediately at boot marked "Cached" before network revalidation.
+- **Robustness**:
+  - Backward clock jumps trigger celestial refresh; rotation cursors/recent history work without localStorage (memory-first, bounded); the cache is memory-source-of-truth so failing storage no longer causes refetch loops (persistence failure shows "· RAM only" in diagnostics); fetch timeouts reject non-numeric delays (long-standing test warning eliminated).
+- **Deferred with reasons**: adaptive-quality and WebGL2 instanced-particle pilots require on-target WebView2 measurements (gates defined, unexecuted); WebGPU/WASM SIMD/workers/OffscreenCanvas rejected without a measured bottleneck; CSP policy deferred pending validation against Lively's loading model.
+- **Verification**: 8 suites green (6 regression suites, new v0.8.3 suite 62/62, audit-hardening 22/22), `node --check` clean across all 23 JS files, 5-file footprint (+1207/−509).
+
 ### Version 0.8.2 — Consolidated Audit Fixes, Timezone Correctness & Render-Loop Integrity
 - **Stability & Correctness**:
   - Restored the single-RAF-chain invariant: resuming with a queued snapshot no longer arms a duplicate animation loop (`App.startLoop()` re-arms via the guarded `wakeAnimationLoop()`), eliminating double per-vsync work during active animation.

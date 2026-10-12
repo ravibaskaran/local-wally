@@ -314,7 +314,11 @@
 
       return new Promise(function(resolve, reject) {
         options = options || {};
-        var timeout = timeoutMs || 5000;
+        // Reject non-numeric/invalid timeout values instead of feeding NaN to
+        // setTimeout (LW18): {} or undefined falls back to the 5s default.
+        var timeout = (typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) && timeoutMs > 0)
+          ? timeoutMs
+          : 5000;
         var controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
         var timedOut = false;
         var headersResolved = false;
@@ -581,9 +585,23 @@
           } else if (hourlyAqi.values && Array.isArray(hourlyAqi.values)) {
             var valArr = hourlyAqi.values;
             var matched = false;
-            if (hourlyAqi.times && Array.isArray(hourlyAqi.times) && pt.isoTime) {
+            // Align by validated absolute instants, never chart indices (LW08/LW10):
+            // unixtime seconds on either side convert to ms; offset-bearing ISO
+            // strings parse absolutely. Legacy zoneless string matching is kept
+            // as a fallback for old cached payloads.
+            var ptTsMs = (typeof pt.timestamp === 'number' && Number.isFinite(pt.timestamp)) ? pt.timestamp : null;
+            if (hourlyAqi.times && Array.isArray(hourlyAqi.times)) {
               for (var t = 0; t < hourlyAqi.times.length; t++) {
-                if (hourlyAqi.times[t] === pt.isoTime || (hourlyAqi.times[t] && pt.isoTime && hourlyAqi.times[t].indexOf(pt.isoTime.substring(0, 13)) === 0)) {
+                var aqiInstant = ApiService.toEpochMs(hourlyAqi.times[t]);
+                if (aqiInstant != null && ptTsMs != null) {
+                  if (Math.abs(aqiInstant - ptTsMs) < 1800000) {
+                    if (valArr[t] != null && Number.isFinite(valArr[t])) {
+                      ptAqiVal = valArr[t];
+                      matched = true;
+                      break;
+                    }
+                  }
+                } else if (pt.isoTime && (hourlyAqi.times[t] === pt.isoTime || (hourlyAqi.times[t] && hourlyAqi.times[t].indexOf && pt.isoTime && hourlyAqi.times[t].indexOf(pt.isoTime.substring(0, 13)) === 0))) {
                   if (valArr[t] != null && Number.isFinite(valArr[t])) {
                     ptAqiVal = valArr[t];
                     matched = true;
@@ -612,6 +630,54 @@
     /**
      * Multi-Provider Weather Adapters
      */
+    /**
+     * Converts an Open-Meteo time field (unixtime seconds OR ISO string) to an
+     * absolute epoch-ms instant. Zoneless ISO strings resolve via the request's
+     * fixed utc_offset_seconds; offset-bearing strings parse natively (LW10).
+     */
+    toEpochMs: function(v, fixedOffsetMs) {
+      if (typeof v === 'number' && Number.isFinite(v) && v > 0) {
+        return (v > 1e12) ? v : v * 1000;
+      }
+      if (typeof v === 'string' && v) {
+        var s = v.trim();
+        if (/(?:Z|[+-]\d{2}:\d{2})$/i.test(s)) {
+          var abs = Date.parse(s);
+          if (Number.isFinite(abs)) return abs;
+          return null;
+        }
+        if (typeof fixedOffsetMs === 'number' && Number.isFinite(fixedOffsetMs)) {
+          var isoM = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(s);
+          if (isoM) return Date.UTC(+isoM[1], +isoM[2] - 1, +isoM[3], +isoM[4], +isoM[5]) - fixedOffsetMs;
+        }
+      }
+      return null;
+    },
+
+    /**
+     * Formats the wall-clock hour (0-23) of an absolute instant in the given
+     * IANA timezone — DST-aware presentation (LW10). One cached Intl formatter
+     * per timezone. Falls back to host-local hour when tz is unusable.
+     */
+    formatTzHour: function(tz, epochMs) {
+      if (Number.isFinite(epochMs) && tz) {
+        try {
+          if (!this._tzHourFormatters) this._tzHourFormatters = {};
+          if (!this._tzHourFormatters[tz]) {
+            this._tzHourFormatters[tz] = new Intl.DateTimeFormat('en-US', {
+              timeZone: tz,
+              hour: '2-digit',
+              hour12: false
+            });
+          }
+          var parsed = parseInt(this._tzHourFormatters[tz].format(new Date(epochMs)), 10);
+          if (Number.isFinite(parsed)) return (parsed === 24) ? 0 : parsed;
+        } catch (e) { /* fall through to host-local */ }
+      }
+      var d = new Date(epochMs);
+      return isNaN(d.getTime()) ? null : d.getHours();
+    },
+
     WeatherAdapter: {
       normalizeOpenMeteo: function(data) {
         var current = data.current || {};
@@ -647,63 +713,110 @@
           timezone: data.timezone || null
         };
 
-        var hourlyForecast = [];
+        var locTz = data.timezone || null;
+        var locOffsetMs = (typeof data.utc_offset_seconds === 'number') ? data.utc_offset_seconds * 1000 : null;
         var timeArr = hourly.time || [];
         var count = Math.min(24, timeArr.length);
-        var step = count >= 8 ? Math.floor(count / 8) : 1;
-        // CORR-1: with timezone=auto the hourly.time strings are location-local wall clock
-        // with no offset; derive absolute UTC from utc_offset_seconds instead of host-local parsing.
-        var locOffsetMs = (typeof data.utc_offset_seconds === 'number') ? data.utc_offset_seconds * 1000 : null;
-        for (var i = 0; i < 8 && i < count; i++) {
-          var idx = Math.min(i * step, count - 1);
-          if (idx >= 0 && timeArr[idx]) {
-            var tStr = timeArr[idx];
-            var ptDate = new Date(tStr);
-            var ptTs = null;
-            if (/(?:Z|[+-]\d{2}:\d{2})$/i.test(tStr)) {
-              // Explicit offset present: Date parsing is already absolute-correct
-              if (!isNaN(ptDate.getTime())) ptTs = ptDate.getTime();
-            } else if (locOffsetMs != null) {
-              // Naive wall clock: UTC = wall time - location offset
-              var isoM = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(tStr);
-              if (isoM) ptTs = Date.UTC(+isoM[1], +isoM[2] - 1, +isoM[3], +isoM[4], +isoM[5]) - locOffsetMs;
-            }
-            var h = !isNaN(ptDate.getTime()) ? ptDate.getHours() : ((new Date().getHours() + i * 3) % 24);
-            var lbl = (i === 0) ? 'Now' : ((h % 12 || 12) + (h >= 12 ? ' PM' : ' AM'));
-            var ptTempC = (hourly.temperature_2m && hourly.temperature_2m[idx] != null && Number.isFinite(hourly.temperature_2m[idx])) ? hourly.temperature_2m[idx] : null;
-            var ptAppC = (hourly.apparent_temperature && hourly.apparent_temperature[idx] != null && Number.isFinite(hourly.apparent_temperature[idx])) ? hourly.apparent_temperature[idx] : null;
-            var ptPrecipProb = (hourly.precipitation_probability && hourly.precipitation_probability[idx] != null && Number.isFinite(hourly.precipitation_probability[idx])) ? hourly.precipitation_probability[idx] : null;
-            var ptPrecipMm = (hourly.precipitation && hourly.precipitation[idx] != null && Number.isFinite(hourly.precipitation[idx])) ? hourly.precipitation[idx] : null;
-            var ptWindKm = (hourly.wind_speed_10m && hourly.wind_speed_10m[idx] != null && Number.isFinite(hourly.wind_speed_10m[idx])) ? hourly.wind_speed_10m[idx] : null;
-            var ptHum = (hourly.relative_humidity_2m && hourly.relative_humidity_2m[idx] != null && Number.isFinite(hourly.relative_humidity_2m[idx])) ? hourly.relative_humidity_2m[idx] : null;
-            var ptWmo = (hourly.weather_code && hourly.weather_code[idx] != null && Number.isFinite(hourly.weather_code[idx])) ? hourly.weather_code[idx] : wmo;
 
-            hourlyForecast.push({
-              time: (h < 10 ? '0' : '') + h + ':00',
-              isoTime: tStr,
-              timestamp: ptTs,
-              label: lbl,
-              hour: h,
-              tempC: (ptTempC != null) ? Math.round(ptTempC * 10) / 10 : null,
-              tempF: (ptTempC != null) ? Math.round(((ptTempC * 9 / 5) + 32) * 10) / 10 : null,
-              apparentC: (ptAppC != null) ? Math.round(ptAppC * 10) / 10 : null,
-              apparentF: (ptAppC != null) ? Math.round(((ptAppC * 9 / 5) + 32) * 10) / 10 : null,
-              precipProb: (ptPrecipProb != null) ? Math.max(0, Math.min(100, Math.round(ptPrecipProb))) : null,
-              precipMm: (ptPrecipMm != null) ? Math.round(ptPrecipMm * 10) / 10 : null,
-              windSpeedKm: (ptWindKm != null) ? Math.round(ptWindKm * 10) / 10 : null,
-              windSpeedMph: (ptWindKm != null) ? Math.round((ptWindKm * 0.621371) * 10) / 10 : null,
-              humidity: (ptHum != null) ? Math.max(0, Math.min(100, Math.round(ptHum))) : null,
-              aqi: null,
-              aqiColor: '#94a3b8',
-              aqiCategory: 'Unavailable',
-              conditionText: ApiService.interpretWmoCode(ptWmo).text
-            });
+        // Resolve any entry (unixtime seconds or ISO string) to an absolute
+        // instant; old cached ISO payloads keep the v0.8.2 offset-aware path (LW10).
+        function resolveInstant(tVal) {
+          return ApiService.toEpochMs(tVal, locOffsetMs);
+        }
+
+        // DST-aware wall-clock hour for an instant in the location timezone
+        function hourFor(tVal, ts) {
+          if (ts != null && locTz) return ApiService.formatTzHour(locTz, ts);
+          if (typeof tVal === 'string') {
+            var hm = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(tVal);
+            if (hm) return +hm[4]; // naive string IS location wall clock
           }
+          if (ts != null) {
+            if (locOffsetMs != null) {
+              return new Date(ts + locOffsetMs).getUTCHours();
+            }
+            var d = new Date(ts);
+            return isNaN(d.getTime()) ? null : d.getHours();
+          }
+          return null;
+        }
+
+        function buildPoint(tVal, ts, arrIdx, hour, isFirst) {
+          var h = hour;
+          var lbl = (isFirst) ? 'Now' : ((h % 12 || 12) + (h >= 12 ? ' PM' : ' AM'));
+          var ptTempC = (hourly.temperature_2m && hourly.temperature_2m[arrIdx] != null && Number.isFinite(hourly.temperature_2m[arrIdx])) ? hourly.temperature_2m[arrIdx] : null;
+          var ptAppC = (hourly.apparent_temperature && hourly.apparent_temperature[arrIdx] != null && Number.isFinite(hourly.apparent_temperature[arrIdx])) ? hourly.apparent_temperature[arrIdx] : null;
+          var ptPrecipProb = (hourly.precipitation_probability && hourly.precipitation_probability[arrIdx] != null && Number.isFinite(hourly.precipitation_probability[arrIdx])) ? hourly.precipitation_probability[arrIdx] : null;
+          var ptPrecipMm = (hourly.precipitation && hourly.precipitation[arrIdx] != null && Number.isFinite(hourly.precipitation[arrIdx])) ? hourly.precipitation[arrIdx] : null;
+          var ptWindKm = (hourly.wind_speed_10m && hourly.wind_speed_10m[arrIdx] != null && Number.isFinite(hourly.wind_speed_10m[arrIdx])) ? hourly.wind_speed_10m[arrIdx] : null;
+          var ptHum = (hourly.relative_humidity_2m && hourly.relative_humidity_2m[arrIdx] != null && Number.isFinite(hourly.relative_humidity_2m[arrIdx])) ? hourly.relative_humidity_2m[arrIdx] : null;
+          var ptWmo = (hourly.weather_code && hourly.weather_code[arrIdx] != null && Number.isFinite(hourly.weather_code[arrIdx])) ? hourly.weather_code[arrIdx] : wmo;
+
+          return {
+            time: (h < 10 ? '0' : '') + h + ':00',
+            isoTime: (ts != null) ? new Date(ts).toISOString() : tStr0(tVal),
+            timestamp: ts,
+            label: lbl,
+            hour: h,
+            tempC: (ptTempC != null) ? Math.round(ptTempC * 10) / 10 : null,
+            tempF: (ptTempC != null) ? Math.round(((ptTempC * 9 / 5) + 32) * 10) / 10 : null,
+            apparentC: (ptAppC != null) ? Math.round(ptAppC * 10) / 10 : null,
+            apparentF: (ptAppC != null) ? Math.round(((ptAppC * 9 / 5) + 32) * 10) / 10 : null,
+            precipProb: (ptPrecipProb != null) ? Math.max(0, Math.min(100, Math.round(ptPrecipProb))) : null,
+            precipMm: (ptPrecipMm != null) ? Math.round(ptPrecipMm * 10) / 10 : null,
+            windSpeedKm: (ptWindKm != null) ? Math.round(ptWindKm * 10) / 10 : null,
+            windSpeedMph: (ptWindKm != null) ? Math.round((ptWindKm * 0.621371) * 10) / 10 : null,
+            humidity: (ptHum != null) ? Math.max(0, Math.min(100, Math.round(ptHum))) : null,
+            aqi: null,
+            aqiColor: '#94a3b8',
+            aqiCategory: 'Unavailable',
+            conditionText: ApiService.interpretWmoCode(ptWmo).text
+          };
+        }
+
+        function tStr0(tVal) {
+          return (typeof tVal === 'string') ? tVal : null;
+        }
+
+        // Full-resolution analytics series: every available hourly measurement
+        // with an absolute timestamp (LW08) — the chart's 8-point projection is
+        // display-only and no longer the analytics source.
+        var hourlyAnalytics = [];
+        for (var a = 0; a < count; a++) {
+          var aVal = timeArr[a];
+          if (aVal == null) continue;
+          var aTs = resolveInstant(aVal);
+          var aHour = hourFor(aVal, aTs);
+          if (aHour == null) continue;
+          hourlyAnalytics.push(buildPoint(aVal, aTs, a, aHour, false));
+        }
+
+        // 8-point chart projection sampled from the CURRENT interval forward,
+        // not blindly from the first provider row (LW08).
+        var hourlyForecast = [];
+        var nowMs = Date.now();
+        var startIdx = 0;
+        for (var s = 0; s < count; s++) {
+          var sTs = resolveInstant(timeArr[s]);
+          if (sTs != null && sTs + 3600000 > nowMs) { startIdx = s; break; }
+        }
+        var remaining = count - startIdx;
+        var step = (remaining >= 8) ? Math.floor(remaining / 8) : 1;
+        for (var i = 0; i < 8; i++) {
+          var idx = startIdx + i * step;
+          if (idx > count - 1) break;
+          var tStr = timeArr[idx];
+          if (tStr == null) continue;
+          var ptTs = resolveInstant(tStr);
+          var h = hourFor(tStr, ptTs);
+          if (h == null) continue;
+          hourlyForecast.push(buildPoint(tStr, ptTs, idx, h, i === 0));
         }
 
         var result = Object.assign({}, weather, {
           weather: weather,
           hourlyForecast: hourlyForecast,
+          hourlyAnalytics: hourlyAnalytics,
           hourly: hourlyForecast
         });
         return result;
@@ -761,50 +874,62 @@
         var hourlyForecast = [];
         var countPts = Math.min(24, series.length);
         var step = countPts >= 8 ? Math.floor(countPts / 8) : 1;
+
+        function buildMetPoint(pt, isFirst, seqIdx) {
+          var ptDetails = (pt.data && pt.data.instant && pt.data.instant.details) || {};
+          var ptNext = (pt.data && (pt.data.next_1_hours || pt.data.next_6_hours)) || {};
+          var ptSym = (ptNext.summary && ptNext.summary.symbol_code) || sym;
+          var ptWmo = ApiService.metSymbolToWmo(ptSym);
+          var tStr = pt.time || '';
+          var ptDate = new Date(tStr);
+          var h = !isNaN(ptDate.getTime()) ? ptDate.getHours() : ((new Date().getHours() + seqIdx * 3) % 24);
+          var lbl = (isFirst) ? 'Now' : ((h % 12 || 12) + (h >= 12 ? ' PM' : ' AM'));
+          var ptT = (ptDetails.air_temperature != null && Number.isFinite(ptDetails.air_temperature)) ? ptDetails.air_temperature : null;
+          var ptWind = (ptDetails.wind_speed != null && Number.isFinite(ptDetails.wind_speed)) ? Math.round(ptDetails.wind_speed * 3.6 * 10) / 10 : null;
+          var ptHum = (ptDetails.relative_humidity != null && Number.isFinite(ptDetails.relative_humidity)) ? ptDetails.relative_humidity : null;
+          var ptP = (ptNext.details && ptNext.details.precipitation_amount != null && Number.isFinite(ptNext.details.precipitation_amount)) ? ptNext.details.precipitation_amount : null;
+          var ptProb = (ptNext.details && ptNext.details.probability_of_precipitation != null && Number.isFinite(ptNext.details.probability_of_precipitation)) ? ptNext.details.probability_of_precipitation : null;
+
+          return {
+            time: (h < 10 ? '0' : '') + h + ':00',
+            isoTime: tStr,
+            timestamp: !isNaN(ptDate.getTime()) ? ptDate.getTime() : null,
+            label: lbl,
+            hour: h,
+            tempC: (ptT != null) ? Math.round(ptT * 10) / 10 : null,
+            tempF: (ptT != null) ? Math.round(((ptT * 9 / 5) + 32) * 10) / 10 : null,
+            apparentC: (ptT != null) ? Math.round(ptT * 10) / 10 : null,
+            apparentF: (ptT != null) ? Math.round(((ptT * 9 / 5) + 32) * 10) / 10 : null,
+            precipProb: (ptProb != null) ? Math.max(0, Math.min(100, Math.round(ptProb))) : null,
+            precipMm: (ptP != null) ? Math.round(ptP * 10) / 10 : null,
+            windSpeedKm: (ptWind != null) ? ptWind : null,
+            windSpeedMph: (ptWind != null) ? Math.round(ptWind * 0.621371 * 10) / 10 : null,
+            humidity: (ptHum != null) ? Math.max(0, Math.min(100, Math.round(ptHum))) : null,
+            aqi: null,
+            aqiColor: '#94a3b8',
+            aqiCategory: 'Unavailable',
+            conditionText: ApiService.interpretWmoCode(ptWmo).text
+          };
+        }
+
+        // Full-resolution analytics series with absolute timestamps (LW08)
+        var hourlyAnalytics = [];
+        for (var m = 0; m < countPts; m++) {
+          if (series[m]) hourlyAnalytics.push(buildMetPoint(series[m], false, m));
+        }
+
         for (var p = 0; p < 8 && p < countPts; p++) {
           var idx = Math.min(p * step, countPts - 1);
           var pt = series[idx];
           if (pt) {
-            var ptDetails = (pt.data && pt.data.instant && pt.data.instant.details) || {};
-            var ptNext = (pt.data && (pt.data.next_1_hours || pt.data.next_6_hours)) || {};
-            var ptSym = (ptNext.summary && ptNext.summary.symbol_code) || sym;
-            var ptWmo = ApiService.metSymbolToWmo(ptSym);
-            var tStr = pt.time || '';
-            var ptDate = new Date(tStr);
-            var h = !isNaN(ptDate.getTime()) ? ptDate.getHours() : ((new Date().getHours() + p * 3) % 24);
-            var lbl = (p === 0) ? 'Now' : ((h % 12 || 12) + (h >= 12 ? ' PM' : ' AM'));
-            var ptT = (ptDetails.air_temperature != null && Number.isFinite(ptDetails.air_temperature)) ? ptDetails.air_temperature : null;
-            var ptWind = (ptDetails.wind_speed != null && Number.isFinite(ptDetails.wind_speed)) ? Math.round(ptDetails.wind_speed * 3.6 * 10) / 10 : null;
-            var ptHum = (ptDetails.relative_humidity != null && Number.isFinite(ptDetails.relative_humidity)) ? ptDetails.relative_humidity : null;
-            var ptP = (ptNext.details && ptNext.details.precipitation_amount != null && Number.isFinite(ptNext.details.precipitation_amount)) ? ptNext.details.precipitation_amount : null;
-            var ptProb = (ptNext.details && ptNext.details.probability_of_precipitation != null && Number.isFinite(ptNext.details.probability_of_precipitation)) ? ptNext.details.probability_of_precipitation : null;
-
-            hourlyForecast.push({
-              time: (h < 10 ? '0' : '') + h + ':00',
-              isoTime: tStr,
-              timestamp: !isNaN(ptDate.getTime()) ? ptDate.getTime() : null,
-              label: lbl,
-              hour: h,
-              tempC: (ptT != null) ? Math.round(ptT * 10) / 10 : null,
-              tempF: (ptT != null) ? Math.round(((ptT * 9 / 5) + 32) * 10) / 10 : null,
-              apparentC: (ptT != null) ? Math.round(ptT * 10) / 10 : null,
-              apparentF: (ptT != null) ? Math.round(((ptT * 9 / 5) + 32) * 10) / 10 : null,
-              precipProb: (ptProb != null) ? Math.max(0, Math.min(100, Math.round(ptProb))) : null,
-              precipMm: (ptP != null) ? Math.round(ptP * 10) / 10 : null,
-              windSpeedKm: (ptWind != null) ? ptWind : null,
-              windSpeedMph: (ptWind != null) ? Math.round(ptWind * 0.621371 * 10) / 10 : null,
-              humidity: (ptHum != null) ? Math.max(0, Math.min(100, Math.round(ptHum))) : null,
-              aqi: null,
-              aqiColor: '#94a3b8',
-              aqiCategory: 'Unavailable',
-              conditionText: ApiService.interpretWmoCode(ptWmo).text
-            });
+            hourlyForecast.push(buildMetPoint(pt, p === 0, p));
           }
         }
 
         return Object.assign({}, weather, {
           weather: weather,
           hourlyForecast: hourlyForecast,
+          hourlyAnalytics: hourlyAnalytics,
           hourly: hourlyForecast
         });
       },
@@ -817,7 +942,8 @@
           '&hourly=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation_probability,precipitation,weather_code,wind_speed_10m' +
           '&daily=temperature_2m_max,temperature_2m_min' +
           '&forecast_hours=24' +
-          '&timezone=auto';
+          '&timezone=auto' +
+          '&timeformat=unixtime';
 
         return ApiService.fetchWithTimeout(url, 5000)
           .then(function(res) {
@@ -896,56 +1022,78 @@
         var list = data.hourly || data.list || [];
         var count = Math.min(24, list.length);
         var isThreeHourly = !data.hourly && Array.isArray(data.list);
-        var step = isThreeHourly ? 1 : (count >= 8 ? Math.floor(count / 8) : 1);
-        for (var i = 0; i < 8 && i < count; i++) {
-          var idx = Math.min(i * step, count - 1);
+
+        function buildOwmPoint(item, i, isFirst) {
+          var iMain = item.main || item;
+          var iWind = item.wind || item;
+          var iW = (item.weather && item.weather[0]) || {};
+          var iWmo = ApiService.owmToWmo(iW.id || 800);
+          var dt = item.dt ? new Date(item.dt * 1000) : new Date(Date.now() + i * 3 * 3600000);
+          var h = dt.getHours();
+          var lbl = (isFirst) ? 'Now' : ((h % 12 || 12) + (h >= 12 ? ' PM' : ' AM'));
+          var ptT = (iMain.temp != null && Number.isFinite(iMain.temp)) ? iMain.temp : null;
+          var ptApp = (iMain.feels_like != null && Number.isFinite(iMain.feels_like)) ? iMain.feels_like : null;
+          var ptRawWind = (iWind.speed != null && Number.isFinite(iWind.speed)) ? iWind.speed : (iWind.wind_speed != null && Number.isFinite(iWind.wind_speed) ? iWind.wind_speed : null);
+          var ptWind = (ptRawWind != null) ? Math.round(ptRawWind * 3.6 * 10) / 10 : null;
+          var ptHum = (iMain.humidity != null && Number.isFinite(iMain.humidity)) ? iMain.humidity : null;
+          var ptProb = (item.pop != null && Number.isFinite(item.pop)) ? Math.max(0, Math.min(100, Math.round(item.pop * 100))) : null;
+          var ptP = null;
+          if (item.rain) {
+            if (item.rain['1h'] != null && Number.isFinite(item.rain['1h'])) ptP = item.rain['1h'];
+            else if (item.rain['3h'] != null && Number.isFinite(item.rain['3h'])) ptP = item.rain['3h'] / 3;
+          }
+
+          return {
+            time: (h < 10 ? '0' : '') + h + ':00',
+            isoTime: item.dt ? new Date(item.dt * 1000).toISOString() : null,
+            timestamp: dt.getTime(),
+            label: lbl,
+            hour: h,
+            tempC: (ptT != null) ? Math.round(ptT * 10) / 10 : null,
+            tempF: (ptT != null) ? Math.round(((ptT * 9 / 5) + 32) * 10) / 10 : null,
+            apparentC: (ptApp != null) ? Math.round(ptApp * 10) / 10 : null,
+            apparentF: (ptApp != null) ? Math.round(((ptApp * 9 / 5) + 32) * 10) / 10 : null,
+            precipProb: ptProb,
+            precipMm: (ptP != null) ? Math.round(ptP * 10) / 10 : null,
+            windSpeedKm: ptWind,
+            windSpeedMph: (ptWind != null) ? Math.round(ptWind * 0.621371 * 10) / 10 : null,
+            humidity: (ptHum != null) ? Math.max(0, Math.min(100, Math.round(ptHum))) : null,
+            aqi: null,
+            aqiColor: '#94a3b8',
+            aqiCategory: 'Unavailable',
+            conditionText: ApiService.interpretWmoCode(iWmo).text
+          };
+        }
+
+        // Full-resolution analytics series with absolute timestamps (LW08)
+        var hourlyAnalytics = [];
+        for (var o = 0; o < count; o++) {
+          if (list[o]) hourlyAnalytics.push(buildOwmPoint(list[o], o, false));
+        }
+
+        // Chart projection from the CURRENT interval forward (LW08); when every
+        // row is already past (e.g. fixtures), sampling clamps to the first row.
+        var nowMs = Date.now();
+        var startIdx = 0;
+        for (var s = 0; s < count; s++) {
+          var sDt = list[s] && list[s].dt;
+          if (typeof sDt === 'number' && Number.isFinite(sDt) && sDt * 1000 + 3600000 > nowMs) { startIdx = s; break; }
+        }
+        var remaining = count - startIdx;
+        var step = isThreeHourly ? 1 : ((remaining >= 8) ? Math.floor(remaining / 8) : 1);
+        for (var i = 0; i < 8; i++) {
+          var idx = startIdx + i * step;
+          if (idx > count - 1) break;
           var item = list[idx];
           if (item) {
-            var iMain = item.main || item;
-            var iWind = item.wind || item;
-            var iW = (item.weather && item.weather[0]) || {};
-            var iWmo = ApiService.owmToWmo(iW.id || 800);
-            var dt = item.dt ? new Date(item.dt * 1000) : new Date(Date.now() + i * 3 * 3600000);
-            var h = dt.getHours();
-            var lbl = (i === 0) ? 'Now' : ((h % 12 || 12) + (h >= 12 ? ' PM' : ' AM'));
-            var ptT = (iMain.temp != null && Number.isFinite(iMain.temp)) ? iMain.temp : null;
-            var ptApp = (iMain.feels_like != null && Number.isFinite(iMain.feels_like)) ? iMain.feels_like : null;
-            var ptRawWind = (iWind.speed != null && Number.isFinite(iWind.speed)) ? iWind.speed : (iWind.wind_speed != null && Number.isFinite(iWind.wind_speed) ? iWind.wind_speed : null);
-            var ptWind = (ptRawWind != null) ? Math.round(ptRawWind * 3.6 * 10) / 10 : null;
-            var ptHum = (iMain.humidity != null && Number.isFinite(iMain.humidity)) ? iMain.humidity : null;
-            var ptProb = (item.pop != null && Number.isFinite(item.pop)) ? Math.max(0, Math.min(100, Math.round(item.pop * 100))) : null;
-            var ptP = null;
-            if (item.rain) {
-              if (item.rain['1h'] != null && Number.isFinite(item.rain['1h'])) ptP = item.rain['1h'];
-              else if (item.rain['3h'] != null && Number.isFinite(item.rain['3h'])) ptP = item.rain['3h'] / 3;
-            }
-
-            hourlyForecast.push({
-              time: (h < 10 ? '0' : '') + h + ':00',
-              isoTime: item.dt ? new Date(item.dt * 1000).toISOString() : null,
-              timestamp: dt.getTime(),
-              label: lbl,
-              hour: h,
-              tempC: (ptT != null) ? Math.round(ptT * 10) / 10 : null,
-              tempF: (ptT != null) ? Math.round(((ptT * 9 / 5) + 32) * 10) / 10 : null,
-              apparentC: (ptApp != null) ? Math.round(ptApp * 10) / 10 : null,
-              apparentF: (ptApp != null) ? Math.round(((ptApp * 9 / 5) + 32) * 10) / 10 : null,
-              precipProb: ptProb,
-              precipMm: (ptP != null) ? Math.round(ptP * 10) / 10 : null,
-              windSpeedKm: ptWind,
-              windSpeedMph: (ptWind != null) ? Math.round(ptWind * 0.621371 * 10) / 10 : null,
-              humidity: (ptHum != null) ? Math.max(0, Math.min(100, Math.round(ptHum))) : null,
-              aqi: null,
-              aqiColor: '#94a3b8',
-              aqiCategory: 'Unavailable',
-              conditionText: ApiService.interpretWmoCode(iWmo).text
-            });
+            hourlyForecast.push(buildOwmPoint(item, i, i === 0));
           }
         }
 
         return Object.assign({}, weather, {
           weather: weather,
           hourlyForecast: hourlyForecast,
+          hourlyAnalytics: hourlyAnalytics,
           hourly: hourlyForecast
         });
       },
@@ -1167,7 +1315,8 @@
           '&longitude=' + encodeURIComponent(lon) +
           '&current=european_aqi,pm10,pm2_5' +
           '&hourly=european_aqi,pm10,pm2_5' +
-          '&forecast_hours=24';
+          '&forecast_hours=24' +
+          '&timeformat=unixtime';
 
         return ApiService.fetchWithTimeout(url, 5000)
           .then(function(res) {
@@ -1239,50 +1388,71 @@
       return adapter(lat, lon, options);
     },
 
+    // Rotation cursor + recents state lives in memory FIRST; persistence is a
+    // best-effort mirror so a failed localStorage never resets rotation to a
+    // phantom cursor (LW14).
+    _wallpaperRotateCursor: null,
+
     getWallpaperRotateCursor: function() {
+      if (typeof this._wallpaperRotateCursor === 'number' && this._wallpaperRotateCursor >= 0) {
+        return this._wallpaperRotateCursor;
+      }
+      var loaded = null;
       try {
         if (typeof localStorage !== 'undefined') {
           var val = parseInt(localStorage.getItem('local_wally_wallpaper_rotate_cursor'), 10);
-          if (!isNaN(val) && val >= 0) return val;
+          if (!isNaN(val) && val >= 0) loaded = val;
         }
       } catch (e) {}
-      return 0;
+      this._wallpaperRotateCursor = (loaded != null) ? loaded : 0;
+      return this._wallpaperRotateCursor;
     },
 
     setWallpaperRotateCursor: function(cursor) {
+      var val = parseInt(cursor, 10);
+      if (isNaN(val) || val < 0) val = 0;
+      this._wallpaperRotateCursor = val;
       try {
         if (typeof localStorage !== 'undefined') {
-          localStorage.setItem('local_wally_wallpaper_rotate_cursor', String(cursor));
+          localStorage.setItem('local_wally_wallpaper_rotate_cursor', String(val));
         }
       } catch (e) {}
     },
 
+    _recentWallpapers: null,
+
     getRecentWallpapers: function() {
+      if (Array.isArray(this._recentWallpapers)) {
+        return this._recentWallpapers;
+      }
+      var loaded = null;
       try {
         if (typeof localStorage !== 'undefined') {
           var raw = localStorage.getItem('local_wally_recent_wallpapers');
           if (raw) {
             var parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) return parsed;
+            if (Array.isArray(parsed)) loaded = parsed.slice(0, 80);
           }
         }
       } catch (e) {}
-      return [];
+      this._recentWallpapers = loaded || [];
+      return this._recentWallpapers;
     },
 
     addRecentWallpaper: function(idOrUrl) {
       if (!idOrUrl || typeof idOrUrl !== 'string') return;
+      var recents = this.getRecentWallpapers().slice();
+      var idx = recents.indexOf(idOrUrl);
+      if (idx !== -1) {
+        recents.splice(idx, 1);
+      }
+      recents.unshift(idOrUrl);
+      if (recents.length > 80) {
+        recents = recents.slice(0, 80);
+      }
+      this._recentWallpapers = recents;
       try {
         if (typeof localStorage !== 'undefined') {
-          var recents = this.getRecentWallpapers();
-          var idx = recents.indexOf(idOrUrl);
-          if (idx !== -1) {
-            recents.splice(idx, 1);
-          }
-          recents.unshift(idOrUrl);
-          if (recents.length > 80) {
-            recents = recents.slice(0, 80);
-          }
           localStorage.setItem('local_wally_recent_wallpapers', JSON.stringify(recents));
         }
       } catch (e) {}
@@ -1623,54 +1793,46 @@
     },
 
     /**
-     * Curated fallback dispatches when network or CORS gateways are unavailable
-     * @param {string} city
-     * @returns {Array<{title: string, source: string, link: string}>}
+     * Normalizes provider publication timestamps to a validated epoch-ms
+     * `publishedMs` (LW15). Handles GDELT compact UTC stamps, RSS zone-bearing
+     * RFC-822 dates, and offset-bearing ISO strings (NewsAPI / Currents).
+     * Zoneless date strings are NEVER interpreted via the host timezone;
+     * stamps further than 24h in the future are treated as unknown metadata.
+     * @param {string|number} raw
+     * @returns {number|null}
      */
-    getCuratedNews: function(city) {
-      var targetCity = (city && String(city).trim()) || 'Metropolitan';
-      return [
-        {
-          title: 'Atmospheric telemetry & localized microclimate network initialized for ' + targetCity,
-          source: 'Meteorology Hub',
-          link: 'https://news.google.com',
-          provider: 'google-news',
-          providerName: 'Google News',
-          isWrapper: true
-        },
-        {
-          title: 'Global energy grid resilience metrics show steady gains across smart sectors',
-          source: 'Reuters Tech',
-          link: 'https://news.google.com',
-          provider: 'google-news',
-          providerName: 'Google News',
-          isWrapper: true
-        },
-        {
-          title: 'Satellite observations confirm historical seasonal solar irradiance patterns',
-          source: 'Science Daily',
-          link: 'https://news.google.com',
-          provider: 'google-news',
-          providerName: 'Google News',
-          isWrapper: true
-        },
-        {
-          title: 'Regional urban infrastructure upgrades incorporate high-efficiency sensors',
-          source: 'Associated Press',
-          link: 'https://news.google.com',
-          provider: 'google-news',
-          providerName: 'Google News',
-          isWrapper: true
-        },
-        {
-          title: 'High-precision environmental monitoring standards adopted for smart cities',
-          source: 'Nature Ambient',
-          link: 'https://news.google.com',
-          provider: 'google-news',
-          providerName: 'Google News',
-          isWrapper: true
-        }
-      ];
+    parseNewsTimestamp: function(raw) {
+      if (raw == null) return null;
+      if (typeof raw === 'number' && Number.isFinite(raw)) {
+        var numMs = (raw > 1e12) ? raw : (raw > 1e9 ? raw * 1000 : null);
+        if (numMs == null) return null;
+        return (numMs - Date.now() > 24 * 3600 * 1000) ? null : numMs;
+      }
+      if (typeof raw !== 'string') return null;
+      var s = raw.trim();
+      if (!s) return null;
+
+      // GDELT DOC 2.0 compact UTC: 20261012T093000Z
+      var compact = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/.exec(s);
+      if (compact) {
+        var compactMs = Date.UTC(+compact[1], +compact[2] - 1, +compact[3], +compact[4], +compact[5], +compact[6]);
+        // Same future policy as every other branch (CORR-2)
+        return (compactMs - Date.now() > 24 * 3600 * 1000) ? null : compactMs;
+      }
+
+      // Reject zoneless/date-only strings: Date.parse would silently apply the
+      // host timezone (a bare YYYY-MM-DD even ends in "-DD", which superficially
+      // resembles an offset) — require a time component plus an explicit zone
+      if (!/[T ]\d{2}:\d{2}/.test(s)) return null;
+      var zoneStripped = s.replace(/\s*\([^)]*\)\s*$/, '');
+      var hasExplicitZone = /(?:Z|[+-]\d{2}:?\d{2}|UT|GMT|EST|EDT|CST|CDT|MST|MDT|PST|PDT)$/i.test(zoneStripped);
+      if (!hasExplicitZone) return null;
+
+      var ms = Date.parse(zoneStripped);
+      if (!Number.isFinite(ms)) return null;
+      // Documented future policy: beyond 24h ahead is corrupt metadata → unknown
+      if (ms - Date.now() > 24 * 3600 * 1000) return null;
+      return ms;
     },
 
     /**
@@ -1785,6 +1947,7 @@
                 source: sourceName,
                 link: safeUrl,
                 seendate: item.seendate || null,
+                publishedMs: ApiService.parseNewsTimestamp(item.seendate),
                 domain: rawDomain || null,
                 provider: 'google-news',
                 providerName: 'Google News',
@@ -1810,7 +1973,7 @@
     },
 
     /**
-     * Proximity-targeted regional news feed via GDELT DOC 2.0 with Google News RSS & Curated fallback
+     * Proximity-targeted regional news feed via GDELT DOC 2.0 with Google News RSS fallback
      * @param {string} cityName
      * @param {string} [countryCode]
      * @returns {Promise<Array<{title: string, source: string, link: string}>>} Top 5 articles
@@ -1873,10 +2036,12 @@
           var titleEl = node.querySelector('title') || node.getElementsByTagName('title')[0];
           var linkEl = node.querySelector('link') || node.getElementsByTagName('link')[0];
           var sourceEl = node.querySelector('source') || node.getElementsByTagName('source')[0];
+          var pubDateEl = node.querySelector('pubDate') || (node.getElementsByTagName ? node.getElementsByTagName('pubDate')[0] : null);
 
           var rawTitle = titleEl ? (titleEl.textContent || '') : '';
           var rawLink = linkEl ? (linkEl.textContent || linkEl.getAttribute('href') || '') : '';
           var sourceName = sourceEl ? (sourceEl.textContent || '') : '';
+          var rawPubDate = pubDateEl ? (pubDateEl.textContent || '') : '';
 
           // Validate protocol to prevent javascript: or malformed URLs (XSS defense)
           var safeLink = (typeof rawLink === 'string' && /^https:\/\//i.test(rawLink.trim()))
@@ -1898,6 +2063,8 @@
               title: cleanTitle,
               source: sourceName || 'Google News',
               link: safeLink,
+              published: rawPubDate,
+              publishedMs: ApiService.parseNewsTimestamp(rawPubDate),
               provider: 'google-news',
               providerName: 'Google News',
               isWrapper: isWrapper
@@ -1921,12 +2088,10 @@
             .catch(function() {
               return requestXml(fallbackUrl).then(parseItems);
             });
-        })
-        .catch(function(err) {
-          // 3. Fall back to curated telemetry news if both remote APIs fail
-          console.warn('[ApiService] Regional news fetch error, using curated dispatch fallback:', err.message);
-          return self.getCuratedNews(cleanCity);
         });
+      // Terminal fallback policy (LW05): errors propagate to fetchNews, which
+      // serves matching real cached stories (stale-marked) or an explicit
+      // unavailable state — never fabricated headlines.
     },
 
     NewsAdapter: {
@@ -1942,6 +2107,7 @@
               link: a.link,
               source: a.source || 'Google News',
               published: a.published || '',
+              publishedMs: (typeof a.publishedMs === 'number') ? a.publishedMs : ApiService.parseNewsTimestamp(a.published || a.seendate),
               provider: 'google-news',
               providerName: 'Google News',
               isWrapper: !!a.isWrapper
@@ -1996,6 +2162,7 @@
                   link: link,
                   source: (a.source && a.source.name) || a.author || 'NewsAPI',
                   published: a.publishedAt || '',
+                  publishedMs: ApiService.parseNewsTimestamp(a.publishedAt),
                   provider: 'newsapi',
                   providerName: 'NewsAPI',
                   isWrapper: false
@@ -2048,6 +2215,7 @@
                   link: link,
                   source: (item.author || '').trim() || 'Currents News',
                   published: item.published || '',
+                  publishedMs: ApiService.parseNewsTimestamp(item.published),
                   provider: 'currents',
                   providerName: 'Currents News',
                   isWrapper: false
@@ -2061,22 +2229,45 @@
     },
 
     NEWS_CACHE_TTL_MS: 15 * 60 * 1000,
-    _activeNewsPromise: null,
+    // Quota firewall: >= 15 minutes between network attempts PER actual keyed
+    // provider, counting failed attempts, independent of any refresh/force
+    // flag (LW06). Response caching (query/provider aware) stays separate.
+    NEWS_QUOTA_COOLDOWN_MS: 15 * 60 * 1000,
+    _NEWS_QUOTA_SKEW_MAX_MS: 24 * 60 * 60 * 1000,
+    _NEWS_QUOTA_STORE_KEY: 'LIVELY_HUD_NEWS_QUOTA',
+    // In-flight map keyed by normalized request identity, cleaned on settle, bounded (LW04)
+    _newsInflight: {},
+    _newsInflightCount: 0,
+    // Insertion order for single-entry (oldest-first) eviction (CORR-7)
+    _newsInflightOrder: [],
+    // Request generation: latest initiated identity wins; superseded results
+    // may never mutate cache, pending snapshots, or visible UI (LW04)
+    _newsLatestIdentity: null,
+    _newsQuota: null,
+    _newsQuotaLoaded: false,
 
     getNewsRotateCursor: function() {
+      if (typeof this._newsRotateCursor === 'number' && this._newsRotateCursor >= 0) {
+        return this._newsRotateCursor;
+      }
+      var loaded = null;
       try {
         if (typeof localStorage !== 'undefined') {
           var val = parseInt(localStorage.getItem('local_wally_news_rotate_cursor'), 10);
-          if (!isNaN(val) && val >= 0) return val;
+          if (!isNaN(val) && val >= 0) loaded = val;
         }
       } catch (e) {}
-      return 0;
+      this._newsRotateCursor = (loaded != null) ? loaded : 0;
+      return this._newsRotateCursor;
     },
 
     setNewsRotateCursor: function(cursor) {
+      var val = parseInt(cursor, 10);
+      if (isNaN(val) || val < 0) val = 0;
+      this._newsRotateCursor = val;
       try {
         if (typeof localStorage !== 'undefined') {
-          localStorage.setItem('local_wally_news_rotate_cursor', String(cursor));
+          localStorage.setItem('local_wally_news_rotate_cursor', String(val));
         }
       } catch (e) {}
     },
@@ -2111,10 +2302,96 @@
     },
 
     /**
-     * Regional news dispatcher with 15-minute cache firewall, rotation when keyed providers exist,
-     * in-flight request de-duplication, safe https validation, and single Google News fallback.
+     * Monotonic in-session clock for quota pacing (LW06).
      */
-    fetchNews: function(cityName, countryCode, forceRefresh) {
+    _newsNow: function() {
+      try {
+        if (typeof performance !== 'undefined' && performance && typeof performance.now === 'function') {
+          return performance.now();
+        }
+      } catch (e) {}
+      return Date.now();
+    },
+
+    _loadNewsQuota: function() {
+      if (this._newsQuotaLoaded) return;
+      this._newsQuotaLoaded = true;
+      this._newsQuota = {};
+      try {
+        if (typeof localStorage !== 'undefined') {
+          var raw = localStorage.getItem(this._NEWS_QUOTA_STORE_KEY);
+          if (raw) {
+            var parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === 'object') {
+              for (var prov in parsed) {
+                if (Object.prototype.hasOwnProperty.call(parsed, prov) &&
+                    typeof parsed[prov] === 'number' && Number.isFinite(parsed[prov])) {
+                  this._newsQuota[prov] = { monoMs: null, epochMs: parsed[prov] };
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {}
+    },
+
+    _persistNewsQuota: function() {
+      try {
+        if (typeof localStorage !== 'undefined' && this._newsQuota) {
+          var flat = {};
+          for (var prov in this._newsQuota) {
+            if (Object.prototype.hasOwnProperty.call(this._newsQuota, prov)) {
+              flat[prov] = this._newsQuota[prov].epochMs;
+            }
+          }
+          localStorage.setItem(this._NEWS_QUOTA_STORE_KEY, JSON.stringify(flat));
+        }
+      } catch (e) {}
+    },
+
+    /**
+     * True when the provider's quota cooldown has elapsed. Persisted wall-clock
+     * stamps are validated conservatively: backward clock jumps are respected
+     * (no retry loop); absurdly future-dated stamps (>24h) are treated as
+     * corrupt and reset once (LW06).
+     */
+    _newsCooldownReady: function(provider) {
+      this._loadNewsQuota();
+      var entry = this._newsQuota[provider];
+      if (!entry) return true;
+      var epochElapsed = Date.now() - entry.epochMs;
+      if (epochElapsed < 0) {
+        if (epochElapsed < -this._NEWS_QUOTA_SKEW_MAX_MS) {
+          delete this._newsQuota[provider];
+          this._persistNewsQuota();
+          return true;
+        }
+        return false;
+      }
+      if (epochElapsed < this.NEWS_QUOTA_COOLDOWN_MS) return false;
+      if (entry.monoMs != null) {
+        var monoElapsed = this._newsNow() - entry.monoMs;
+        if (monoElapsed < this.NEWS_QUOTA_COOLDOWN_MS) return false;
+      }
+      return true;
+    },
+
+    _markNewsAttempt: function(provider) {
+      this._loadNewsQuota();
+      this._newsQuota[provider] = { monoMs: this._newsNow(), epochMs: Date.now() };
+      this._persistNewsQuota();
+    },
+
+    /**
+     * Regional news dispatcher with identity-bound request isolation (LW04),
+     * an unbypassable per-provider quota firewall (LW06), a 15-minute
+     * query-aware response cache, rotation when keyed providers exist, and a
+     * single bounded Google News fallback. Terminal failures surface matching
+     * real cached stories (stale-marked) or an empty unavailable state — never
+     * fabricated headlines (LW05). There is deliberately NO force parameter:
+     * nothing may bypass the quota firewall.
+     */
+    fetchNews: function(cityName, countryCode) {
       var self = this;
       var cleanCity = (cityName && String(cityName).trim()) || 'Local Area';
       var cleanCountry = (countryCode && String(countryCode).trim().toUpperCase()) || 'US';
@@ -2146,26 +2423,70 @@
         }
       }
 
-      // Check 15-minute cache firewall: survives reloads, prevents duplicate requests
+      // Normalized request identity: {location query, country, provider/mode} (LW04)
+      var identity = shouldRotate
+        ? ('rotate|' + eligible.join('+') + '|' + queryKey)
+        : (primaryProvider + '|' + queryKey);
+      self._newsLatestIdentity = identity;
+
+      function envelopeMatches(envelope) {
+        if (!envelope || envelope.query !== queryKey) return false;
+        // Preserve the documented fixed-mode provider-match permissiveness
+        return shouldRotate || (envelope.provider === primaryProvider) || (eligible.indexOf(envelope.provider) !== -1);
+      }
+
+      function markStale(list) {
+        return (list || []).map(function(a) {
+          return (a && typeof a === 'object') ? Object.assign({}, a, { stale: true }) : a;
+        });
+      }
+
+      function isSuperseded() {
+        return self._newsLatestIdentity !== identity;
+      }
+
+      // Query/provider-aware response cache: reads never consume quota (LW06)
       var cachedEnvelope = self.getCachedNews();
-      var now = Date.now();
-      if (!forceRefresh && cachedEnvelope && cachedEnvelope.timestamp) {
-        var age = now - cachedEnvelope.timestamp;
-        var isQueryMatch = (cachedEnvelope.query === queryKey);
-        var isProviderMatch = shouldRotate || (cachedEnvelope.provider === primaryProvider) || (eligible.indexOf(cachedEnvelope.provider) !== -1);
-        if (age >= 0 && age < self.NEWS_CACHE_TTL_MS && isQueryMatch && isProviderMatch && Array.isArray(cachedEnvelope.data) && cachedEnvelope.data.length > 0) {
+      if (cachedEnvelope && cachedEnvelope.timestamp) {
+        var age = Date.now() - cachedEnvelope.timestamp;
+        if (age >= 0 && age < self.NEWS_CACHE_TTL_MS &&
+            envelopeMatches(cachedEnvelope) &&
+            Array.isArray(cachedEnvelope.data) && cachedEnvelope.data.length > 0) {
           return Promise.resolve(cachedEnvelope.data);
         }
       }
 
-      // In-flight request de-duplication
-      if (self._activeNewsPromise) {
-        return self._activeNewsPromise;
+      // Deduplicate only EQUIVALENT in-flight requests (LW04)
+      if (self._newsInflight[identity]) {
+        return self._newsInflight[identity];
+      }
+
+      // Rotate mode must not stall on a cooldown-locked provider (CORR-1):
+      // if the cursor-selected primary is inside its quota window, attempt with
+      // the first cooldown-READY eligible provider for this request instead.
+      if (!self._newsCooldownReady(primaryProvider) && shouldRotate) {
+        for (var ri = 0; ri < eligible.length; ri++) {
+          if (self._newsCooldownReady(eligible[ri])) {
+            primaryProvider = eligible[ri];
+            break;
+          }
+        }
+      }
+
+      // Quota firewall — cannot be bypassed by settings events or refresh paths (LW06)
+      if (!self._newsCooldownReady(primaryProvider)) {
+        if (cachedEnvelope && cachedEnvelope.timestamp &&
+            envelopeMatches(cachedEnvelope) &&
+            Array.isArray(cachedEnvelope.data) && cachedEnvelope.data.length > 0) {
+          return Promise.resolve(markStale(cachedEnvelope.data));
+        }
+        // Explicit unavailable state within cooldown; intent already updated
+        return Promise.resolve([]);
       }
 
       if (shouldRotate) {
-        var cursor = self.getNewsRotateCursor();
-        self.setNewsRotateCursor((cursor + 1) % eligible.length);
+        var rotCursor = self.getNewsRotateCursor();
+        self.setNewsRotateCursor((rotCursor + 1) % eligible.length);
       }
 
       function executeAdapter(prov) {
@@ -2173,17 +2494,26 @@
         return fn.call(self, cleanCity, cleanCountry);
       }
 
-      self._activeNewsPromise = executeAdapter(primaryProvider)
+      // Attempts count BEFORE firing: failed requests start the cooldown too (LW06)
+      self._markNewsAttempt(primaryProvider);
+
+      var request = executeAdapter(primaryProvider)
         .then(function(articles) {
           if (!articles || articles.length === 0) throw new Error('No articles from ' + primaryProvider);
+          if (isSuperseded()) return []; // late result may not touch cache/UI (LW04)
           self.setCachedNews(primaryProvider, queryKey, articles);
           return articles;
         })
         .catch(function(err) {
           console.warn('[ApiService] Primary news provider ' + primaryProvider + ' failed:', err.message);
+          if (isSuperseded()) return [];
           if (primaryProvider !== 'google-news') {
+            // ONE bounded Google News fallback — still inside the quota firewall
+            if (!self._newsCooldownReady('google-news')) throw err;
             console.log('[ApiService] Falling back once to Google News...');
+            self._markNewsAttempt('google-news');
             return executeAdapter('google-news').then(function(fallbackArticles) {
+              if (isSuperseded()) return [];
               if (fallbackArticles && fallbackArticles.length > 0) {
                 self.setCachedNews('google-news', queryKey, fallbackArticles);
                 return fallbackArticles;
@@ -2194,17 +2524,41 @@
           throw err;
         })
         .catch(function(fatalErr) {
-          console.warn('[ApiService] News fetch failed completely, checking cached or curated:', fatalErr.message);
-          if (cachedEnvelope && Array.isArray(cachedEnvelope.data) && cachedEnvelope.data.length > 0) {
-            return cachedEnvelope.data;
+          console.warn('[ApiService] News fetch failed completely:', fatalErr.message);
+          if (isSuperseded()) return [];
+          // Terminal fallback: matching real cached stories, stale-marked (LW05)
+          if (cachedEnvelope && Array.isArray(cachedEnvelope.data) && cachedEnvelope.data.length > 0 &&
+              envelopeMatches(cachedEnvelope)) {
+            return markStale(cachedEnvelope.data);
           }
-          return self.getCuratedNews(cleanCity);
+          return []; // explicit news-unavailable state
         })
         .finally(function() {
-          self._activeNewsPromise = null;
+          if (self._newsInflight[identity] === request) {
+            delete self._newsInflight[identity];
+            self._newsInflightCount = Math.max(0, self._newsInflightCount - 1);
+          }
+          var orderIdx = self._newsInflightOrder.indexOf(identity);
+          if (orderIdx !== -1) {
+            self._newsInflightOrder.splice(orderIdx, 1);
+          }
         });
 
-      return self._activeNewsPromise;
+      self._newsInflight[identity] = request;
+      self._newsInflightCount++;
+      self._newsInflightOrder.push(identity);
+      // Bounded in-flight map: evict the OLDEST entry past a hard cap so live
+      // dedupe entries survive — only the single oldest identity loses
+      // protection (CORR-7), never the whole map.
+      if (self._newsInflightOrder.length > 16) {
+        var oldestIdentity = self._newsInflightOrder.shift();
+        if (oldestIdentity != null && self._newsInflight[oldestIdentity] !== undefined) {
+          delete self._newsInflight[oldestIdentity];
+          self._newsInflightCount = Math.max(0, self._newsInflightCount - 1);
+        }
+      }
+
+      return request;
     },
 
     /**
@@ -2228,13 +2582,23 @@
           if (cached.weather && !cached.weather.hourlyForecast) {
             cached.weather.hourlyForecast = cached.hourlyForecast;
           }
+          // Old snapshots without the full-resolution analytics list degrade
+          // safely to the reduced chart list (LW08)
+          if (!cached.hourlyAnalytics) {
+            cached.hourlyAnalytics = cached.hourlyForecast || [];
+          }
+          if (cached.weather && !cached.weather.hourlyAnalytics) {
+            cached.weather.hourlyAnalytics = cached.hourlyAnalytics;
+          }
           return Promise.resolve(cached);
         }
       }
 
       return self.getLocation().then(function(loc) {
-        // Fetch news asynchronously in the background so it never blocks ready weather updates
-        var newsPromise = self.fetchNews(loc.city, loc.countryCode || loc.country, forceRefresh)
+        // Fetch news asynchronously in the background so it never blocks ready weather updates.
+        // News network eligibility is decided by its own quota firewall — an
+        // atmosphere/wallpaper force refresh can no longer bypass it (LW06).
+        var newsPromise = self.fetchNews(loc.city, loc.countryCode || loc.country)
           .catch(function(err) {
             console.warn('[ApiService] Regional news fetch error (non-fatal):', err.message);
             return [];
@@ -2249,11 +2613,16 @@
 
           var weather = weatherResult.weather || weatherResult;
           var rawHourly = weatherResult.hourlyForecast || [];
+          var rawAnalytics = weatherResult.hourlyAnalytics || rawHourly;
           var aqi = aqiResult.aqi || aqiResult;
           var hourlyAqi = aqiResult.hourlyAqi || null;
 
           var hourlyForecast = self.normalizeForecastPoints(rawHourly, weather, aqi, hourlyAqi);
+          var hourlyAnalytics = (rawAnalytics !== rawHourly)
+            ? self.normalizeForecastPoints(rawAnalytics, weather, aqi, hourlyAqi)
+            : hourlyForecast;
           weather.hourlyForecast = hourlyForecast;
+          weather.hourlyAnalytics = hourlyAnalytics;
 
           return self.fetchWallpaper(weather.category, weather.isDay, weather.keyword)
             .catch(function(bgErr) {
@@ -2269,6 +2638,7 @@
                 weather: weather,
                 aqi: aqi,
                 hourlyForecast: hourlyForecast,
+                hourlyAnalytics: hourlyAnalytics,
                 news: [],
                 background: bg,
                 fromCache: false
@@ -2278,18 +2648,16 @@
                 global.CacheManager.set(payload, providerContext);
               }
 
-              // When background news settles, attach to payload, persist, and update UI without overwriting newer weather
+              // When background news settles, attach to the matching active
+              // snapshot WITHOUT extending atmosphere freshness (LW16) and
+              // without letting a superseded request restore stale state (LW04).
               newsPromise.then(function(newsArticles) {
                 if (newsArticles && newsArticles.length) {
                   payload.news = newsArticles;
-                  if (global.CacheManager) {
-                    var currentCached = global.CacheManager.get(providerContext);
-                    if (currentCached) {
-                      currentCached.news = newsArticles;
-                      global.CacheManager.set(currentCached, providerContext);
-                    } else {
-                      global.CacheManager.set(payload, providerContext);
-                    }
+                  if (global.CacheManager && typeof global.CacheManager.update === 'function') {
+                    global.CacheManager.update(function(data) {
+                      if (data) data.news = newsArticles;
+                    });
                   }
                   var appInstance = global.App || global.app;
                   if (appInstance) {
@@ -2323,6 +2691,12 @@
               }
               if (anyCached.weather && !anyCached.weather.hourlyForecast) {
                 anyCached.weather.hourlyForecast = anyCached.hourlyForecast;
+              }
+              if (!anyCached.hourlyAnalytics) {
+                anyCached.hourlyAnalytics = anyCached.hourlyForecast || [];
+              }
+              if (anyCached.weather && !anyCached.weather.hourlyAnalytics) {
+                anyCached.weather.hourlyAnalytics = anyCached.hourlyAnalytics;
               }
               return anyCached;
             }
