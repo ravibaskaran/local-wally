@@ -535,6 +535,15 @@
       <div>Frame Time: <span id="diag-frametime">16.6ms</span></div>
       <div>Particles: <span id="diag-particles">0</span></div>
       <div>Cache TTL: <span id="diag-cache-ttl">15m 00s</span></div>
+      <div class="diag-backup-section">
+        <div class="diag-backup-title">Backup &amp; Restore (includes API keys)</div>
+        <div class="diag-backup-actions">
+          <button id="diag-export-settings" class="diag-btn" type="button" title="Download all settings (including API keys) as one portable JSON file">Export settings</button>
+          <button id="diag-import-settings" class="diag-btn" type="button" title="Restore settings from an exported JSON file">Import settings</button>
+          <input id="diag-import-file" type="file" accept=".json,application/json" hidden>
+        </div>
+        <div id="diag-backup-status" class="diag-backup-status" role="status" aria-live="polite"></div>
+      </div>
     </div>
 
     <!-- Background Photo Attribution -->

@@ -2417,9 +2417,49 @@ html, body {
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.2s ease;
+  max-width: 420px;
 }
 #diagnostic-panel.is-active {
   opacity: 1;
+  /* Interactive only while open (D) — the backup block needs clicks */
+  pointer-events: auto;
+}
+#diagnostic-panel .diag-backup-section {
+  margin-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  padding-top: 8px;
+}
+#diagnostic-panel .diag-backup-title {
+  font-weight: 600;
+  color: #e2e8f0;
+  margin-bottom: 6px;
+}
+#diagnostic-panel .diag-backup-actions {
+  display: flex;
+  gap: 6px;
+}
+#diagnostic-panel .diag-btn {
+  font-family: inherit;
+  font-size: 11px;
+  color: #7dd3fc;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(125, 211, 252, 0.35);
+  border-radius: 5px;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+#diagnostic-panel .diag-btn:hover,
+#diagnostic-panel .diag-btn:focus-visible {
+  background: rgba(56, 189, 248, 0.25);
+  color: #f0f9ff;
+  outline: none;
+}
+#diagnostic-panel .diag-backup-status {
+  margin-top: 6px;
+  color: rgba(226, 232, 240, 0.85);
+  max-width: 396px;
+  overflow-wrap: anywhere;
 }
 
 /* Unsplash Attribution Pill */

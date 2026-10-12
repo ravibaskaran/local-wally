@@ -1834,6 +1834,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         unsplashCredit: document.getElementById('unsplash-credit'),
         diagPanel: document.getElementById('diagnostic-panel'),
         diagGpu: document.getElementById('diag-gpu'),
+        diagExportBtn: document.getElementById('diag-export-settings'),
+        diagImportBtn: document.getElementById('diag-import-settings'),
+        diagImportFile: document.getElementById('diag-import-file'),
+        diagBackupStatus: document.getElementById('diag-backup-status'),
         diagTheme: document.getElementById('diag-theme'),
         diagFps: document.getElementById('diag-fps'),
         diagFrametime: document.getElementById('diag-frametime'),
@@ -2059,6 +2063,26 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       // Manual refresh control removed (v0.8.4): news and atmosphere update
       // automatically on their own cadences — news every 5 minutes within the
       // quota firewall, atmosphere on its cache TTL.
+
+      // Settings Backup & Restore (v0.8.6): wired inside the diagnostic panel
+      // ('D'). Export downloads all properties incl. keys + app storage as one
+      // JSON file; import re-applies them through the Lively host (or the
+      // bridge emitter in preview) and reloads.
+      if (this.dom.diagExportBtn) {
+        this.dom.diagExportBtn.addEventListener('click', function() {
+          self.exportSettings();
+        });
+      }
+      if (this.dom.diagImportBtn && this.dom.diagImportFile) {
+        this.dom.diagImportBtn.addEventListener('click', function() {
+          self.dom.diagImportFile.value = '';
+          self.dom.diagImportFile.click();
+        });
+        this.dom.diagImportFile.addEventListener('change', function() {
+          var picked = self.dom.diagImportFile.files && self.dom.diagImportFile.files[0];
+          self.importSettingsFile(picked);
+        });
+      }
 
       // Keyboard shortcuts
       window.addEventListener('keydown', function(e) {
@@ -3119,6 +3143,229 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         } else {
           this.dom.diagPanel.classList.remove('is-active');
         }
+      }
+    },
+
+    /**
+     * Settings Backup & Restore (v0.8.6)
+     *
+     * Exports every user-tunable Lively property (INCLUDING API keys — the
+     * user explicitly asked for keys) plus all app-owned localStorage entries
+     * as one portable JSON file, and imports it back on any machine.
+     *
+     * SECURITY MODEL: the export is a plain JSON file containing credentials
+     * in cleartext — documented; the user keeps the file safe. Import applies
+     * only whitelisted property names (App.SETTINGS_PROPNAMES, mirroring the
+     * LivelyBridge property dispatcher), URL-embedded key values are
+     * charset-checked, and only app-owned storage keys
+     * (LIVELY_HUD_*, local_wally_*) are restored. Values pass through the
+     * existing property dispatcher and setters, which already coerce/clamp.
+     * In production the import round-trips through the Lively host via
+     * livelyPropertyValueChanged (host persists + re-delivers every property);
+     * outside the host (preview/tests) values replay through the bridge
+     * emitter instead.
+     */
+    SETTINGS_PROPNAMES: [
+      'hudPosition', 'glassBlur', 'particleDensity', 'tempUnit', 'refreshInterval',
+      'wallpaperProvider', 'unsplashApiKey', 'wallhavenApiKey', 'pexelsApiKey',
+      'pixabayApiKey', 'weatherSimulation', 'contrastMode', 'showMediaFocusDock',
+      'showNewsFeed', 'newsProvider', 'newsApiKey', 'currentsApiKey',
+      'showHardwareMonitor', 'showNetworkUsage', 'showBatteryInfo', 'showCelestial',
+      'showAqi', 'showEnvironmentalMetrics', 'weatherProvider',
+      'openweathermapApiKey', 'aqiProvider', 'waqiApiKey', 'showForecastChart',
+      'defaultForecastTab', 'showPomodoro', 'showMediaPlayer',
+      'pomodoroFocusMinutes', 'pomodoroBreakMinutes', 'pomodoroLongBreakMinutes',
+      'enableAudioVisualizer', 'enableDynamicSolarLighting'
+    ],
+    _SETTINGS_STORAGE_PREFIX: /^(LIVELY_HUD_|local_wally_)/,
+    _URL_EMBEDDED_KEY_PROPS: ['unsplashApiKey', 'wallhavenApiKey', 'pixabayApiKey'],
+
+    _buildSettingsPayload: function() {
+      var props = {};
+      var tracked = (global.LivelyBridge && global.LivelyBridge.properties) || {};
+      for (var i = 0; i < this.SETTINGS_PROPNAMES.length; i++) {
+        var name = this.SETTINGS_PROPNAMES[i];
+        if (Object.prototype.hasOwnProperty.call(tracked, name)) {
+          props[name] = tracked[name];
+        }
+      }
+      var storage = {};
+      try {
+        var ls = global.localStorage;
+        if (ls) {
+          for (var k = 0; k < ls.length; k++) {
+            var key = ls.key(k);
+            if (!key || !this._SETTINGS_STORAGE_PREFIX.test(key)) continue;
+            storage[key] = ls.getItem(key);
+          }
+        }
+      } catch (e) {
+        return { ok: false, error: 'Storage unavailable: ' + (e && e.message) };
+      }
+      return {
+        ok: true,
+        payload: {
+          meta: {
+            product: 'local-wally-hud',
+            format: 1,
+            includesApiKeys: true,
+            exportedAt: new Date().toISOString()
+          },
+          livelyProperties: props,
+          localStorage: storage
+        }
+      };
+    },
+
+    exportSettings: function() {
+      if (this.dom.diagBackupStatus) this.setDomText(this.dom.diagBackupStatus, 'Preparing export...');
+      var result = this._buildSettingsPayload();
+      if (!result.ok) {
+        if (this.dom.diagBackupStatus) this.setDomText(this.dom.diagBackupStatus, 'Export failed: ' + result.error);
+        return;
+      }
+      try {
+        var json = JSON.stringify(result.payload, null, 2);
+        var stamp = new Date();
+        var pad = function(n) { return (n < 10 ? '0' : '') + n; };
+        var fileName = 'local-wally-settings-' +
+          stamp.getFullYear() + pad(stamp.getMonth() + 1) + pad(stamp.getDate()) +
+          '-' + pad(stamp.getHours()) + pad(stamp.getMinutes()) + pad(stamp.getSeconds()) + '.json';
+        var blob = new Blob([json], { type: 'application/json' });
+        var url = URL.createObjectURL(blob);
+        var link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(function() { URL.revokeObjectURL(url); }, 2000);
+        var nProps = Object.keys(result.payload.livelyProperties).length;
+        var nKeys = Object.keys(result.payload.localStorage).length;
+        this.setDomText(this.dom.diagBackupStatus,
+          'Exported ' + nProps + ' properties (incl. keys) + ' + nKeys + ' storage entries → ' + fileName);
+      } catch (e) {
+        this.setDomText(this.dom.diagBackupStatus, 'Export failed: ' + (e && e.message));
+      }
+    },
+
+    /**
+     * Validates one exported settings text. Returns {ok:true, payload} or
+     * {ok:false, error}. Pure function — unit-tested in scratch suites.
+     */
+    _parseSettingsExport: function(text) {
+      if (typeof text !== 'string') return { ok: false, error: 'No file content' };
+      if (text.length > 2 * 1024 * 1024) return { ok: false, error: 'File too large for a settings export' };
+      var data = null;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        return { ok: false, error: 'Not valid JSON' };
+      }
+      if (!data || typeof data !== 'object' || !data.meta) return { ok: false, error: 'Missing meta section' };
+      if (data.meta.product !== 'local-wally-hud') {
+        return { ok: false, error: 'Not a Local Wally settings file' };
+      }
+      if (data.meta.format !== 1) {
+        return { ok: false, error: 'Unsupported settings format version' };
+      }
+      if (!data.livelyProperties || typeof data.livelyProperties !== 'object') {
+        return { ok: false, error: 'Missing or invalid livelyProperties section' };
+      }
+      if (typeof data.localStorage !== 'undefined' &&
+          (data.localStorage === null || typeof data.localStorage !== 'object' ||
+           typeof data.localStorage.length === 'number')) {
+        return { ok: false, error: 'Invalid localStorage section' };
+      }
+      return { ok: true, payload: data };
+    },
+
+    /**
+     * Applies one validated payload. Runs the property part through the Lively
+     * host when available (host persists every change), else replays values
+     * through the bridge emitter (preview/tests). Storage keys of the app's
+     * own prefixes are restored verbatim; everything else is ignored.
+     * Pure-ish — unit-tested in scratch suites. Returns a summary object.
+     */
+    _applySettingsPayload: function(payload) {
+      var self = this;
+      var applied = 0;
+      var skipped = 0;
+
+      var hasHostWrite = typeof global.livelyPropertyValueChanged === 'function';
+      for (var i = 0; i < this.SETTINGS_PROPNAMES.length; i++) {
+        var name = this.SETTINGS_PROPNAMES[i];
+        if (!Object.prototype.hasOwnProperty.call(payload.livelyProperties, name)) continue;
+        var val = payload.livelyProperties[name];
+        if (typeof val === 'string' && this._URL_EMBEDDED_KEY_PROPS.indexOf(name) !== -1) {
+          // Keys embedded in request URLs (query params) must stay URL-safe.
+          if (val.length > 190 || /[^A-Za-z0-9._~-]/.test(val.trim())) { skipped++; continue; }
+        }
+        applied++;
+        if (hasHostWrite) {
+          try {
+            global.livelyPropertyValueChanged(name, val);
+          } catch (e) {
+            console.warn('[App] Backup import: host rejected property ' + name + ':', e && e.message);
+            applied--;
+          }
+        } else if (global.LivelyBridge && global.LivelyBridge.emitProperty) {
+          global.LivelyBridge.emitProperty(name, val);
+        }
+      }
+
+      var storageRestored = 0;
+      try {
+        var ls = global.localStorage;
+        if (ls && payload.localStorage) {
+          for (var key in payload.localStorage) {
+            if (!Object.prototype.hasOwnProperty.call(payload.localStorage, key)) continue;
+            if (!this._SETTINGS_STORAGE_PREFIX.test(key)) continue;
+            var raw = payload.localStorage[key];
+            if (typeof raw !== 'string') continue;
+            ls.setItem(key, raw);
+            storageRestored++;
+          }
+        }
+      } catch (e) {
+        console.warn('[App] Backup import: storage restore failed:', e && e.message);
+      }
+
+      return { applied: applied, skipped: skipped, storageRestored: storageRestored };
+    },
+
+    importSettingsFile: function(file) {
+      var self = this;
+      if (!file) return;
+      if (this.dom.diagBackupStatus) this.setDomText(this.dom.diagBackupStatus, 'Reading ' + file.name + '...');
+      var readDone = function(text) {
+        try {
+          var parse = self._parseSettingsExport(text);
+          if (!parse.ok) {
+            self.setDomText(self.dom.diagBackupStatus, 'Import failed: ' + parse.error);
+            return;
+          }
+          var summary = self._applySettingsPayload(parse.payload);
+          self.setDomText(self.dom.diagBackupStatus,
+            'Imported: ' + summary.applied + ' properties' +
+            (summary.skipped ? ' (' + summary.skipped + ' skipped)' : '') +
+            ' + ' + summary.storageRestored + ' storage entries. Reloading...');
+          setTimeout(function() { location.reload(); }, 1800);
+        } catch (e) {
+          self.setDomText(self.dom.diagBackupStatus, 'Import failed: ' + (e && e.message));
+        }
+      };
+      if (typeof file.text === 'function') {
+        file.text().then(readDone).catch(function() {
+          self.setDomText(self.dom.diagBackupStatus, 'Import failed: unreadable file');
+        });
+      } else {
+        var reader = new FileReader();
+        reader.onload = function() { readDone(String(reader.result || '')); };
+        reader.onerror = function() {
+          self.setDomText(self.dom.diagBackupStatus, 'Import failed: unreadable file');
+        };
+        reader.readAsText(file);
       }
     },
 

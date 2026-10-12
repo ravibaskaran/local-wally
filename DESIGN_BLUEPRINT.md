@@ -1377,3 +1377,26 @@ Replaces the fixed moon row with three nocturnal cards:
 
 ### 36.3 Verification & release
 - Re-run battery: all 7 suites green, `node --check` clean; footprint limited to `js/api.js` constants/comment + documentation (README, this section, release notes). Re-packaged, tagged `v0.8.5`, GitHub release synced.
+
+## 37. Settings Backup & Restore (v0.8.6)
+
+### 37.1 Format Decision: Plain JSON, Not Zip
+- A settings payload is a few KB of text; zip compression saves nothing meaningful while a zero-build runtime would need ~150 lines of hand-rolled CRC32 + stored-entry zip writer/reader with no libraries to lean on. Export is therefore a single `local-wally-settings-YYYYMMDD-HHMMSS.json` (native Blob download), importable in any editor for manual inspection or tweak.
+
+### 37.2 Payload Model
+- `meta`: `product: 'local-wally-hud'`, `format: 1`, `includesApiKeys: true` (explicit, by user requirement), ISO `exportedAt`.
+- `livelyProperties`: the current values of every tracked Lively property from `LivelyBridge.properties`, filtered to the 36-name whitelist that mirrors the property dispatcher (`App.SETTINGS_PROPNAMES`).
+- `localStorage`: every app-owned storage entry (`LIVELY_HUD_*`, `local_wally_*` prefixes) — cache snapshots, news quota state, rotation cursors, recent wallpapers, cached wallpaper credit. Foreign keys are excluded from export and ignored on import.
+
+### 37.3 UI Surface & Interaction
+- The diagnostic panel (`D`) gains a Backup & Restore block (Export / Import buttons, hidden file input, status line). The panel is now interactive only while open (`pointer-events: auto` on `.is-active`) — it normally floats over the wallpaper corner, so click capture while open is harmless; closed state remains click-through.
+- Import: file picker → `_parseSettingsExport` guards (product, format 1, ≤2 MB, section shapes) → `_applySettingsPayload` → status line → `location.reload()` for a clean boot.
+- Property application prefers the Lively host round-trip (`livelyPropertyValueChanged` — the host persists each change and re-delivers through the listener, so Lively's own settings model stays authoritative); outside the host (browser preview, tests) values replay through `LivelyBridge.emitProperty`.
+
+### 37.4 Safety Model
+- Values pass through the existing dispatcher/setters, which already coerce and clamp; import does not invent a second validation layer beyond: name whitelist (unknown names dropped), URL-embedded key charset check (Unsplash/Wallhaven/Pixabay keys land in query parameters — `[^A-Za-z0-9._~-]` or >190 chars is skipped), and the storage prefix filter.
+- The export contains API keys in cleartext — documented; users treat it like a password vault export.
+- No path in backup/restore can bypass the news quota firewall: applying properties re-enters the normal dispatcher, whose network eligibility always flows through the firewall (LW06 invariant unchanged).
+
+### 37.5 Verification
+- New scratch suite `test_v086_backup.js`: payload shape (whitelist + storage filter), parse guards, apply semantics (whitelist/emitter replay/charset skip/storage filter/honest counts), and a machine-to-machine round trip. Full 7-suite battery re-run green; `node --check` clean; scratch file SHA-256 reported in release notes.
