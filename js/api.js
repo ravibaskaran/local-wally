@@ -2243,14 +2243,20 @@
     },
 
     NEWS_CACHE_TTL_MS: 5 * 60 * 1000,
-    // Quota firewall: >= cooldown between network attempts PER actual keyed
-    // provider, counting failed attempts, independent of any refresh/force
-    // flag (LW06). Response caching (query/provider aware) stays separate.
-    // Tiered: keyed providers keep the 15-minute quota-safe window; the keyless
-    // Google News chain (GDELT + public RSS gateways) runs on a 5-minute window
-    // so automatic news updates stay fresh without touching API quotas.
-    NEWS_QUOTA_COOLDOWN_MS: 15 * 60 * 1000,
+    // Quota firewall: >= cooldown between network attempts PER actual provider,
+    // counting failed attempts, independent of any refresh/force flag (LW06).
+    // Response caching (query/provider aware) stays separate.
+    // KEYED (Currents, NewsAPI): deliberately HARD-CODED at 15 minutes. This is
+    // a quota-safety guarantee, not a tunable: 15 min = at most 96 network
+    // calls/day per keyed provider, under every known free-tier daily ceiling
+    // (NewsAPI ~100/day; Currents 200/day). Do not expose it in Lively
+    // Properties or config.js — a user-facing knob would invite 5-minute
+    // polling and burned keys. (v0.8.5)
+    NEWS_QUOTA_COOLDOWN_KEYED_MS: 15 * 60 * 1000,
+    // KEYLESS (Google News chain: GDELT + public RSS gateways): a true 5-minute
+    // window so automatic news updates stay fresh without touching API quotas.
     NEWS_QUOTA_COOLDOWN_KEYLESS_MS: 5 * 60 * 1000,
+    NEWS_QUOTA_COOLDOWN_MS: 15 * 60 * 1000, // deprecated alias kept for older scratch suites
     _NEWS_QUOTA_SKEW_MAX_MS: 24 * 60 * 60 * 1000,
     _NEWS_QUOTA_STORE_KEY: 'LIVELY_HUD_NEWS_QUOTA',
     // In-flight map keyed by normalized request identity, cleaned on settle, bounded (LW04)
@@ -2374,10 +2380,10 @@
      * corrupt and reset once (LW06).
      */
     _newsCooldownMsFor: function(provider) {
-      // Tiered quota firewall: keyed providers keep the full 15-minute window;
-      // the keyless Google News chain refreshes on a 5-minute window.
+      // Tiered quota firewall: keyed providers keep the hard-coded 15-minute
+      // window; the keyless Google News chain refreshes on a 5-minute window.
       return (provider === 'newsapi' || provider === 'currents')
-        ? this.NEWS_QUOTA_COOLDOWN_MS
+        ? this.NEWS_QUOTA_COOLDOWN_KEYED_MS
         : this.NEWS_QUOTA_COOLDOWN_KEYLESS_MS;
     },
 

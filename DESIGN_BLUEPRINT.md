@@ -1364,3 +1364,16 @@ Replaces the fixed moon row with three nocturnal cards:
 - **Dropdown migration**: the new "Auto" item shifts previously stored numeric selections by one (old 1/2/3 = NewsAPI/Currents/Rotate now read as Google News/NewsAPI/Currents). Default-index installs upgrade transparently to Auto. Explicit re-selection restores prior intent; documented in README and release notes.
 - Change footprint: 6 files (`LivelyProperties.json`, `config.js`, `js/api.js`, `js/app.js`, `index.html`, `css/style.css`). Scratch-only suite change: `test_v073_audit_fixes.js` gained `URLSearchParams` in its vm sandbox (mirrors the v0.6.4 precedent; required after the boot path began exercising the real GDELT query builder).
 - Verification: all 7 suites green (v0.8.3 suite 62/62 including the CORS-aware failover case, providers/v0.8.1/v0.7.3/v0.7.2/v0.7.1/hardening at 100%), `node --check` clean on touched files, `git diff --check` clean. Fresh-context adversarial review: SHIP-WITH-NITS, zero MAJOR findings (cityUsable placeholder coverage, pause-gated late-enable fetch, index-migration documentation, `R` shortcut removal, `middleCorsProxy` knob — all fixed; ~15 s worst-case keyless latency accepted). Known-open baseline failures unchanged (not gates).
+
+## 36. Hard Keyed-News Quota Guarantee & GDELT Reliability Verdict (v0.8.5)
+
+### 36.1 Hard-coded keyed cooldown
+- The keyed-provider cooldown is pinned in code as `NEWS_QUOTA_COOLDOWN_KEYED_MS` (15 minutes) with the explicit rule that it must never become a settings knob: 15-minute spacing yields at most 96 network calls/day per keyed provider, under the NewsAPI (~100/day) and Currents (200/day) free ceilings. The unbounded `NEWS_QUOTA_COOLDOWN_MS` name is retained as a deprecated alias with the same value so older scratch suites keep resolving it.
+- No behavioral change versus v0.8.4: the 5-minute newsFetchTimer cadence, 5-minute cache TTL, and keyless 5-minute window are unchanged; ticks landing inside a keyed window serve honestly stale-marked cached stories and mark no network attempt.
+
+### 36.2 GDELT reliability verdict
+- Two independent live probes on separate days both returned HTTP 429 from a datacenter vantage; a residential WebView2 IP may fare better but cannot be assumed. Verdict: GDELT cannot be a dependable primary anywhere.
+- GDELT is retained only as the keyless first leg of the Google News fallback chain — proxy-free direct JSON when it succeeds, at most ~7 s of cost when it 429s before the RSS gateway chain continues (and in Auto mode with keys it is a last-ditch fallback behind the keyed primary). Removal can be reconsidered only if a keyless-only install is observed failing on GDELT 429s chronically.
+
+### 36.3 Verification & release
+- Re-run battery: all 7 suites green, `node --check` clean; footprint limited to `js/api.js` constants/comment + documentation (README, this section, release notes). Re-packaged, tagged `v0.8.5`, GitHub release synced.

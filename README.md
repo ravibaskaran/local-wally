@@ -270,6 +270,11 @@ local-wally/
 
 ## 🛡️ Recent Updates & Quality Improvements
 
+### Version 0.8.5 — Hard Keyed-News Quota Guarantee & GDELT Reliability Verdict
+- **Currents/NewsAPI refresh is hard-coded at 15 minutes** (`NEWS_QUOTA_COOLDOWN_KEYED_MS` in code — deliberately not a settings knob): at most **96 network calls/day per keyed provider**, safely under every known free-tier ceiling (NewsAPI ≈ 100/day, Currents 200/day). The 5-minute automatic cadence is unchanged; between keyed windows the card keeps honestly-marked cached stories and marks no network attempt. A user-facing knob would invite 5-minute polling and burned keys, so none will be added.
+- **GDELT reliability verdict** (live-probed on two separate days, HTTP 429 both times): GDELT's rate limiting is aggressive and it cannot be a dependable primary anywhere — including keyless installs. It is retained only as the keyless first leg of the Google News fallback chain (proxy-free direct JSON when it succeeds; when it 429s the chain continues to the RSS gateways, costing at most ~7 s). With API keys configured and Auto mode on, GDELT is essentially irrelevant to your news.
+- **Verification**: 7 suites green re-run (62/62, 18/18, rest 100%), `node --check` clean, release re-packaged and GitHub release synced.
+
 ### Version 0.8.4 — Keyed-First News Default, 5-Minute Auto Refresh & HUD Polish
 - **News source reliability**:
   - The Google News chain was fully broken in the wild (live-probed: GDELT 429 rate-limited, `api.allorigins.win` timing out, `corsproxy.io` returning 401 to non-allowlisted origins) while the provider default stayed hard-locked to it — configured NewsAPI/Currents keys were never consulted unless explicitly selected.
