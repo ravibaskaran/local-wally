@@ -2447,7 +2447,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             // Manual location from the Lively Customize panel (v0.8.10):
             // blank = automatic. Re-delivered values that already match the
             // stored record short-circuit (no re-geocode churn on boot or
-            // property round-trips).
+            // property round-trips). Every delivery is a fresh intent (R02):
+            // late work from a previous value becomes a silent no-op, and an
+            // unresolvable LATEST name clears the override so Auto takes over
+            // with an honest message (R07).
             var locText = String(val == null ? '' : val).trim();
             var locApi = global.ApiService;
             if (locApi) {
@@ -2460,13 +2463,26 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
                 break;
               }
               locApi.setManualLocation(locText).then(function(res) {
+                if (res && res.superseded) {
+                  return; // a newer intent already won (R02)
+                }
                 if (res && res.ok) {
+                  self.setDomText(self.dom.locStatusLabel,
+                    'Manual location: ' + res.location.city + (res.location.country ? ', ' + res.location.country : '') + ' — refreshing...');
                   self.loadAtmosphere(true);
                 } else {
-                  self.updateLocationDiagnostics();
+                  // R07: latest name unresolvable — Auto is active again.
+                  self.setDomText(self.dom.locStatusLabel,
+                    'Could not resolve "' + locText + '" — using automatic location');
+                  self.loadAtmosphere(true);
                 }
               }).catch(function() {
-                self.updateLocationDiagnostics();
+                // Rejected input (empty/oversized) is also an unresolvable
+                // latest intent: clear the override, Auto takes over (R07).
+                locApi.clearManualLocation();
+                self.setDomText(self.dom.locStatusLabel,
+                  'Manual location failed — using automatic location');
+                self.loadAtmosphere(true);
               });
             }
             break;
@@ -3302,6 +3318,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     },
 
     hideLocationSuggestions: function() {
+      // Invalidate any in-flight suggestion response (R12): clearing the
+      // field, entering coordinate mode, selecting, blurring, or closing the
+      // panel must stop late responses from re-opening the dropdown.
+      this._locSuggestGeneration = (this._locSuggestGeneration || 0) + 1;
       if (this._locSuggestDebounce) {
         clearTimeout(this._locSuggestDebounce);
         this._locSuggestDebounce = null;
@@ -3339,8 +3359,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (input) input.value = opt.name + (opt.country ? ', ' + opt.country : '');
       this.setDomText(this.dom.locStatusLabel, 'Resolving "' + opt.name + '"...');
       global.ApiService.setManualLocation(opt.name, opt).then(function(res) {
+        if (res && res.superseded) return; // a newer intent won (R02)
         if (!res.ok) {
-          self.setDomText(self.dom.locStatusLabel, 'Manual location rejected: ' + res.error);
+          self.setDomText(self.dom.locStatusLabel, 'Manual location rejected: ' + res.error + ' — using automatic location');
+          self.loadAtmosphere(true);
           return;
         }
         var resolved = res.location;
@@ -3349,7 +3371,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         self.syncCustomLocationProperty(resolved.city);
         self.loadAtmosphere(true);
       }).catch(function(err) {
-        self.setDomText(self.dom.locStatusLabel, 'Manual location failed: ' + (err && err.message));
+        self.setDomText(self.dom.locStatusLabel, 'Manual location failed: ' + (err && err.message) + ' — using automatic location');
+        if (global.ApiService && global.ApiService.clearManualLocation) global.ApiService.clearManualLocation();
+        self.loadAtmosphere(true);
       });
     },
 
@@ -3380,6 +3404,11 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       var input = this.dom.locManageInput;
       if (!input || !global.ApiService || typeof global.ApiService._geocodeCity !== 'function') return;
       var text = String(input.value || '').trim();
+      // Every edit is a fresh suggestion generation (R12): responses from an
+      // earlier query can never render — including slow/failed responses that
+      // settle after the user moved on, cleared the field, or closed the panel.
+      this._locSuggestGeneration = (this._locSuggestGeneration || 0) + 1;
+      var gen = this._locSuggestGeneration;
       if (text.length < 3) {
         this.hideLocationSuggestions();
         return;
@@ -3393,8 +3422,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       this._locSuggestDebounce = setTimeout(function() {
         self._locSuggestDebounce = null;
         global.ApiService._geocodeCity(text, 6).then(function(list) {
+          if (gen !== self._locSuggestGeneration) return; // stale response (R12)
           if (self.showDiagnostics) self.renderLocationSuggestions(list);
         }).catch(function() {
+          if (gen !== self._locSuggestGeneration) return; // stale failure (R12)
           if (self.showDiagnostics) self.renderLocationSuggestions([]);
         });
       }, 350);
@@ -3415,19 +3446,36 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         this.setDomText(this.dom.locStatusLabel, 'Type a city name or "lat, lon" first');
         return;
       }
+      // Re-applying the already-active entry is a no-op: no redundant geocode
+      // and no redundant refresh (R02 acceptance 4).
+      if (global.ApiService.manualLocationMatches && global.ApiService.manualLocationMatches(text)) {
+        this.setDomText(this.dom.locStatusLabel, 'Location already active: ' + text);
+        return;
+      }
       this.setDomText(this.dom.locStatusLabel, 'Resolving "' + text + '"...');
       global.ApiService.setManualLocation(text).then(function(res) {
+        if (res && res.superseded) return; // a newer intent won (R02)
         if (!res.ok) {
-          self.setDomText(self.dom.locStatusLabel, 'Manual location rejected: ' + res.error);
+          self.setDomText(self.dom.locStatusLabel, 'Manual location rejected: ' + res.error + ' — using automatic location');
+          self.loadAtmosphere(true);
           return;
         }
         var resolved = res.location;
         self.setDomText(self.dom.locStatusLabel,
           'Manual location: ' + resolved.city + (resolved.country ? ', ' + resolved.country : '') + ' — refreshing...');
-        self.syncCustomLocationProperty(resolved.city);
+        // R04: coordinate pins mirror as coordinates on the property — a
+        // city label would swallow a genuine pin on round-trip.
+        var rec = global.ApiService._readManualRecord ? global.ApiService._readManualRecord() : null;
+        if (rec && rec.entry && rec.entry.type === 'coords') {
+          self.syncCustomLocationProperty(rec.entry.latitude + ', ' + rec.entry.longitude);
+        } else {
+          self.syncCustomLocationProperty(resolved.city);
+        }
         self.loadAtmosphere(true);
       }).catch(function(err) {
-        self.setDomText(self.dom.locStatusLabel, 'Manual location failed: ' + (err && err.message));
+        self.setDomText(self.dom.locStatusLabel, 'Manual location failed: ' + (err && err.message) + ' — using automatic location');
+        if (global.ApiService && global.ApiService.clearManualLocation) global.ApiService.clearManualLocation();
+        self.loadAtmosphere(true);
       });
     },
 
@@ -3464,7 +3512,16 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       'enableAudioVisualizer', 'enableDynamicSolarLighting'
     ],
     _SETTINGS_STORAGE_PREFIX: /^(LIVELY_HUD_|local_wally_)/,
-    _URL_EMBEDDED_KEY_PROPS: ['unsplashApiKey', 'wallhavenApiKey', 'pixabayApiKey'],
+    _URL_EMBEDDED_KEY_PROPS: ['openweathermapApiKey', 'waqiApiKey', 'pixabayApiKey'],
+    // Every API-key property gets boundary validation on import (v0.8.11 R11):
+    // non-string values and oversized strings are rejected; blank stays valid.
+    // URL_EMBEDDED additionally restricts charset (query-parameter safety for
+    // the documented provider key formats: hex/alphanumeric tokens).
+    _KEY_PROPS: ['unsplashApiKey', 'wallhavenApiKey', 'pexelsApiKey', 'pixabayApiKey',
+      'openweathermapApiKey', 'waqiApiKey', 'newsApiKey', 'currentsApiKey'],
+    // Operational (non-user) storage state that must never ride backups (R09).
+    // Extensible: any reservation/lock state added by multi-instance work joins here.
+    _OPERATIONAL_STORAGE_KEYS: ['LIVELY_HUD_NEWS_QUOTA', 'LIVELY_HUD_NEWS_TIER'],
 
     _buildSettingsPayload: function() {
       var props = {};
@@ -3482,6 +3539,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           for (var k = 0; k < ls.length; k++) {
             var key = ls.key(k);
             if (!key || !this._SETTINGS_STORAGE_PREFIX.test(key)) continue;
+            // Operational state (quota windows, reservations) is deliberately NOT
+            // backed up: importing another machine's cooldown stamps would either
+            // lock this machine out of fresh requests or lie about its windows (R09).
+            if (this._OPERATIONAL_STORAGE_KEYS.indexOf(key) !== -1) continue;
             storage[key] = ls.getItem(key);
           }
         }
@@ -3567,10 +3628,14 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     },
 
     /**
-     * Publishes the manual-location property so the Lively Customize panel
-     * (and the property model) reflects the D-panel selection (v0.8.10).
-     * Host writes go through livelyPropertyValueChanged; the preview replays
-     * via the bridge emitter. The dispatcher case short-circuits re-delivery.
+     * Publishes the manual-location property for the CURRENT session (v0.8.10).
+     * Honesty note (v0.8.11 R14): the official Lively web API documents
+     * host→page property delivery only; an outbound write function
+     * (livelyPropertyValueChanged) is NOT part of that documented interface.
+     * A host that exposes such a function gets used (feature-detected) and
+     * MAY persist; otherwise this is a runtime-only bridge replay. Until a
+     * real restart test on the target host confirms persistence, treat this
+     * as runtime sync, not a persisted Customize write.
      */
     syncCustomLocationProperty: function(value) {
       try {
@@ -3586,15 +3651,19 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     },
 
     /**
-     * Applies one validated payload. Runs the property part through the Lively
-     * host when available (host persists every change), else replays values
-     * through the bridge emitter (preview/tests). Storage keys of the app's
-     * own prefixes are restored verbatim; everything else is ignored.
-     * Pure-ish — unit-tested in scratch suites. Returns a summary object.
+     * Applies one validated payload (v0.8.6; honesty split v0.8.11 R14).
+     * Host-write path (when the environment exposes an outbound write): each
+     * value reaches the Lively property model and is counted as PERSISTENT.
+     * Bridge-replay path: values apply to the running session only, counted
+     * as RUNTIME — the caller must not claim persistence or auto-reload over
+     * them. Storage keys of the app's own prefixes are restored verbatim;
+     * operational state (quota/tier stamps) is never restored (R09); other
+     * keys are ignored. Pure-ish — unit-tested in scratch suites.
      */
     _applySettingsPayload: function(payload) {
       var self = this;
       var applied = 0;
+      var appliedPersist = 0;
       var skipped = 0;
 
       var hasHostWrite = typeof global.livelyPropertyValueChanged === 'function';
@@ -3602,14 +3671,20 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         var name = this.SETTINGS_PROPNAMES[i];
         if (!Object.prototype.hasOwnProperty.call(payload.livelyProperties, name)) continue;
         var val = payload.livelyProperties[name];
-        if (typeof val === 'string' && this._URL_EMBEDDED_KEY_PROPS.indexOf(name) !== -1) {
-          // Keys embedded in request URLs (query params) must stay URL-safe.
-          if (val.length > 190 || /[^A-Za-z0-9._~-]/.test(val.trim())) { skipped++; continue; }
+        if (this._KEY_PROPS.indexOf(name) !== -1) {
+          // API keys: non-string values and oversized strings are rejected at
+          // the import boundary; blank stays valid. Keys actually embedded in
+          // request URLs (query params) must additionally stay URL-charset-safe.
+          if (typeof val !== 'string') { skipped++; continue; }
+          if (val.length > 190) { skipped++; continue; }
+          if (this._URL_EMBEDDED_KEY_PROPS.indexOf(name) !== -1 &&
+              val.trim() && /[^A-Za-z0-9._~-]/.test(val.trim())) { skipped++; continue; }
         }
         applied++;
         if (hasHostWrite) {
           try {
             global.livelyPropertyValueChanged(name, val);
+            appliedPersist++;
           } catch (e) {
             console.warn('[App] Backup import: host rejected property ' + name + ':', e && e.message);
             applied--;
@@ -3620,12 +3695,16 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
 
       var storageRestored = 0;
+      var storageSkipped = 0;
       try {
         var ls = global.localStorage;
         if (ls && payload.localStorage) {
           for (var key in payload.localStorage) {
             if (!Object.prototype.hasOwnProperty.call(payload.localStorage, key)) continue;
             if (!this._SETTINGS_STORAGE_PREFIX.test(key)) continue;
+            // Operational state (e.g. old exports carrying quota stamps) is
+            // NEVER restored: the local active cooldown stays authoritative (R09).
+            if (this._OPERATIONAL_STORAGE_KEYS.indexOf(key) !== -1) { storageSkipped++; continue; }
             var raw = payload.localStorage[key];
             if (typeof raw !== 'string') continue;
             ls.setItem(key, raw);
@@ -3636,7 +3715,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         console.warn('[App] Backup import: storage restore failed:', e && e.message);
       }
 
-      return { applied: applied, skipped: skipped, storageRestored: storageRestored };
+      return { applied: applied, appliedPersist: appliedPersist, skipped: skipped, storageRestored: storageRestored, storageSkipped: storageSkipped };
     },
 
     importSettingsFile: function(file) {
@@ -3651,11 +3730,27 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             return;
           }
           var summary = self._applySettingsPayload(parse.payload);
-          self.setDomText(self.dom.diagBackupStatus,
-            'Imported: ' + summary.applied + ' properties' +
-            (summary.skipped ? ' (' + summary.skipped + ' skipped)' : '') +
-            ' + ' + summary.storageRestored + ' storage entries. Reloading...');
-          setTimeout(function() { location.reload(); }, 1800);
+          var runtimeOnly = summary.applied - summary.appliedPersist;
+          var msg = 'Imported: ' + summary.applied + ' properties';
+          if (summary.applied > 0) {
+            msg += ' (' + summary.appliedPersist + ' persisted via host';
+            if (runtimeOnly > 0) msg += ', ' + runtimeOnly + ' runtime-only';
+            msg += ')';
+          }
+          if (summary.skipped) msg += ' — ' + summary.skipped + ' skipped';
+          msg += ' + ' + summary.storageRestored + ' storage entries';
+          if (summary.storageSkipped) msg += ' (' + summary.storageSkipped + ' operational skipped)';
+          if (runtimeOnly > 0) {
+            // Runtime-only values live in this session; a reload would UNDO
+            // them (R14). Keep them applied and explain how to persist.
+            msg += '. Runtime-only values apply now; update Lively\'s Customize panel to persist them.';
+          } else {
+            msg += '. Reloading...';
+          }
+          self.setDomText(self.dom.diagBackupStatus, msg);
+          if (runtimeOnly === 0 && summary.applied > 0) {
+            setTimeout(function() { location.reload(); }, 1800);
+          }
         } catch (e) {
           self.setDomText(self.dom.diagBackupStatus, 'Import failed: ' + (e && e.message));
         }
@@ -4706,6 +4801,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         clearInterval(this._popoverLingerTimer);
         this._popoverLingerTimer = null;
       }
+      // Never arm tooltip work while parked (R13): hover/focus paths re-arm
+      // naturally on resume; the loop is not running to serve the popover.
+      if (this.isPlaybackPaused) return;
       var now = Date.now();
       this._popoverAnyMoveAt = now;
       this._popoverAnchorMoveAt = now;
@@ -6742,6 +6840,13 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (typeof document !== 'undefined' && document.body && document.body.classList) {
         document.body.classList.add('is-paused');
       }
+      // Tooltip work stops with the loop: a parked wallpaper must not keep a
+      // hover popover (or its linger interval) alive (v0.8.11 R13).
+      if (this.isHoverPopoverOpen) {
+        this.hideHoverPopover();
+      }
+      // Suggestion work stops too (R12): park invalidates in-flight queries.
+      this._locSuggestGeneration = (this._locSuggestGeneration || 0) + 1;
       if (this.animationFrameId) {
         cancelAnimationFrame(this.animationFrameId);
         this.animationFrameId = null;

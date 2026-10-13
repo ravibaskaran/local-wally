@@ -109,7 +109,7 @@ Modern portable Windows devices (such as AMD Ryzen AI 300 series APUs with Radeo
 
 ### 3.2 WebGL Hardware Introspection (`detectGpuProfile`)
 
-Before initializing the 2D canvas, `ParticleEngine.detectGpuProfile()` probes the underlying graphics subsystem using an off-screen WebGL context and the `WEBGL_debug_renderer_info` extension:
+The constructor first acquires its 2D context and then calls `ParticleEngine.detectGpuProfile()`, which probes the underlying graphics subsystem using an off-screen WebGL context and the `WEBGL_debug_renderer_info` extension (the probe informs later density/DPR decisions; it is not a pre-acquisition gate):
 
 ```javascript
 var probeCanvas = document.createElement('canvas');
@@ -142,9 +142,9 @@ this.ctx = canvasElement.getContext('2d', {
 });
 ```
 
-- `alpha: true`: Permits blending over the background landscape while maintaining GPU composite caching.
-- `desynchronized: true`: Bypasses the desktop window manager (DWM) composition queue latency on Windows 11, routing frame buffers directly to the display scanout.
-- `willReadFrequently: false`: Prevents Chromium Skia from allocating a CPU RAM shadow buffer for readback (e.g. `getImageData`), forcing the canvas backing store to reside entirely inside GPU VRAM.
+- `alpha: true`: Permits blending over the background landscape while keeping the canvas compositible.
+- `desynchronized: true`: A *context-request hint* that asks Chromium to decouple the canvas frame queue from the main-document commit pipeline on Windows. Actual compositor behavior (including any DWM interaction) is host-dependent and needs on-target verification — this project does not claim guaranteed direct scanout.
+- `willReadFrequently: false`: A *readback-prediction hint* telling Skia the canvas is not expected to be read back, which *steers* the backing-store placement away from a CPU shadow buffer. It does not forcibly guarantee GPU-only residency; real placement depends on the Chromium version and device.
 
 ### 3.4 Struct-of-Arrays (SoA) Zero-Allocation Memory Layout
 
@@ -1479,3 +1479,36 @@ Replaces the fixed moon row with three nocturnal cards:
 
 ### 41.4 Verification
 - New scratch suite `test_v0810_location_property.js`: guard semantics (names/aliases/coords tolerance/rejections — geocode not re-triggered), property publishing paths (host/bridge/neither), static wiring (dispatcher case incl. blank-clear + short-circuit, whitelist membership, schema first-control + blank default), export payload behavior (storage record exported; untracked property never fabricated; tracked property carried). Full 11-suite battery green with clean exits; `node --check` clean; schema JSON valid. Scratch SHA-256 in release notes.
+
+## 42. Independent Audit Corrections (v0.8.11)
+
+An external audit (Codex, independent read-only pass over v0.8.10) produced 15 findings; the work order's R01–R15 acceptance lists were implemented or honestly validation-gated. Summary of what shipped:
+
+### 42.1 News quota boundary (R01)
+- Every KEYED news HTTP GET now reserves its own window at the request boundary (`_keyedNewsRequest` → `_reserveNewsWindow`): one GET per 15-minute window per provider; empty results and failures consume the window; the single-tier-per-attempt runner (`_runKeyedTier`) pends the next region tier for the next eligible window (a remembered working tier earns one same-tier retry — bounded reset-once). Tier state is memory-first with best-effort persistence under `LIVELY_HUD_NEWS_TIER` (operational — never backed up). The duplicated shadowed Currents ladder from v0.8.9 is deleted. Cross-provider order preserved: keyed first, keyless chain last, each leg inside its own window; the keyless chain remains one logical attempt per 5-minute window.
+- Acceptance evidence: rewritten `test_v089_news_cascade.js` counts ACTUAL fetch calls — one GET per synthetic window, pending-tier progression, working-tier steady state, ≤96 GETs across 96 synthetic 24h windows, keyed-before-keyless order, zero attempts for cache-served reads.
+
+### 42.2 Multi-instance reservation (R10, validation-gated)
+- `_reserveNewsWindow` serializes the read-check-persist critical section through the Web Locks API (`local-wally:news-quota`) when the host exposes it, rereading persisted stamps inside the lock; coordination failure fails CLOSED for keyed requests (cache/keyless unaffected). Whether Lively's two monitor views share one storage bucket could not be verified from this environment — the multi-instance guarantee is documented as UNVERIFIED until an on-machine marker/sharing test and a two-instance reservation test are run.
+
+### 42.3 Location trust boundary + intent generation (R02–R08)
+- `_manualIntentGeneration` guards every async manual-location continuation (typed entries, suggestion picks, clears, Customize deliveries): superseded work is silent ({ superseded:true }), can never write records, mirrors, diagnostics, or trigger refreshes. Unresolvable LATEST names clear the override and fall back to Auto with an explicit message (R07). Rejected (oversized/empty) input also clears.
+- `_isValidCoordPair` (finite, ±90/±180) validates coordinate entries AND resolved objects at every read boundary (`_readManualRecord` → `_sanitizeManualRecord`, `_readPersistedLocation`); (0,0) and boundary values stay legal; invalid resolved payloads are dropped while the entry survives and re-resolves (R08).
+- Coordinate pins reuse their saved, validated city/country enrichment across boots and never fabricate a country; unknown country codes normalize to empty across `fetchNews`/`fetchRegionalNews`; the geo RSS section requires a country; country-less pins slide to the world edition (R03).
+- Coordinate pins mirror as `"lat, lon"` on the `customLocation` property (R04); name records publish the canonical name. `manualLocationMatches` matches canonical name OR stored alias OR resolved city, case-insensitively (R05); geocoders canonicalize the entry and keep the submitted alias bounded (≤80 chars, validated on read).
+- The shared `_isPlaceholderCity` predicate rejects empty/'Local City'/'Local Area'/'Metropolitan'/'Manual Area' in the adoption gate and the keyless news chain — degraded detections can never overwrite a real persisted city (R06).
+- Autocomplete responses carry a suggestion generation; edits, clears, coordinate mode, selection, blur, panel close, and park all invalidate in-flight responses — stale success AND failure are dropped, debounce (350 ms) and the six-row cap unchanged (R12).
+
+### 42.4 Restore honesty, tooltips, docs (R09/R11/R13/R14/R15)
+- Operational state (`LIVELY_HUD_NEWS_QUOTA`, `LIVELY_HUD_NEWS_TIER`) is excluded from BOTH export and import; skipped imports are counted (`storageSkipped`); a live local cooldown always survives an import carrying stale quota stamps (R09).
+- Import key validation matches the actual request builders: URL-embedded = OpenWeatherMap (`appid=`), WAQI (`token=`), Pixabay (`key=`); Unsplash/Wallhaven/others are header keys with type+length-only validation; blanks valid; rejects are counted (R11).
+- `stopLoop` closes hover popovers via `hideHoverPopover` (clears interval + ARIA/anchor state); `_startPopoverLinger` is inert while paused; the one-time passive mousemove binding is unchanged; park bumps the suggestion generation (R13).
+- Import accounting splits `appliedPersist` (host write path taken) from runtime-only applications; runtime-only imports are NOT auto-reloaded away and the message says how to persist them; `syncCustomLocationProperty` documents the host-write path as feature-detected and unverified for persistence (the official Lively web API documents host→page delivery only) (R14).
+- Blueprint §3.2/§3.3 corrected: the constructor acquires 2D before profiling; `desynchronized`/`willReadFrequently` are context-request hints; no guaranteed DWM bypass or GPU-only residency (R15).
+
+### 42.5 Validation-gated deferrals (measured-first)
+- **On-target pilots** (blur-cost comparison, story-image network/memory evidence, WebGL2 instanced-particles ≥20% p95 render-cost gate) require the actual Lively WebView2 host and on-machine instrumentation; methods and fallback requirements are specified in the work order review trail. No performance claims were added without measurement. WebGPU/WASM/blob workers/OffscreenCanvas/SharedArrayBuffer/`contain:strict` rewrites remain rejected-for-now.
+- **CSP**: candidate meta policy documented (default-src 'none'; script-src 'self'; img-src 'self' https: data: file:; connect-src https:; etc.) but NOT shipped — must be validated against the production host first (media artwork file/data/http handling at app.js); deferred honestly.
+
+### 42.6 Verification
+- Battery now 13 processes (adds `test_v0811_audit_corrections.js`; `test_v089_news_cascade.js` rewritten for HTTP-boundary accounting; `test_v086_backup.js` and `test_v08_providers.js` updated to the corrected boundary semantics). All green with clean exits; `node --check` over 29 JS files; `git diff --check` clean; both JSON schema files validated. Passing suites are NOT hardware-performance or host-persistence proof — those gates stay open by design.

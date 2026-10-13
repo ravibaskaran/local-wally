@@ -283,10 +283,10 @@
                 cb(formatLocation(
                   data.latitude,
                   data.longitude,
-                  data.city || 'Local City',
+                  (data.city && String(data.city).trim()) || '',
                   data.region || '',
                   data.country_name || data.country || '',
-                  data.country_code || data.country || 'US',
+                  data.country_code || data.country || '',
                   'ip'
                 ));
               } else {
@@ -308,6 +308,25 @@
     },
 
     /**
+     * Shared coordinate validity: finite numbers inside geographic ranges.
+     * Zeros are legitimate (gulf of Guinea); 91/181/Infinity/NaN are not (R08).
+     */
+    _isValidCoordPair: function(lat, lon) {
+      return typeof lat === 'number' && Number.isFinite(lat) &&
+             typeof lon === 'number' && Number.isFinite(lon) &&
+             lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180;
+    },
+
+    /**
+     * One consistent degraded-city predicate (R06): empty, placeholder, and
+     * un-enriched labels never count as real locality names anywhere.
+     */
+    _isPlaceholderCity: function(name) {
+      var s = (name == null) ? '' : String(name).trim();
+      return !s || /^(local( (area|city))?|metropolitan|manual area)$/i.test(s);
+    },
+
+    /**
      * Silent background re-detect for boots that painted a persisted
      * location. Adopts only when CITY (or country) actually changed —
      * coordinate jitter never flips the user's town. Notifies
@@ -324,10 +343,10 @@
         var prev = persisted.location;
         // Source-quality gate: only adopt candidates at least as trustworthy
         // as what the persisted record holds. Offline config-defaults and
-        // un-enriched degraded GPS ('Local Area') never overwrite a real
-        // persisted city — they'd pin the wrong town until the next success.
+        // un-enriched/degraded labels ('Local City'/'Local Area') never
+        // overwrite a real persisted city (R06).
         var qualified = (loc.source === 'ip' || loc.source === 'gps') &&
-          !/^(local( area)?|metropolitan|manual area)$/i.test(loc.city || '');
+          !self._isPlaceholderCity(loc.city);
         var changed =
           String(prev.city).toLowerCase() !== String(loc.city).toLowerCase() ||
           String(prev.countryCode || '').toUpperCase() !== String(loc.countryCode || '').toUpperCase();
@@ -347,8 +366,7 @@
         var raw = global.localStorage && global.localStorage.getItem(this._LOCATION_AUTO_STORE_KEY);
         if (!raw) return null;
         var rec = JSON.parse(raw);
-        if (!rec || !rec.location || typeof rec.location.latitude !== 'number' ||
-            typeof rec.location.longitude !== 'number') {
+        if (!rec || !rec.location || !this._isValidCoordPair(rec.location.latitude, rec.location.longitude)) {
           return null;
         }
         return rec;
@@ -380,16 +398,16 @@
           var rec = JSON.parse(raw);
           if (rec && rec.entry) {
             // Self-heal against corrupt/hand-crafted records: reject entries
-            // that lack the fields their type requires instead of feeding
-            // undefined into coordinate math downstream.
+            // that lack the fields their type requires — or fall outside
+            // geographic ranges — instead of feeding undefined into coordinate
+            // math downstream (R08). Zeros remain legitimate coordinates.
             if (rec.entry.type === 'coords' &&
-                typeof rec.entry.latitude === 'number' && Number.isFinite(rec.entry.latitude) &&
-                typeof rec.entry.longitude === 'number' && Number.isFinite(rec.entry.longitude)) {
-              return rec;
+                this._isValidCoordPair(rec.entry.latitude, rec.entry.longitude)) {
+              return this._sanitizeManualRecord(rec);
             }
             if (rec.entry.type === 'name' &&
                 rec.entry.name && String(rec.entry.name).trim() && String(rec.entry.name).length <= 80) {
-              return rec;
+              return this._sanitizeManualRecord(rec);
             }
             console.warn('[ApiService] Discarding invalid manual location record');
             return null;
@@ -399,6 +417,26 @@
         // fall through to memory-only record
       }
       return this._memoryManualRecord || null;
+    },
+
+    /**
+     * Normalizes record internals at the trust boundary (R08/R05): resolved
+     * location objects must carry in-range coordinates or they are dropped
+     * (the entry survives and re-resolves); alias strings must be bounded.
+     */
+    _sanitizeManualRecord: function(rec) {
+      if (rec.resolved) {
+        if (!this._isValidCoordPair(rec.resolved.latitude, rec.resolved.longitude)) {
+          rec.resolved = null;
+        }
+      }
+      if (rec.entry && typeof rec.entry.alias === 'string' && rec.entry.alias.length > 80) {
+        rec.entry.alias = '';
+      }
+      if (rec.entry && rec.entry.alias != null && typeof rec.entry.alias !== 'string') {
+        rec.entry.alias = '';
+      }
+      return rec;
     },
 
     _writeManualRecord: function(rec) {
@@ -413,15 +451,25 @@
       this._memoryManualRecord = rec;
     },
 
+    // Manual-location intent generation (R02): every NEW user intent — typed
+    // entry, suggestion pick, clear/Auto, Customize delivery — bumps this
+    // counter. Asynchronous continuations capture it and become silent no-ops
+    // when superseded: late geocodes can never restore an abandoned intent,
+    // clear a newer valid result, or clobber storage/property mirrors.
+    _manualIntentGeneration: 0,
+
     /**
-     * Sets the manual location override (Feature 1). Accepts either a city
-     * name ("Bengaluru") or "lat, lon" coordinates. City entries are geocoded
-     * via the keyless Open-Meteo geocoding API (CORS-open) and cached so
-     * boots use them without any network. Returns a Promise of
-     * { ok:true, location } or { ok:false, error }.
+     * Sets the manual location override. Accepts either a city name
+     * ("Bengaluru") or "lat, lon" coordinates. City entries are geocoded via
+     * the keyless Open-Meteo geocoding API (CORS-open) and cached so boots
+     * use them without any network. Every call is a fresh intent (R02); a
+     * name that cannot resolve CLEARS the previous override so Auto takes
+     * over honestly (R07). Returns a Promise of { ok:true, location },
+     * { ok:false, error }, or { ok:false, superseded:true } for stale work.
      */
     setManualLocation: function(text, preResolved) {
       var self = this;
+      var gen = ++this._manualIntentGeneration;
       var raw = String(text || '').trim();
       if (!raw) {
         return Promise.reject(new Error('Location entry is empty'));
@@ -437,10 +485,13 @@
         }
         // Best-effort reverse geocode gives the pin a real city/country
         // (cached in the record). Without it, the record stays city-less and
-        // the news chain skips to world news rather than guessing a region.
+        // the news chain slides to world news rather than guessing a region.
         return this._reverseGeocode(lat, lon)
           .catch(function() { return null; })
           .then(function(place) {
+            if (gen !== self._manualIntentGeneration) {
+              return { ok: false, superseded: true, error: 'Superseded by a newer location intent' };
+            }
             var rec = place ? {
               entry: { type: 'coords', latitude: lat, longitude: lon },
               resolved: self._formatLocation(place.latitude, place.longitude, place.name, place.admin1 || '', place.country || '', place.country_code || '', 'manual')
@@ -462,29 +513,36 @@
       if (preResolved && typeof preResolved.latitude === 'number' && Number.isFinite(preResolved.latitude) &&
           typeof preResolved.longitude === 'number' && Number.isFinite(preResolved.longitude)) {
         var direct = {
-          entry: { type: 'name', name: preResolved.name || raw },
+          entry: { type: 'name', name: preResolved.name || raw, alias: raw },
           resolved: this._formatLocation(
             preResolved.latitude, preResolved.longitude,
             preResolved.name || raw, preResolved.admin1 || '',
-            preResolved.country || '', preResolved.country_code || 'US', 'manual'
+            preResolved.country || '', preResolved.country_code || '', 'manual'
           )
         };
         this._writeManualRecord(direct);
         return Promise.resolve({ ok: true, location: direct.resolved });
       }
       return this._geocodeCity(raw, 1).then(function(list) {
+        if (gen !== self._manualIntentGeneration) {
+          return { ok: false, superseded: true, error: 'Superseded by a newer location intent' };
+        }
         if (!list || !list.length) {
+          // R07: the LATEST requested name cannot resolve — the previous
+          // override is cleared and Auto takes over (generation-checked, so
+          // an obsolete failure can never clear a newer valid result).
+          self.clearManualLocation();
           return { ok: false, error: 'No matching place found — check spelling' };
         }
         var top = list[0];
         var rec = {
-          // Canonicalize: the record stores the geocoder's spelling
-          // (Bengaluru) so property re-delivery of either the user's alias
-          // (Bangalore) or the canonical name matches (v0.8.10).
-          entry: { type: 'name', name: top.name || raw },
+          // Canonical name (geocoder spelling) + the user's submitted alias
+          // both live on the record (R05): re-delivery of either short-circuits
+          // without a second geocoder call.
+          entry: { type: 'name', name: top.name || raw, alias: raw },
           resolved: self._formatLocation(
             top.latitude, top.longitude, top.name, top.admin1 || '',
-            top.country || '', top.country_code || 'US', 'manual'
+            top.country || '', top.country_code || '', 'manual'
           )
         };
         self._writeManualRecord(rec);
@@ -493,6 +551,9 @@
     },
 
     clearManualLocation: function() {
+      // Clearing IS a fresh intent (R02): pending geocodes for the previous
+      // manual entry become no-ops.
+      this._manualIntentGeneration++;
       try {
         global.localStorage && global.localStorage.removeItem(this._LOCATION_MANUAL_CACHE_KEY);
       } catch (e) {
@@ -513,10 +574,12 @@
       if (!text || typeof text !== 'string' || !rec || !rec.entry) return false;
       var t = text.trim().toLowerCase();
       if (rec.entry.type === 'name') {
-        // The user may re-deliver either the canonical geocoded name
-        // (Bengaluru) or the alias they typed (Bangalore) — both match.
+        // The user may re-deliver the canonical geocoded name (Bengaluru),
+        // the alias they typed (Bangalore), or the resolved city label —
+        // all three match (R05).
         var candidates = [];
         if (rec.entry.name) candidates.push(String(rec.entry.name));
+        if (rec.entry.alias) candidates.push(String(rec.entry.alias));
         if (rec.resolved && rec.resolved.city) candidates.push(String(rec.resolved.city));
         for (var i = 0; i < candidates.length; i++) {
           if (candidates[i].trim().toLowerCase() === t) return true;
@@ -540,12 +603,20 @@
      */
     _resolveManual: function(rec) {
       var self = this;
+      var gen = this._manualIntentGeneration;
       if (rec.entry.type === 'coords') {
-        var rec2 = {
-          entry: rec.entry,
-          resolved: this._formatLocation(rec.entry.latitude, rec.entry.longitude, 'Manual Area', '', '', 'US', 'manual')
-        };
-        return Promise.resolve(rec2.resolved);
+        // Reuse the saved, validated enrichment (reverse-geocoded city/country)
+        // when it matches the pin's own geometry; never re-invent it, and
+        // never fabricate a country for an unenriched pin (R03).
+        if (rec.resolved &&
+            this._isValidCoordPair(rec.resolved.latitude, rec.resolved.longitude) &&
+            Math.abs(rec.resolved.latitude - rec.entry.latitude) < 1e-6 &&
+            Math.abs(rec.resolved.longitude - rec.entry.longitude) < 1e-6) {
+          return Promise.resolve(rec.resolved);
+        }
+        return Promise.resolve(this._formatLocation(
+          rec.entry.latitude, rec.entry.longitude, 'Manual Area', '', '', '', 'manual'
+        ));
       }
       if (rec.resolved &&
           typeof rec.resolved.latitude === 'number' && typeof rec.resolved.longitude === 'number') {
@@ -553,6 +624,11 @@
       }
       // Cache miss (first boot after import without resolved payload): re-geocode once.
       return this._geocodeCity(rec.entry.name, 1).then(function(list) {
+        // A newer user intent (typed entry, clear, property delivery) during
+        // the boot re-geocode invalidates this write (R02).
+        if (gen !== self._manualIntentGeneration) {
+          throw new Error('Manual resolution superseded');
+        }
         if (!list || !list.length) {
           throw new Error('No matching place for "' + rec.entry.name + '"');
         }
@@ -2419,12 +2495,14 @@
     fetchRegionalNews: function(cityName, countryCode) {
       var self = this;
       var cleanCity = (cityName && String(cityName).trim()) || 'Local';
-      var cleanCountry = (countryCode && String(countryCode).trim().toUpperCase()) || 'US';
+      // Unknown/invalid country codes become EMPTY — never an invented region
+      // (R03). Empty country slides the chain to the world edition.
+      var cleanCountry = (countryCode && String(countryCode).trim().toUpperCase()) || '';
       if (cleanCountry.length !== 2) {
-        cleanCountry = 'US';
+        cleanCountry = '';
       }
 
-      var cityUsable = !!(cityName && String(cityName).trim()) && !/^(local( area)?|manual area|metropolitan)$/i.test(cityName);
+      var cityUsable = !this._isPlaceholderCity(cityName);
       var geoUrl = 'https://news.google.com/rss/headlines/section/geo/' + encodeURIComponent(cleanCity) +
         '?hl=en&gl=' + cleanCountry + '&ceid=' + cleanCountry + ':en';
       // Country-level edition (was hardcoded US) — keyless users outside the US
@@ -2531,16 +2609,18 @@
       // 1. Try GDELT DOC 2.0 API first (keyless, proxy-free, direct JSON).
       //    Unusable locality names ('Local', 'Metropolitan', empty — Lively
       //    doesn't always expose a real city) skip GDELT and the meaningless
-      //    geo feed attempt, and land directly on the country-level feed.
+      //    geo feed attempt, and land directly on the country/world feed.
       var chain = cityUsable
         ? self.fetchGdeltNews(cleanCity, cleanCountry)
         : Promise.reject(new Error('No usable locality name'));
       return chain.catch(function(gdeltErr) {
         // 2. Fall back to Google News RSS if GDELT fails or has no records
         console.warn('[ApiService] GDELT news unavailable, attempting Google News RSS:', gdeltErr.message);
-        var geoAttempt = cityUsable
+        // The geo section feed requires a country edition; country-less pins
+        // go straight to the world feed (R03).
+        var geoAttempt = (cityUsable && cleanCountry)
           ? requestXml(geoUrl).then(parseItems)
-          : Promise.reject(new Error('Geo RSS skipped: no usable locality name'));
+          : Promise.reject(new Error('Geo RSS skipped: no usable locality/country'));
         return geoAttempt.catch(function() {
           return requestXml(fallbackUrl).then(parseItems);
         });
@@ -2587,20 +2667,20 @@
         var cleanCountry = (countryCode && String(countryCode).trim().toUpperCase()) || '';
 
         /**
-         * Region ladder (v0.8.9), tier memory shared with Currents:
-         * tier 0 = everything?q=<city + country>, tier 1 = country top
-         * headlines. The free plan may block the browser preflight on either
-         * variant — each failure is caught and the next tier tried.
+         * Region ladder tiers (v0.8.9; one-per-window accounting since
+         * v0.8.11 R01): tier 0 = everything?q=<city + country>, tier 1 =
+         * country top headlines. Every GET goes through _keyedNewsRequest so
+         * each HTTP call consumes its own 15-minute window; the free plan's
+         * possible CORS block is caught and the next tier pends.
          */
         var tierKey = 'newsapi|' + cleanCity.toLowerCase() + '|' + cleanCountry;
-        var knownTier = self._newsVariantTier[tierKey];
         var tiers = [
           { tier: 0, run: function() {
               // NOTE: Official NewsAPI docs: /v2/everything supports 'q', NOT 'country'.
               var disambiguatedQuery = cleanCountry ? (cleanCity + ' ' + cleanCountry) : cleanCity;
               var url = 'https://newsapi.org/v2/everything?q=' + encodeURIComponent(disambiguatedQuery) +
                 '&sortBy=publishedAt&pageSize=10&language=en';
-              return self.fetchWithTimeout(url, 6000, { 'headers': { 'X-Api-Key': key } })
+              return self._keyedNewsRequest('newsapi', url, 6000, { 'X-Api-Key': key })
                 .then(function(res) {
                   if (!res.ok) throw new Error('NewsAPI HTTP ' + res.status);
                   return res.json();
@@ -2612,7 +2692,7 @@
                 return Promise.reject(new Error('No country code for NewsAPI country tier'));
               }
               var url = 'https://newsapi.org/v2/top-headlines?country=' + encodeURIComponent(cleanCountry.toLowerCase()) + '&pageSize=10';
-              return self.fetchWithTimeout(url, 6000, { 'headers': { 'X-Api-Key': key } })
+              return self._keyedNewsRequest('newsapi', url, 6000, { 'X-Api-Key': key })
                 .then(function(res) {
                   if (!res.ok) throw new Error('NewsAPI HTTP ' + res.status);
                   return res.json();
@@ -2621,36 +2701,7 @@
             } }
         ];
 
-        var order = (knownTier === 1)
-          ? tiers.filter(function(t) { return t.tier === knownTier; })
-          : tiers;
-
-        var succeededTier = null;
-        function runLadder(idx) {
-          if (idx >= order.length) {
-            return Promise.reject(new Error('NewsAPI city/country ladder exhausted'));
-          }
-          var entry = order[idx];
-          return entry.run().then(function(articles) {
-            succeededTier = entry.tier;
-            return articles;
-          }).catch(function(err) {
-            console.warn('[ApiService] NewsAPI tier ' + entry.tier + ' empty or failed: ' + err.message);
-            if (knownTier != null) {
-              knownTier = null;
-              order = tiers;
-              return runLadder(0);
-            }
-            return runLadder(idx + 1);
-          });
-        }
-
-        return runLadder(0).then(function(articles) {
-          if (succeededTier != null) {
-            self._newsVariantTier[tierKey] = succeededTier;
-          }
-          return articles;
-        });
+        return self._runKeyedTier('newsapi', tierKey, tiers);
       },
 
       currents: function(city, countryCode) {
@@ -2664,21 +2715,21 @@
         var cleanCountry = (countryCode && String(countryCode).trim().toUpperCase()) || '';
 
         /**
-         * Region ladder (v0.8.9): a small town like 'Arsikere' legitimately
-         * returns zero keyword hits; widen to country top stories, then a
-         * world pass. Each escalation stays inside ONE quota attempt, and the
-         * deepest successful tier is remembered so future attempts skip
-         * straight to it (steady state = one call per 15-min window).
+         * Region ladder tiers (v0.8.9; one-per-window accounting since
+         * v0.8.11 R01): a small town like 'Arsikere' legitimately returns
+         * zero keyword hits; tiers widen to country top stories, then a
+         * world pass. Each tier issues exactly ONE keyed GET through
+         * _keyedNewsRequest; the next tier pends for the next eligible
+         * window (see _runKeyedTier).
          */
         var tierKey = 'currents|' + cleanCity.toLowerCase() + '|' + cleanCountry;
-        var knownTier = self._newsVariantTier[tierKey];
         var tiers = [
           { tier: 0, run: function() {
               var url = 'https://api.currentsapi.services/v1/search?keywords=' + encodeURIComponent(cleanCity);
               if (cleanCountry && cleanCountry.length === 2) {
                 url += '&country=' + encodeURIComponent(cleanCountry.toLowerCase());
               }
-              return self.fetchWithTimeout(url, 6000, { 'headers': { 'Authorization': key } })
+              return self._keyedNewsRequest('currents', url, 6000, { 'Authorization': key })
                 .then(function(res) {
                   if (!res.ok) throw new Error('Currents HTTP ' + res.status);
                   return res.json();
@@ -2690,7 +2741,7 @@
                 return Promise.reject(new Error('No country code for Currents country tier'));
               }
               var url = 'https://api.currentsapi.services/v1/latest?country=' + encodeURIComponent(cleanCountry.toLowerCase());
-              return self.fetchWithTimeout(url, 6000, { 'headers': { 'Authorization': key } })
+              return self._keyedNewsRequest('currents', url, 6000, { 'Authorization': key })
                 .then(function(res) {
                   if (!res.ok) throw new Error('Currents HTTP ' + res.status);
                   return res.json();
@@ -2698,7 +2749,7 @@
                 .then(self._normalizeCurrentsPayload);
             } },
           { tier: 2, run: function() {
-              return self.fetchWithTimeout('https://api.currentsapi.services/v1/latest', 6000, { 'headers': { 'Authorization': key } })
+              return self._keyedNewsRequest('currents', 'https://api.currentsapi.services/v1/latest', 6000, { 'Authorization': key })
                 .then(function(res) {
                   if (!res.ok) throw new Error('Currents HTTP ' + res.status);
                   return res.json();
@@ -2707,53 +2758,7 @@
             } }
         ];
 
-        var order = (knownTier === 1 || knownTier === 2)
-          ? tiers.filter(function(t) { return t.tier === knownTier; })
-          : tiers;
-
-        function runLadder(idx) {
-          if (idx >= order.length) {
-            return Promise.reject(new Error('Currents city/country/world ladder exhausted'));
-          }
-          return order[idx].run().catch(function(err) {
-            console.warn('[ApiService] Currents tier ' + order[idx].tier + ' empty or failed: ' + err.message);
-            if (knownTier != null) {
-              // Remembered tier stale — re-walk the full ladder before giving up
-              knownTier = null;
-              order = tiers;
-              return runLadder(0);
-            }
-            return runLadder(idx + 1);
-          });
-        }
-
-        var succeededTier = null;
-        function runLadder(idx) {
-          if (idx >= order.length) {
-            return Promise.reject(new Error('Currents city/country/world ladder exhausted'));
-          }
-          var entry = order[idx];
-          return entry.run().then(function(articles) {
-            succeededTier = entry.tier;
-            return articles;
-          }).catch(function(err) {
-            console.warn('[ApiService] Currents tier ' + entry.tier + ' empty or failed: ' + err.message);
-            if (knownTier != null) {
-              // Remembered tier went stale — re-walk the full ladder
-              knownTier = null;
-              order = tiers;
-              return runLadder(0);
-            }
-            return runLadder(idx + 1);
-          });
-        }
-
-        return runLadder(0).then(function(articles) {
-          if (succeededTier != null) {
-            self._newsVariantTier[tierKey] = succeededTier;
-          }
-          return articles;
-        });
+        return self._runKeyedTier('currents', tierKey, tiers);
       }
     },
 
@@ -2971,19 +2976,159 @@
     },
 
     /**
+     * Atomic quota reservation for ONE keyed news HTTP request (R01/R10).
+     * The window is reserved at the actual request boundary — every keyed
+     * GET consumes eligibility — and, when the host exposes the Web Locks
+     * API, the read-check-persist critical section is serialized across
+     * wallpaper instances sharing this storage bucket (rereads persisted
+     * stamps inside the lock, merges, checks, then persists the
+     * reservation before the request is issued). Without Web Locks this is
+     * the single-instance guarantee; multi-instance safety stays honestly
+     * documented as unverified (release notes). Reservation/coordination
+     * failure fails CLOSED for keyed requests; cache and keyless operation
+     * are unaffected. Resolves true when THIS instance may issue the GET.
+     */
+    _reserveNewsWindow: function(provider) {
+      var self = this;
+      var runCritical = function() {
+        self._newsQuotaLoaded = false;
+        self._newsQuota = null;
+        self._loadNewsQuota();          // reread shared state inside the lock
+        if (!self._newsCooldownReady(provider)) return false;
+        self._markNewsAttempt(provider); // persist our reservation
+        return true;
+      };
+      var locksApi = null;
+      try {
+        locksApi = (typeof navigator !== 'undefined' && navigator && navigator.locks) ? navigator.locks : null;
+      } catch (e) {
+        locksApi = null;
+      }
+      if (locksApi && typeof locksApi.request === 'function') {
+        return locksApi.request('local-wally:news-quota', function() {
+          return Promise.resolve(runCritical());
+        }).catch(function() {
+          return false; // fail closed for keyed requests
+        });
+      }
+      return Promise.resolve(runCritical());
+    },
+
+    /**
+     * The single gate every KEYED news HTTP call must pass (R01): reserves
+     * the provider's window first — one HTTP GET = one consumed window —
+     * then issues the request. Never bypass; never batch several GETs into
+     * one reservation.
+     */
+    _keyedNewsRequest: function(provider, url, timeoutMs, headers) {
+      var self = this;
+      return this._reserveNewsWindow(provider).then(function(granted) {
+        if (!granted) {
+          return Promise.reject(new Error('Quota window active for ' + provider + ' — deferring to the next eligible window'));
+        }
+        return self.fetchWithTimeout(url, timeoutMs, { headers: headers });
+      });
+    },
+
+    _NEWS_TIER_STORE_KEY: 'LIVELY_HUD_NEWS_TIER',
+
+    _readNewsTierState: function(tierKey) {
+      if (this._newsVariantTier[tierKey]) return this._newsVariantTier[tierKey];
+      try {
+        if (typeof localStorage !== 'undefined') {
+          var raw = localStorage.getItem(this._NEWS_TIER_STORE_KEY);
+          if (raw) {
+            var parsed = JSON.parse(raw);
+            if (parsed && parsed[tierKey] && typeof parsed[tierKey].tier === 'number' &&
+                (parsed[tierKey].status === 'ok' || parsed[tierKey].status === 'pending')) {
+              this._newsVariantTier[tierKey] = parsed[tierKey];
+              return parsed[tierKey];
+            }
+          }
+        }
+      } catch (e) {}
+      return null;
+    },
+
+    _writeNewsTierState: function(tierKey, state) {
+      this._newsVariantTier[tierKey] = state;
+      try {
+        if (typeof localStorage !== 'undefined') {
+          var parsed = {};
+          try {
+            var raw = localStorage.getItem(this._NEWS_TIER_STORE_KEY);
+            if (raw) parsed = JSON.parse(raw) || {};
+          } catch (e2) { parsed = {}; }
+          parsed[tierKey] = state;
+          localStorage.setItem(this._NEWS_TIER_STORE_KEY, JSON.stringify(parsed));
+        }
+      } catch (e) {}
+    },
+
+    /**
+     * One-tier-per-window keyed adapter runner (R01). Exactly ONE keyed HTTP
+     * GET is issued per attempt. On success the tier is remembered as
+     * working; on empty/failure the NEXT tier is retained as pending intent
+     * for the next eligible window (a remembered working tier earns one
+     * same-tier retry before advancing — bounded reset-once semantics).
+     * Discovery across region tiers therefore spans cooldown windows by
+     * design; the cross-provider ladder still tries other eligible
+     * providers in the SAME attempt.
+     */
+    _runKeyedTier: function(provider, tierKey, tiers) {
+      var self = this;
+      var remembered = self._readNewsTierState(tierKey);
+      var startIdx = 0;
+      if (remembered && remembered.tier > 0) {
+        for (var i = 0; i < tiers.length; i++) {
+          if (tiers[i].tier === remembered.tier) { startIdx = i; break; }
+        }
+      }
+      var entry = tiers[startIdx];
+      if (!entry) {
+        return Promise.reject(new Error(provider + ' has no runnable region tier'));
+      }
+      return entry.run().then(
+        function(articles) {
+          self._writeNewsTierState(tierKey, { tier: entry.tier, status: 'ok' });
+          return articles;
+        },
+        function(err) {
+          console.warn('[ApiService] ' + provider + ' tier ' + entry.tier + ' empty or failed: ' + (err && err.message));
+          var sameTierRetry = !!(remembered && remembered.status === 'ok');
+          var nextTier = sameTierRetry ? entry.tier : entry.tier + 1;
+          var hasNext = false;
+          for (var j = 0; j < tiers.length; j++) {
+            if (tiers[j].tier === nextTier) { hasNext = true; break; }
+          }
+          if (!hasNext) nextTier = entry.tier; // last tier: retry it next window
+          self._writeNewsTierState(tierKey, { tier: nextTier, status: 'pending' });
+          return Promise.reject(new Error(provider + ' window consumed — next tier pending for the next eligible window'));
+        }
+      );
+    },
+
+    /**
      * Regional news dispatcher with identity-bound request isolation (LW04),
-     * an unbypassable per-provider quota firewall (LW06; 15-minute keyed,
-     * 5-minute keyless), a 5-minute query-aware response cache, rotation when
-     * keyed providers exist, and a single bounded Google News fallback.
-     * Terminal failures surface matching real cached stories (stale-marked) or
-     * an empty unavailable state — never fabricated headlines (LW05). There is
-     * deliberately NO force parameter: nothing may bypass the quota firewall.
+     * an unbypassable per-provider quota firewall (LW06/v0.8.11 R01: every
+     * KEYED HTTP GET reserves its own 15-minute window at the request
+     * boundary — one GET per window per provider; the keyless chain is one
+     * logical attempt per 5-minute window), a 5-minute query-aware response
+     * cache, rotation when keyed providers exist, and a cross-provider
+     * ladder (keyed first, keyless last; every leg inside its own window).
+     * Terminal failures surface matching real cached stories (stale-marked)
+     * or an empty unavailable state — never fabricated headlines (LW05).
+     * There is deliberately NO force parameter: nothing may bypass the
+     * quota firewall.
      */
     fetchNews: function(cityName, countryCode) {
       var self = this;
       var cleanCity = (cityName && String(cityName).trim()) || 'Local Area';
-      var cleanCountry = (countryCode && String(countryCode).trim().toUpperCase()) || 'US';
-      if (cleanCountry.length !== 2) cleanCountry = 'US';
+      // Unknown/invalid country codes become EMPTY, never an invented region
+      // (R03): cache/query identities stay compatible, and the RSS chain
+      // slides to the world edition for country-less pins.
+      var cleanCountry = (countryCode && String(countryCode).trim().toUpperCase()) || '';
+      if (cleanCountry.length !== 2) cleanCountry = '';
       var queryKey = cleanCity.toLowerCase() + '_' + cleanCountry.toLowerCase();
 
       var eligible = ['google-news'];
@@ -3088,8 +3233,13 @@
         return fn.call(self, cleanCity, cleanCountry);
       }
 
-      // Attempts count BEFORE firing: failed requests start the cooldown too (LW06)
-      self._markNewsAttempt(primaryProvider);
+      // Keyed adapters reserve their window at the ACTUAL HTTP request
+      // boundary (R01: one keyed GET = one consumed 15-minute window); the
+      // keyless Google News chain is one logical attempt per its 5-minute
+      // window, marked here before firing (failed attempts count).
+      if (primaryProvider === 'google-news') {
+        self._markNewsAttempt(primaryProvider);
+      }
 
       var request = executeAdapter(primaryProvider)
         .then(function(articles) {
@@ -3121,7 +3271,11 @@
               console.warn('[ApiService] ' + prov + ' is inside its quota window; skipping ladder leg');
               return attemptLeg(idx + 1);
             }
-            self._markNewsAttempt(prov);
+            if (prov === 'google-news') {
+              // The keyless chain is one logical attempt per window (R01);
+              // keyed adapters reserve per HTTP GET via _keyedNewsRequest.
+              self._markNewsAttempt(prov);
+            }
             return executeAdapter(prov).then(function(legArticles) {
               if (!legArticles || legArticles.length === 0) {
                 throw new Error('News ladder leg ' + prov + ' returned empty');
