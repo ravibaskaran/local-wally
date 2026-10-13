@@ -1646,3 +1646,11 @@ Three independent tool families were built at the v0.8.16 baseline (they now run
 
 ### 49.6 Verification
 - New `scratch/test_v0818_contrast_battery_purge.js` — story-mode ink/dark-glass rules, AC dummy vs real battery rows vs the property switch, 48h purge (aged/legacy/corrupt/fresh), wallpaper-source diagnostics (derived provider, exact URL, honest empty state), static guards. Battery now **24 processes**, all green with clean exits; syntax/JSON/whitespace gates clean.
+
+## 50. Updater Discovery: Relocated Libraries & Random-ID Folders (v0.8.19)
+
+### 50.1 The failure (user report: "No installed Local Wally wallpaper was found")
+- The v0.8.13 engine scanned only `%LOCALAPPDATA%\Lively Wallpaper\Library\wallpapers` and the Store package's default path. On the reporting machine the library is **relocated** (`Settings.json` → `"WallpaperDir": "E:\\utils\\lively"`) and Lively 2.2.x names imported wallpaper folders by **random id** (`wallpapers\cyogibc0.sw1`), so both the path and the name assumptions failed. Verified live on the machine: only the relocated random-id folder carried the runtime layout.
+
+### 50.2 Fix
+- Discovery now (1) reads `WallpaperDir` from Lively's `Settings.json` in the Store and installer layouts and scans `<WallpaperDir>\wallpapers` plus `<WallpaperDir>` (legacy layout), (2) keeps the standard default roots, (3) matches candidates by **content** (index.html + js/app.js + js/api.js + css/style.css + LivelyInfo.json), (4) excludes any folder containing `.git` or `scratch` (development checkouts), (5) de-duplicates roots and targets. Dry-run against the reporting machine resolves exactly `E:\utils\lively\wallpapers\cyogibc0.sw1` with the repo folder untouched. The engine remains pure ASCII and PS 5.1-parseable; the credits/updater suite grew assertions for the new discovery.

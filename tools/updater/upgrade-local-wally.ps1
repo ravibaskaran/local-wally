@@ -43,8 +43,39 @@ try {
         }
     }
 
-    # Find every installed Local Wally wallpaper (installer + Store layouts).
+    # Find every installed Local Wally wallpaper. Discovery is CONTENT-BASED
+    # because Lively 2.x names wallpaper folders by random id and the library
+    # directory can be relocated (Settings.json -> WallpaperDir, e.g. to
+    # another drive). v0.8.19.
     $roots = @()
+
+    # 1. Relocated library: read WallpaperDir from Lively's Settings.json in
+    #    both the Store and installer layouts.
+    $settingsCandidates = @(
+        (Join-Path $env:LOCALAPPDATA 'Lively Wallpaper\Settings.json')
+    )
+    $pkgsDir = Join-Path $env:LOCALAPPDATA 'Packages'
+    if (Test-Path $pkgsDir) {
+        Get-ChildItem $pkgsDir -Directory -Filter '12030rocksdanister.LivelyWallpaper*' -ErrorAction SilentlyContinue | ForEach-Object {
+            $settingsCandidates += (Join-Path $_.FullName 'LocalCache\Local\Lively Wallpaper\Settings.json')
+        }
+    }
+    foreach ($settingsFile in $settingsCandidates) {
+        if (-not (Test-Path $settingsFile)) { continue }
+        try {
+            $settings = Get-Content $settingsFile -Raw | ConvertFrom-Json
+            $wallpaperDir = $settings.WallpaperDir
+            if ($wallpaperDir -and (Test-Path $wallpaperDir)) {
+                $relocated = Join-Path $wallpaperDir 'wallpapers'
+                if (Test-Path $relocated) { $roots += $relocated }
+                $roots += $wallpaperDir
+            }
+        } catch {
+            Write-Warn2 ('  Could not read ' + $settingsFile + ' - skipping.')
+        }
+    }
+
+    # 2. The standard layouts (unrelocated installs).
     $installer = Join-Path $env:LOCALAPPDATA 'Lively Wallpaper\Library\wallpapers'
     if (Test-Path $installer) { $roots += $installer }
     $pkgs = Join-Path $env:LOCALAPPDATA 'Packages'
@@ -54,13 +85,14 @@ try {
             if (Test-Path $p) { $roots += $p }
         }
     }
+    $roots = $roots | Select-Object -Unique
 
     $targets = @()
     foreach ($root in $roots) {
         Get-ChildItem $root -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-            # Identity: our exact runtime layout (index.html + js/app.js +
-            # js/api.js + css/style.css + LivelyInfo.json) - specific enough on
-            # its own; the title check is an extra confirmation when available.
+            # Never touch a development checkout (contains .git / scratch).
+            if ((Test-Path (Join-Path $_.FullName '.git')) -or (Test-Path (Join-Path $_.FullName 'scratch'))) { return }
+            # Identity: our exact runtime layout. Specific enough on its own.
             $infoFile = Join-Path $_.FullName 'LivelyInfo.json'
             $appFile = Join-Path $_.FullName 'js\app.js'
             $apiFile = Join-Path $_.FullName 'js\api.js'
@@ -71,6 +103,7 @@ try {
             }
         }
     }
+    $targets = $targets | Select-Object -Unique
 
     if ($targets.Count -eq 0) {
         Write-Warn2 'No installed Local Wally wallpaper was found.'

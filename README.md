@@ -304,6 +304,11 @@ local-wally/
 
 ## 🛡️ Recent Updates & Quality Improvements
 
+### Version 0.8.19 — Updater Finds Relocated and Random-ID Library Folders
+- **The one-click updater now works with any Lively setup**: it reads Lively's own `Settings.json` → `WallpaperDir` and scans the relocated library (e.g. a library moved to another drive), and it matches wallpaper folders by their **content** — Lively 2.x names imported wallpaper folders by random id, so name-based discovery never found them.
+- **Development checkouts are protected**: folders containing `.git` or `scratch` are never overlaid, so a source checkout can't be clobbered by an update.
+- Discovery roots and targets are de-duplicated; the standard installer and Microsoft Store layouts remain covered, and the launcher still fetches the freshest engine on every run.
+
 ### Version 0.8.18 — Photo-Legible News, Battery Reinstated, 48h Artifact Sweep, Wallpaper Source in the Panel
 - **News text on photos is always white now**: with a story photo behind the card, every text element and icon switches to light ink with a stronger shadow — the light theme's dark palette can no longer sit on a dark photo (your screenshot case). The body gets a dark glass instead of the light card, and hover deepens it.
 - **Battery telemetry is back**: the BAT row was silently hidden on machines whose host reports the "no battery data" dummy signature (common on Windows laptops on AC) — it now shows an honest **AC Power** state with no invented percentage, and upgrades itself to live % / charging / time-remaining the moment real battery events fire. The Battery Info switch still hides it.
