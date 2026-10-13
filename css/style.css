@@ -1647,11 +1647,11 @@ html, body {
 .hw-row {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
   background: var(--card-bg);
   border: 1px solid var(--card-border);
   border-radius: 7px;
-  padding: 4px 7px;
+  padding: 3px 7px;
   transition: background 0.2s ease, border-color 0.2s ease;
 }
 
@@ -1841,6 +1841,53 @@ html, body {
 
 /* Regional News Dispatch Block */
 .hud-news-block {
+  position: relative;
+  overflow: hidden;
+}
+
+/**
+ * Story background image (v0.8.9): the headline's image fades in behind a
+ * FIXED dark scrim — legibility is guaranteed by the scrim + text-shadow, not
+ * by whatever the image happens to be. Without an image the card is unchanged.
+ */
+.hud-news-bg {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  transition: opacity 600ms ease;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.hud-news-block.has-story-image .hud-news-bg {
+  opacity: 0.42;
+}
+
+.hud-news-block.has-story-image::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(9, 12, 20, 0.52) 0%, rgba(9, 12, 20, 0.66) 55%, rgba(9, 12, 20, 0.84) 100%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.hud-news-block.has-story-image .hud-news-header,
+.hud-news-block.has-story-image .hud-news-body {
+  position: relative;
+  z-index: 2;
+}
+
+.hud-news-block.has-story-image .hud-news-headline,
+.hud-news-block.has-story-image .hud-news-title,
+.hud-news-block.has-story-image .hud-news-source,
+.hud-news-block.has-story-image .hud-news-indicator-label {
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.6), 0 0 2px rgba(0, 0, 0, 0.5);
+}
+
+.hud-news-block {
   padding: 4px 0 2px;
   display: flex;
   flex-direction: column;
@@ -1995,7 +2042,7 @@ html, body {
 #hud-hw-block.flex-expand .hw-metrics-container {
   flex: 1;
   justify-content: space-around;
-  gap: 8px;
+  gap: 5px;
 }
 
 /* When Hardware Monitor is hidden: News Block expands gracefully */
@@ -2458,6 +2505,36 @@ html, body {
 #diagnostic-panel .diag-backup-status {
   margin-top: 6px;
   color: rgba(226, 232, 240, 0.85);
+  max-width: 396px;
+  overflow-wrap: anywhere;
+}
+#diagnostic-panel .diag-keys-section {
+  margin-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  padding-top: 8px;
+}
+#diagnostic-panel .diag-keys-section .diag-links-grid {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: 4px 14px;
+  justify-content: start;
+  margin: 2px 0 6px;
+}
+#diagnostic-panel .diag-keys-section .diag-links-grid a {
+  color: #7dd3fc;
+  font-size: 11px;
+  text-decoration: none;
+  opacity: 0.92;
+}
+#diagnostic-panel .diag-keys-section .diag-links-grid a:hover,
+#diagnostic-panel .diag-keys-section .diag-links-grid a:focus-visible {
+  opacity: 1;
+  text-decoration: underline;
+}
+#diagnostic-panel .diag-keys-help {
+  font-size: 10px;
+  line-height: 1.5;
+  color: rgba(226, 232, 240, 0.75);
   max-width: 396px;
   overflow-wrap: anywhere;
 }

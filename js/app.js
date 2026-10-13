@@ -1889,6 +1889,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
         // Regional News DOM Nodes
         hudNewsBlock: document.getElementById('hud-news-block'),
+        hudNewsBg: document.getElementById('hud-news-bg'),
         hudNewsTitle: document.getElementById('hud-news-title'),
         hudNewsLink: document.getElementById('hud-news-link'),
         hudNewsHeadline: document.getElementById('hud-news-headline'),
@@ -4951,9 +4952,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
         case 'news-block':
           return {
-            title: 'Regional Dispatch Feed',
+            title: 'News Feed',
             bodyHtml: makeRows([
-              ['Active Headline', (this.dom.hudNewsHeadline ? this.dom.hudNewsHeadline.textContent : 'Regional News')],
+              ['Active Headline', (this.dom.hudNewsHeadline ? this.dom.hudNewsHeadline.textContent : 'News')],
               ['Source Outlet', (this.dom.hudNewsSource ? this.dom.hudNewsSource.textContent : 'News Source')],
               ['Feed Controls', 'Click story dots to jump; click to read']
             ])
@@ -5182,7 +5183,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
         case 'news':
           if (iconEl) iconEl.textContent = '📰';
-          if (titleEl) titleEl.textContent = 'Regional News Dispatch';
+          if (titleEl) titleEl.textContent = 'News Feed';
 
           var newsList = this.newsItems || state.news || [];
           if (newsList && newsList.length > 0) {
@@ -5195,7 +5196,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
               html += '<a class="hud-detail-news-item" data-news-index="' + ni + '" href="' + esc(safeUrl) + '" target="_blank" rel="noopener noreferrer">' +
                 '<p class="hud-detail-news-title">' + esc(nItem.title || 'Untitled Story') + '</p>' +
                 '<div class="hud-detail-news-meta">' +
-                  '<span>' + esc(nItem.source || 'Regional Publisher') + '</span>' +
+                  '<span>' + esc(nItem.source || 'Publisher') + '</span>' +
                   '<span>' + esc(ageLabel) + '</span>' +
                 '</div>' +
               '</a>';
@@ -6288,11 +6289,12 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
       if (!this.newsItems || this.newsItems.length === 0) {
         if (this.dom.hudNewsHeadline) {
-          this.dom.hudNewsHeadline.textContent = 'Regional dispatch unavailable';
+          this.dom.hudNewsHeadline.textContent = 'No stories right now — new stories arrive automatically';
         }
         if (this.dom.hudNewsDots) {
           this.dom.hudNewsDots.style.display = 'none';
         }
+        this.applyStoryBackground(null);
         return;
       }
 
@@ -6309,6 +6311,54 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
     },
 
+    /**
+     * News card story background (v0.8.9): paints the headline's image behind
+     * a fixed dark scrim — text contrast is guaranteed by the CSS scrim, never
+     * by the image itself. Loads off-DOM first; only a successfully decoded
+     * image is applied (no broken-image flash); null/false clears it.
+     */
+    applyStoryBackground: function(imageUrl) {
+      var block = this.dom.hudNewsBlock;
+      var bg = this.dom.hudNewsBg;
+      if (!bg || !block) return;
+
+      var safe = (typeof imageUrl === 'string' && /^https:\/\//i.test(imageUrl.trim()))
+        ? imageUrl.trim().replace(/"/g, '%22')
+        : '';
+
+      if (!safe) {
+        if (bg.getAttribute('data-src')) {
+          bg.setAttribute('data-src', '');
+          bg.style.backgroundImage = '';
+          block.classList.remove('has-story-image');
+        }
+        return;
+      }
+
+      if (bg.getAttribute('data-src') === safe && bg.style.backgroundImage) {
+        return; // already painted this story
+      }
+
+      var self = this;
+      var pre = new Image();
+      pre.onload = function() {
+        if (self.dom.hudNewsBg && self.dom.hudNewsBg.getAttribute('data-src') === safe) {
+          self.dom.hudNewsBg.style.backgroundImage = 'url("' + safe + '")';
+          if (self.dom.hudNewsBlock) self.dom.hudNewsBlock.classList.add('has-story-image');
+        }
+      };
+      pre.onerror = function() {
+        if (self.dom.hudNewsBg && self.dom.hudNewsBg.getAttribute('data-src') === safe) {
+          self.dom.hudNewsBg.setAttribute('data-src', '');
+          self.dom.hudNewsBg.style.backgroundImage = '';
+          if (self.dom.hudNewsBlock) self.dom.hudNewsBlock.classList.remove('has-story-image');
+        }
+      };
+      bg.setAttribute('data-src', safe);
+      bg.style.backgroundImage = '';
+      pre.src = safe;
+    },
+
     displayNewsItem: function(idx) {
       if (this.dom.hudNewsLink) {
         this.dom.hudNewsLink.classList.remove('is-fading');
@@ -6316,14 +6366,15 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
       if (!this.newsItems || this.newsItems.length === 0) {
         if (this.dom.hudNewsHeadline) {
-          this.setDomText(this.dom.hudNewsHeadline, 'Regional dispatch unavailable');
+          this.setDomText(this.dom.hudNewsHeadline, 'No stories right now — new stories arrive automatically');
         }
         if (this.dom.hudNewsDots) {
           this.dom.hudNewsDots.style.display = 'none';
         }
         if (this.dom.hudNewsBlock) {
-          this.dom.hudNewsBlock.title = 'Regional News Dispatch: Unavailable (Click to inspect feed)';
+          this.dom.hudNewsBlock.title = 'News: No stories right now (checked again automatically)';
         }
+        this.applyStoryBackground(null);
         return;
       }
       var item = this.newsItems[idx % this.newsItems.length];
@@ -6366,9 +6417,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
       if (this.dom.hudNewsBlock) {
         var sourceLabel = item.source ? (' — ' + item.source) : '';
-        this.dom.hudNewsBlock.setAttribute('aria-label', providerName + ' Dispatch');
-        this.dom.hudNewsBlock.title = providerName + ' Dispatch: ' + (item.title || 'Regional News') + sourceLabel + ' (Click to inspect stories)';
+        this.dom.hudNewsBlock.setAttribute('aria-label', providerName + ' news');
+        this.dom.hudNewsBlock.title = providerName + ': ' + (item.title || 'News') + sourceLabel + ' (Click to inspect stories)';
       }
+      this.applyStoryBackground(item.image || null);
 
       if (this.dom.hudNewsDots) {
         var totalDots = this.newsItems.length;

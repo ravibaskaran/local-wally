@@ -2205,6 +2205,39 @@
     },
 
     /**
+     * Normalizes a NewsAPI payload (everything or top-headlines) into the
+     * shared news article shape; carries the optional story image (v0.8.9).
+     */
+    _normalizeNewsapiPayload: function(data) {
+      if (!data || !Array.isArray(data.articles) || data.articles.length === 0) {
+        throw new Error('No articles returned from NewsAPI');
+      }
+      var results = [];
+      for (var i = 0; i < data.articles.length && results.length < 5; i++) {
+        var a = data.articles[i];
+        var title = (a.title || '').trim();
+        var link = (a.url || '').trim();
+        if (title && /^https:\/\//i.test(link)) {
+          results.push({
+            id: link,
+            title: title,
+            description: (a.description || title).trim(),
+            link: link,
+            source: (a.source && a.source.name) || a.author || 'NewsAPI',
+            published: a.publishedAt || '',
+            publishedMs: ApiService.parseNewsTimestamp(a.publishedAt),
+            image: (typeof a.urlToImage === 'string' && /^https:\/\//i.test(a.urlToImage.trim())) ? a.urlToImage.trim() : null,
+            provider: 'newsapi',
+            providerName: 'NewsAPI',
+            isWrapper: false
+          });
+        }
+      }
+      if (results.length === 0) throw new Error('No valid https articles found in NewsAPI response');
+      return results;
+    },
+
+    /**
      * Location-based regional news via GDELT DOC 2.0 API (Keyless & Proxy-Free)
      * Queries GDELT using URLSearchParams, city/alias mapping, and country filtering.
      * @param {string} cityName
@@ -2515,50 +2548,73 @@
         }
 
         var cleanCity = (city && String(city).trim()) || 'Local';
-        var cleanCountry = (countryCode && String(countryCode).trim()) || '';
-        var disambiguatedQuery = cleanCountry ? (cleanCity + ' ' + cleanCountry) : cleanCity;
+        var cleanCountry = (countryCode && String(countryCode).trim().toUpperCase()) || '';
 
-        // NOTE: Official NewsAPI documentation specifies /v2/everything supports 'q', but NOT 'country'.
-        // Country parameter on /v2/everything causes HTTP 400 parameterInvalid.
-        var url = 'https://newsapi.org/v2/everything?q=' + encodeURIComponent(disambiguatedQuery) +
-          '&sortBy=publishedAt&pageSize=10&language=en';
-
-        return self.fetchWithTimeout(url, 6000, {
-          headers: {
-            'X-Api-Key': key
-          }
-        })
-          .then(function(res) {
-            if (!res.ok) throw new Error('NewsAPI HTTP ' + res.status);
-            return res.json();
-          })
-          .then(function(data) {
-            if (!data || !Array.isArray(data.articles) || data.articles.length === 0) {
-              throw new Error('No articles returned from NewsAPI');
-            }
-            var results = [];
-            for (var i = 0; i < data.articles.length && results.length < 5; i++) {
-              var a = data.articles[i];
-              var title = (a.title || '').trim();
-              var link = (a.url || '').trim();
-              if (title && /^https:\/\//i.test(link)) {
-                results.push({
-                  id: link,
-                  title: title,
-                  description: (a.description || title).trim(),
-                  link: link,
-                  source: (a.source && a.source.name) || a.author || 'NewsAPI',
-                  published: a.publishedAt || '',
-                  publishedMs: ApiService.parseNewsTimestamp(a.publishedAt),
-                  provider: 'newsapi',
-                  providerName: 'NewsAPI',
-                  isWrapper: false
-                });
+        /**
+         * Region ladder (v0.8.9), tier memory shared with Currents:
+         * tier 0 = everything?q=<city + country>, tier 1 = country top
+         * headlines. The free plan may block the browser preflight on either
+         * variant — each failure is caught and the next tier tried.
+         */
+        var tierKey = 'newsapi|' + cleanCity.toLowerCase() + '|' + cleanCountry;
+        var knownTier = self._newsVariantTier[tierKey];
+        var tiers = [
+          { tier: 0, run: function() {
+              // NOTE: Official NewsAPI docs: /v2/everything supports 'q', NOT 'country'.
+              var disambiguatedQuery = cleanCountry ? (cleanCity + ' ' + cleanCountry) : cleanCity;
+              var url = 'https://newsapi.org/v2/everything?q=' + encodeURIComponent(disambiguatedQuery) +
+                '&sortBy=publishedAt&pageSize=10&language=en';
+              return self.fetchWithTimeout(url, 6000, { 'headers': { 'X-Api-Key': key } })
+                .then(function(res) {
+                  if (!res.ok) throw new Error('NewsAPI HTTP ' + res.status);
+                  return res.json();
+                })
+                .then(self._normalizeNewsapiPayload);
+            } },
+          { tier: 1, run: function() {
+              if (!cleanCountry || cleanCountry.length !== 2) {
+                return Promise.reject(new Error('No country code for NewsAPI country tier'));
               }
+              var url = 'https://newsapi.org/v2/top-headlines?country=' + encodeURIComponent(cleanCountry.toLowerCase()) + '&pageSize=10';
+              return self.fetchWithTimeout(url, 6000, { 'headers': { 'X-Api-Key': key } })
+                .then(function(res) {
+                  if (!res.ok) throw new Error('NewsAPI HTTP ' + res.status);
+                  return res.json();
+                })
+                .then(self._normalizeNewsapiPayload);
+            } }
+        ];
+
+        var order = (knownTier === 1)
+          ? tiers.filter(function(t) { return t.tier === knownTier; })
+          : tiers;
+
+        var succeededTier = null;
+        function runLadder(idx) {
+          if (idx >= order.length) {
+            return Promise.reject(new Error('NewsAPI city/country ladder exhausted'));
+          }
+          var entry = order[idx];
+          return entry.run().then(function(articles) {
+            succeededTier = entry.tier;
+            return articles;
+          }).catch(function(err) {
+            console.warn('[ApiService] NewsAPI tier ' + entry.tier + ' empty or failed: ' + err.message);
+            if (knownTier != null) {
+              knownTier = null;
+              order = tiers;
+              return runLadder(0);
             }
-            if (results.length === 0) throw new Error('No valid https articles found in NewsAPI response');
-            return results;
+            return runLadder(idx + 1);
           });
+        }
+
+        return runLadder(0).then(function(articles) {
+          if (succeededTier != null) {
+            self._newsVariantTier[tierKey] = succeededTier;
+          }
+          return articles;
+        });
       },
 
       currents: function(city, countryCode) {
@@ -2571,51 +2627,141 @@
         var cleanCity = (city && String(city).trim()) || 'Local';
         var cleanCountry = (countryCode && String(countryCode).trim().toUpperCase()) || '';
 
-        var url = 'https://api.currentsapi.services/v1/search?keywords=' + encodeURIComponent(cleanCity);
-        if (cleanCountry && cleanCountry.length === 2) {
-          url += '&country=' + encodeURIComponent(cleanCountry.toLowerCase());
+        /**
+         * Region ladder (v0.8.9): a small town like 'Arsikere' legitimately
+         * returns zero keyword hits; widen to country top stories, then a
+         * world pass. Each escalation stays inside ONE quota attempt, and the
+         * deepest successful tier is remembered so future attempts skip
+         * straight to it (steady state = one call per 15-min window).
+         */
+        var tierKey = 'currents|' + cleanCity.toLowerCase() + '|' + cleanCountry;
+        var knownTier = self._newsVariantTier[tierKey];
+        var tiers = [
+          { tier: 0, run: function() {
+              var url = 'https://api.currentsapi.services/v1/search?keywords=' + encodeURIComponent(cleanCity);
+              if (cleanCountry && cleanCountry.length === 2) {
+                url += '&country=' + encodeURIComponent(cleanCountry.toLowerCase());
+              }
+              return self.fetchWithTimeout(url, 6000, { 'headers': { 'Authorization': key } })
+                .then(function(res) {
+                  if (!res.ok) throw new Error('Currents HTTP ' + res.status);
+                  return res.json();
+                })
+                .then(self._normalizeCurrentsPayload);
+            } },
+          { tier: 1, run: function() {
+              if (!cleanCountry || cleanCountry.length !== 2) {
+                return Promise.reject(new Error('No country code for Currents country tier'));
+              }
+              var url = 'https://api.currentsapi.services/v1/latest?country=' + encodeURIComponent(cleanCountry.toLowerCase());
+              return self.fetchWithTimeout(url, 6000, { 'headers': { 'Authorization': key } })
+                .then(function(res) {
+                  if (!res.ok) throw new Error('Currents HTTP ' + res.status);
+                  return res.json();
+                })
+                .then(self._normalizeCurrentsPayload);
+            } },
+          { tier: 2, run: function() {
+              return self.fetchWithTimeout('https://api.currentsapi.services/v1/latest', 6000, { 'headers': { 'Authorization': key } })
+                .then(function(res) {
+                  if (!res.ok) throw new Error('Currents HTTP ' + res.status);
+                  return res.json();
+                })
+                .then(self._normalizeCurrentsPayload);
+            } }
+        ];
+
+        var order = (knownTier === 1 || knownTier === 2)
+          ? tiers.filter(function(t) { return t.tier === knownTier; })
+          : tiers;
+
+        function runLadder(idx) {
+          if (idx >= order.length) {
+            return Promise.reject(new Error('Currents city/country/world ladder exhausted'));
+          }
+          return order[idx].run().catch(function(err) {
+            console.warn('[ApiService] Currents tier ' + order[idx].tier + ' empty or failed: ' + err.message);
+            if (knownTier != null) {
+              // Remembered tier stale — re-walk the full ladder before giving up
+              knownTier = null;
+              order = tiers;
+              return runLadder(0);
+            }
+            return runLadder(idx + 1);
+          });
         }
 
-        return self.fetchWithTimeout(url, 6000, {
-          headers: {
-            'Authorization': key
+        var succeededTier = null;
+        function runLadder(idx) {
+          if (idx >= order.length) {
+            return Promise.reject(new Error('Currents city/country/world ladder exhausted'));
           }
-        })
-          .then(function(res) {
-            if (!res.ok) throw new Error('Currents HTTP ' + res.status);
-            return res.json();
-          })
-          .then(function(data) {
-            if (!data || !Array.isArray(data.news) || data.news.length === 0) {
-              throw new Error('No articles returned from Currents');
+          var entry = order[idx];
+          return entry.run().then(function(articles) {
+            succeededTier = entry.tier;
+            return articles;
+          }).catch(function(err) {
+            console.warn('[ApiService] Currents tier ' + entry.tier + ' empty or failed: ' + err.message);
+            if (knownTier != null) {
+              // Remembered tier went stale — re-walk the full ladder
+              knownTier = null;
+              order = tiers;
+              return runLadder(0);
             }
-            var results = [];
-            for (var i = 0; i < data.news.length && results.length < 5; i++) {
-              var item = data.news[i];
-              var title = (item.title || '').trim();
-              var link = (item.url || '').trim();
-              if (title && /^https:\/\//i.test(link)) {
-                results.push({
-                  id: String(item.id || link),
-                  title: title,
-                  description: (item.description || title).trim(),
-                  link: link,
-                  source: (item.author || '').trim() || 'Currents News',
-                  published: item.published || '',
-                  publishedMs: ApiService.parseNewsTimestamp(item.published),
-                  provider: 'currents',
-                  providerName: 'Currents News',
-                  isWrapper: false
-                });
-              }
-            }
-            if (results.length === 0) throw new Error('No valid https articles found in Currents response');
-            return results;
+            return runLadder(idx + 1);
           });
+        }
+
+        return runLadder(0).then(function(articles) {
+          if (succeededTier != null) {
+            self._newsVariantTier[tierKey] = succeededTier;
+          }
+          return articles;
+        });
       }
     },
 
     NEWS_CACHE_TTL_MS: 5 * 60 * 1000,
+    /**
+     * Region-ladder tier memory (v0.8.9): deepest successful query tier per
+     * provider|city|country identity. Tier 0 = city keywords, 1 = country top
+     * stories, 2 = world. Lets small towns that return zero city-hits skip
+     * straight to the working tier on later calls (quota-safe: with the 15-min
+     * keyed cooldown the steady state stays at one network call per window).
+     */
+    _newsVariantTier: {},
+    /**
+     * Normalizes a Currents payload (search or /latest) into the shared news
+     * article shape; carries the optional story image (v0.8.9).
+     */
+    _normalizeCurrentsPayload: function(data) {
+      if (!data || !Array.isArray(data.news) || data.news.length === 0) {
+        throw new Error('No articles returned from Currents');
+      }
+      var results = [];
+      for (var i = 0; i < data.news.length && results.length < 5; i++) {
+        var item = data.news[i];
+        var title = (item.title || '').trim();
+        var link = (item.url || '').trim();
+        if (title && /^https:\/\//i.test(link)) {
+          results.push({
+            id: String(item.id || link),
+            title: title,
+            description: (item.description || title).trim(),
+            link: link,
+            source: (item.author || '').trim() || 'Currents News',
+            published: item.published || '',
+            publishedMs: ApiService.parseNewsTimestamp(item.published),
+            image: (typeof item.image === 'string' && /^https:\/\//i.test(item.image.trim())) ? item.image.trim() : null,
+            provider: 'currents',
+            providerName: 'Currents News',
+            isWrapper: false
+          });
+        }
+      }
+      if (results.length === 0) throw new Error('No valid https articles found in Currents response');
+      return results;
+    },
     // Quota firewall: >= cooldown between network attempts PER actual provider,
     // counting failed attempts, independent of any refresh/force flag (LW06).
     // Response caching (query/provider aware) stays separate.
@@ -2919,21 +3065,40 @@
         .catch(function(err) {
           console.warn('[ApiService] Primary news provider ' + primaryProvider + ' failed:', err.message);
           if (isSuperseded()) return [];
-          if (primaryProvider !== 'google-news') {
-            // ONE bounded Google News fallback — still inside the quota firewall
-            if (!self._newsCooldownReady('google-news')) throw err;
-            console.log('[ApiService] Falling back once to Google News...');
-            self._markNewsAttempt('google-news');
-            return executeAdapter('google-news').then(function(fallbackArticles) {
-              if (isSuperseded()) return [];
-              if (fallbackArticles && fallbackArticles.length > 0) {
-                self.setCachedNews('google-news', queryKey, fallbackArticles);
-                return fallbackArticles;
-              }
-              throw new Error('Google News fallback returned empty feed');
-            });
+          // Cross-provider ladder (v0.8.9): try every remaining ELIGIBLE
+          // provider (both keyed first, then the keyless Google News chain),
+          // each leg inside its own quota window — no firewall bypass.
+          // Keyed providers first, keyless Google News chain last (v0.8.9)
+          var remaining = [];
+          for (var pi = 0; pi < eligible.length; pi++) {
+            var prov = eligible[pi];
+            if (prov !== primaryProvider && prov !== 'google-news') remaining.push(prov);
           }
-          throw err;
+          if (primaryProvider !== 'google-news') {
+            remaining.push('google-news');
+          }
+          var attemptLeg = function(idx) {
+            if (idx >= remaining.length) throw err;
+            var prov = remaining[idx];
+            if (isSuperseded()) return [];
+            if (!self._newsCooldownReady(prov)) {
+              console.warn('[ApiService] ' + prov + ' is inside its quota window; skipping ladder leg');
+              return attemptLeg(idx + 1);
+            }
+            self._markNewsAttempt(prov);
+            return executeAdapter(prov).then(function(legArticles) {
+              if (!legArticles || legArticles.length === 0) {
+                throw new Error('News ladder leg ' + prov + ' returned empty');
+              }
+              if (isSuperseded()) return [];
+              self.setCachedNews(prov, queryKey, legArticles);
+              return legArticles;
+            }).catch(function(legErr) {
+              console.warn('[ApiService] News ladder leg ' + prov + ' failed: ' + (legErr && legErr.message));
+              return attemptLeg(idx + 1);
+            });
+          };
+          return attemptLeg(0);
         })
         .catch(function(fatalErr) {
           console.warn('[ApiService] News fetch failed completely:', fatalErr.message);

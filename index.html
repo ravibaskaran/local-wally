@@ -416,21 +416,22 @@
           </div>
         </section>
 
-        <!-- Regional News Dispatch Block -->
-        <section id="hud-news-block" class="hud-news-block hud-card-interactive" aria-label="Regional News Dispatch" tabindex="0" role="button" aria-haspopup="dialog" title="Regional News Dispatch: Headlines and local updates (Click to inspect stories)">
+        <!-- News Block -->
+        <section id="hud-news-block" class="hud-news-block hud-card-interactive" aria-label="News headlines" tabindex="0" role="button" aria-haspopup="dialog" title="News: Headlines and local updates (Click to inspect stories)">
+          <div id="hud-news-bg" class="hud-news-bg" aria-hidden="true"></div>
           <div class="hud-news-header">
             <div class="hud-news-title-group">
               <svg class="bento-icon news-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8"/><path d="M15 18h-5"/><path d="M10 6h8v4h-8V6Z"/></svg>
-              <span id="hud-news-title" class="hud-news-title">Google News</span>
+              <span id="hud-news-title" class="hud-news-title">News</span>
             </div>
             <span id="hud-news-source" class="hud-news-source">Google News</span>
           </div>
           <div class="hud-news-body">
             <a id="hud-news-link" class="hud-news-link" href="https://news.google.com" target="_blank" rel="noopener noreferrer" title="Open Article">
-              <p id="hud-news-headline" class="hud-news-headline">Fetching regional telemetry headlines...</p>
+              <p id="hud-news-headline" class="hud-news-headline">Fetching the latest headlines...</p>
             </a>
             <div class="hud-news-footer">
-              <span class="hud-news-indicator-label">Live Dispatch</span>
+              <span class="hud-news-indicator-label">Now</span>
               <div id="hud-news-dots" class="hud-news-dots" role="tablist" aria-label="News headlines" style="display: none;">
                 <button class="news-dot is-active" type="button" role="tab" aria-selected="true" aria-label="Story 1" data-idx="0"></button>
                 <button class="news-dot" type="button" role="tab" aria-selected="false" aria-label="Story 2" data-idx="1"></button>
@@ -548,6 +549,18 @@
         <div class="diag-backup-actions">
           <button id="location-use-auto" class="diag-btn" type="button" title="Clear the manual override and return to silent automatic location">Use automatic</button>
         </div>
+      </div>
+      <div class="diag-keys-section">
+        <div class="diag-backup-title">Get API Keys (opens provider site)</div>
+        <div class="diag-links-grid">
+          <a href="https://currentsapi.services/en/" target="_blank" rel="noopener noreferrer">Currents News</a>
+          <a href="https://newsapi.org/" target="_blank" rel="noopener noreferrer">NewsAPI</a>
+          <a href="https://unsplash.com/developers" target="_blank" rel="noopener noreferrer">Unsplash</a>
+          <a href="https://www.pexels.com/api/" target="_blank" rel="noopener noreferrer">Pexels</a>
+          <a href="https://pixabay.com/api/docs/" target="_blank" rel="noopener noreferrer">Pixabay</a>
+          <a href="https://wallhaven.cc/help/api" target="_blank" rel="noopener noreferrer">Wallhaven</a>
+        </div>
+        <div class="diag-keys-help">Paste the key into the matching field in Lively's Customize panel (or use Export/Import there to copy all settings at once).</div>
       </div>
       <div class="diag-backup-section">
         <div class="diag-backup-title">Backup &amp; Restore (includes API keys)</div>

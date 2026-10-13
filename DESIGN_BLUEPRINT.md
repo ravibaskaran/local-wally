@@ -1440,3 +1440,24 @@ Replaces the fixed moon row with three nocturnal cards:
 
 ### 39.5 Verification
 - New scratch suite `test_v088_hud_polish.js` (button schema + wiring, linger-guard rules A–D, right-justify CSS, full day/night query table, custom-keyword passthrough). Full 10-suite battery green with clean exits; `node --check` clean; LivelyProperties.json validated. Scratch SHA-256 in release notes.
+
+## 40. News Cascade, Story-Image Card, Telemetry Density, Key Links (v0.8.9)
+
+### 40.1 Region Ladder + Tier Memory (api.js)
+- Evidence: the user's live report showed `Arsikere, India` (a small town) yielding zero city-keyword stories on the keyed providers, then the (dead-infrastructure) keyless chain, then the retired "Regional dispatch unavailable" string.
+- Adapter-level ladders (one quota attempt each): **Currents** tiers = keywords City+CC → `/latest?country=CC` → `/latest` (world); **NewsAPI** tiers = `everything?q=City CC` → `top-headlines?country=CC`. Each adapter normalizes through `_normalizeCurrentsPayload` / `_normalizeNewsapiPayload` (https-only links, https-only images).
+- `_newsVariantTier` remembers the deepest successful tier per `provider|city|country`; later calls run that tier directly (steady-state = one network call per 15-min keyed window — under every free ceiling). A remembered tier that goes stale re-walks the full ladder once before failing.
+
+### 40.2 Cross-Provider Ladder (fetchNews, api.js)
+- On primary exhaustion the request walks **every other eligible provider, keyed first, Google News chain last** — each leg inside its own quota window (attempt marked before firing; cooldown-locked legs skipped without marking or network). Cache writes follow the DELIVERING provider; identity isolation (LW04) and the memory-first cache (#16) are untouched. Terminal state stays honest: stale-marked real stories or empty.
+
+### 40.3 Story-Image Card (app.js + css/style.css)
+- `applyStoryBackground(imageUrl)`: only https image URLs accepted; decoded off-DOM via `new Image()` and applied **only on success** (no broken-image flash); `null` clears. The card adds `has-story-image` — CSS: `.hud-news-bg` layer (cover, opacity .42, 600ms fade), a `::after` fixed scrim (rgba(9,12,20) .52→.84 gradient), content rows raised to z-index 2 with text-shadow — legibility guaranteed by the scrim regardless of image brightness. Imageless providers (GDELT/RSS) keep the classic card.
+
+### 40.4 Wording Retired + Telemetry Density + Key Links
+- All "Regional (News) Dispatch" phrasing and the old error string are gone (app.js, index.html `Live Dispatch` → `Now`, drawer = "News Feed", boot placeholders "Fetching the latest headlines...").
+- `.hw-row` gap 3→2, padding 4→3; expanded metrics gap 8→5 — more room for the news card.
+- D panel gains a **Get API Keys** grid (Currents/NewsAPI/Unsplash/Pexels/Pixabay/Wallhaven, `target="_blank"` + `noopener noreferrer`). Lively's Customize labels are plain host-rendered text — clickable links live in the D panel by design.
+
+### 40.5 Verification
+- New scratch suite `test_v089_news_cascade.js`: ladder widening + protocol-safe image mapping + tier memory (asserts the exhausted city tier is never re-tried), exact cross-provider order (keyed before keyless), per-leg attempt marking, honest terminal state, static rebrand/CSS/keys checks. Full 10-suite battery green with clean exits; `node --check` clean. Scratch SHA-256 in release notes.
