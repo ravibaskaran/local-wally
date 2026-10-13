@@ -9,7 +9,7 @@
 
 Local Wally HUD turns your Windows 11 desktop into an ambient, living dashboard. It brings together live local weather, interactive 24-hour forecast charts, air quality metrics, real-time music controls with a live audio visualizer, a Pomodoro focus timer, PC hardware monitoring, and regional news headlines—all set against dynamic landscape photography that naturally changes lighting from sunrise to night.
 
-Best of all, it is designed from the ground up to be **invisible to your computer's performance**: it uses almost 0% CPU when you're working or gaming, never drains your laptop battery, and requires **no account or API keys** to work out of the box.
+Best of all, it is designed from the ground up to be **invisible to your computer's performance**: it parks to roughly **0% CPU when idle on the author's target hardware** (Ryzen AI / WebView2 — measured informally, not a cross-hardware guarantee), keeps battery impact low in practice, and requires **no account or API keys** to work out of the box.
 
 ---
 
@@ -31,7 +31,7 @@ Most animated wallpapers are notorious resource hogs. They run heavy video loops
 ### 🎵 Music Player & 60 FPS Sound Visualizer
 - **Works with Your Favorite Music Apps**: Shows the current song title, artist, and album artwork from Spotify, YouTube Music, Apple Music, Amazon Music, or any web browser playing audio.
 - **Smooth 32-Bar Sound Spectrum**: Features a fluid, 60 FPS sound wave visualizer that dances to your music in real time.
-- **Smart Silence Sleeping**: When music stops or is paused for more than 1.5 seconds, the visualizer automatically goes to sleep, clears the canvas, and drops to **0% CPU** to protect your battery.
+- **Smart Silence Sleeping**: When music stops or is paused for more than 1.5 seconds, the visualizer automatically goes to sleep and clears the canvas — animation work drops to idle (≈0% CPU on the author's target hardware; not a guarantee on other systems).
 - **Interactive Preview Mode**: Test it anytime in your browser by pressing <kbd>M</kbd> to cycle through built-in demo tracks (Synthwave, Lo-Fi, Ambient).
 
 ### ⏱️ Pomodoro Focus & Break Timer
@@ -293,6 +293,18 @@ local-wally/
 
 ## 🛡️ Recent Updates & Quality Improvements
 
+### Version 0.8.14 — Production Hardening: Fail-Closed Quotas, Intent Races, Trust Boundaries
+*A hardening pass from an independent audit (arrived as "v0.8.13" — renumbered because that version already shipped).*
+- **Keyed-news reservations fail closed**: a reservation is granted only after the quota stamp is **durably written** — un-writable storage, absent storage, or a rejected Web Locks coordination all deny the keyed request outright (cache and keyless news keep working). The persisted quota state never contains key material.
+- **Manual-location intent races closed**: every Customize delivery is a new intent *before* the identical-value short-circuit — a redelivered saved location now kills any pending older request; a stale failure can never clear a newer location; the boot re-resolution path retries the latest record instead of silently jumping to auto-detection.
+- **Location trust boundaries tightened**: geocoder and pre-resolved coordinates are range-validated (`±90`/`±180`, finite) before anything is written — invalid remote results are rejected like any unresolvable name; **no invented `'US'` country remains anywhere** on the location paths (unknown country stays unknown → world news fallback).
+- **Country tier memory corrected**: city tier-0 successes no longer overwrite the reusable country/world hint; new cities try their own city tier first, and an empty city tier pends the *proven country tier* for the next eligible window.
+- **Settings import honesty**: storage failures are isolated per entry and reported as a **partial restore** (no full-success claim, no automatic reload over a half-restored state); host writes are now described as **submitted**, not persisted, until a restart test proves otherwise.
+- **Popover: unknown pointer ≠ outside**: keyboard focus / touch / hover-without-mousemove get the bounded reading grace instead of the short expiry; park clears debounces and invalidates late image/lookup work.
+- **Image-search budget enforced for real**: no key ⇒ no request and no slot consumed; each actual provider search consumes a **persisted** rolling-hour slot (six/hour, across reloads); a Pixabay empty/error falls through to Unsplash only on a fresh slot; park invalidates in-flight decorations.
+- **Tier store bounded**: city hints are capped (oldest evicted), country hints preserved, corrupt persisted data recovers cleanly.
+- **Claims qualified**: performance shorthand ("0% CPU", "never drains") now states it was measured informally on the author's target hardware — not a cross-hardware guarantee; the v0.8.10 host-persistence language is annotated as superseded/unverified (see its entry).
+
 ### Version 0.8.13 — One-Click Updater, Wallpaper Source Credit
 - **One-click updater** (`tools/updater/upgrade-local-wally.bat`): double-click it to fetch the newest release and overlay it **in place** onto every installed Local Wally folder (installer + Store layouts) — Lively's per-wallpaper SaveData keeps your keys, manual location, and preferences untouched. The launcher re-fetches its engine from the repo each run, so the updater itself stays current; a README section documents the full upgrade story (including the settings-JSON fallback for new machines).
 - **Wallpaper source credit, actually visible**: the photo attribution now sits as a small glass pill pinned to the **wallpaper's bottom-right corner** (it used to be clipped inside the HUD card), reveals itself once a photo applies, hover shows the full source URL, and the link keeps https-only + `noopener` discipline. Say goodbye to mystery wallpapers.
@@ -323,6 +335,7 @@ local-wally/
 - **Why**: IP-based auto-detection can pin a city a district away (an ISP exchange city — your report: auto said *Arsikere*, you're in Bangalore). The property-based override fixes that at the source, rides the backup/restore across machines, and its re-delivery is short-circuited (an identical value never re-geocodes).
 - The two surfaces stay in sync: picking a city in the `D` panel's autocomplete updates the same Customize field (via the host), and "Use automatic"/blanking the field restores detection.
 - Hardening bonus: when localStorage is unavailable, the manual record now survives in memory for the session (matching the cursor/history resilience rule) instead of silently vanishing.
+- **Note (superseded in v0.8.14)**: the "publishes back via the host" language above describes a write API that is *feature-detected, not part of Lively's documented web interface*. Until a real restart test on the host confirms persistence, treat Customize-field updates from the D panel as **submitted — persistence unverified**. The localStorage record named above remains the source of truth either way.
 
 ### Version 0.8.9 — News That Always Fills, Story-Image Card, Tightened Telemetry, Key Links
 - **News reliability (the "Regional dispatch unavailable" fix)**: your report showed the card dead on *Arsikere, India* — a small town where city-keyword searches legitimately return **zero results** on NewsAPI/Currents, after which the app fell to the (mostly dead) keyless chain. New behavior: a **region ladder** widens city keywords → **country top stories** → a world pass, per provider — and the deepest working tier is *remembered* so later attempts cost exactly one call. If a provider comes up empty, the app hands to the **other keyed provider before** ever touching the keyless chain. Every leg stays inside the quota firewall.

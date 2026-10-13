@@ -1550,3 +1550,29 @@ Six user-reported issues, fixed as a focused release ahead of the next audit rou
 
 ### 44.3 Verification
 - New `scratch/test_v0813_credits_updater.js` (credit DOM placement after the popover = outside the card; fixed pill + reveal semantics; updater static integrity — latest-release URL, both layout roots, layout identity, self-updating launcher; ASCII guards for both files). Battery now **15 processes**, all green with clean exits; syntax + JSON + whitespace gates clean.
+
+## 45. Production Hardening (v0.8.14; audited as "v0.8.13" — renumbered, v0.8.13 shipped first)
+
+### 45.1 Fail-closed keyed-news reservations
+- `_persistNewsQuota` returns a real boolean; `_markNewsAttempt` reports durability; `_reserveNewsWindow` grants a keyed GET only when the stamp was **durably written**. Un-writable storage, absent storage, or Web Locks rejection (already fail-closed) now deny the request; the in-memory mark still blocks the session. Empirically: a failed reservation issues **zero keyed fetches**. The persisted quota JSON carries provider→epoch only (no key material).
+
+### 45.2 Manual-location intent completion
+- `beginManualIntent()` (public) lets the Customize dispatcher bump the generation **before** the identical-value short-circuit — a redelivered saved location invalidates pending older work (saved A → pending B → redelivered A ⇒ B superseded, A active). Success/superseded results carry `generation`; validation rejections are generation-tagged so UI catch handlers clear/fallback only for the latest intent. `getLocation`'s manual-rejection path retries the **latest** record once when the failure was a supersession, before ever considering auto-detection.
+
+### 45.3 Coordinate trust boundaries
+- Geocoder results, pre-resolved suggestions, reverse-geocode enrichment, and boot re-resolution are all validated through `_isValidCoordPair` (finite, ±90/±180; (0,0)/boundaries legal) **before any write**. All invented `'US'` country fallbacks removed (GPS reverse, GPS failure, manual geocode, default-location fallback, `_formatLocation` NaN branch) — unknown country stays empty and uses the world/keyless news fallback.
+
+### 45.4 Reusable country-tier memory
+- City-first model: fresh identities start at the city tier (better locality); tier-0 successes update only the city hint; reusable tiers (≥1) update the country hint when better. An empty city tier **pends the proven country tier** for the next eligible window — the audit sequence (A proves country 1; B succeeds city 0; C empty at city) resolves with C filling from the country tier in its second window, memory intact. Tier store bounded: >40 entries evicts oldest city hints, country keys exempt; corrupt JSON rebuilds cleanly.
+
+### 45.5 Import honesty
+- Per-entry storage failures are isolated and counted (`storageFailed`); a partial restore is reported as **PARTIAL** with the failed count and never triggers the automatic reload; host writes are described as **submitted** (persistence unverified until a restart test). Key validation and operational-state exclusions unchanged (image budget key added to `_OPERATIONAL_STORAGE_KEYS`).
+
+### 45.6 Popover, image budget, autocomplete
+- Unknown pointer position now counts as **inside** (bounded 8s grace) — keyboard/touch/hover-without-mousemove no longer get the 3s covered-window expiry; known-outside keeps it. Park clears the suggestion debounce outright and bumps the image-decoration generation (late completions cannot touch DOM/cache). The image-search budget is **persisted** (rolling hour, six slots), checked **after** a key exists (no key ⇒ no request and no slot), consumed per actual provider HTTP search, and fails closed when its state cannot be maintained. Pixabay empty/error falls through to Unsplash only on a fresh slot; single-settlement callback guaranteed.
+
+### 45.7 Documentation gates & verified-limits register
+- README performance shorthand qualified (author-hardware informal measurement, not a guarantee); v0.8.10 host-persistence language annotated as superseded/unverified. **Open host-only gates (no claims until tested on the machine):** (1) Lively multi-view storage sharing + Web-Locks coordination; (2) outbound property persistence across a Lively restart; (3) modern vs legacy picker behavior in the host; (4) CSP `connect-src`/`img-src` allowances for Pixabay/Unsplash; (5) visual checks at target resolutions/DPI; (6) per-view vs global image-budget scope. Passing Node suites are source-level evidence only.
+
+### 45.8 Verification
+- New `scratch/test_v0813_hardening.js` (work-order filename) — T1 fail-closed reservations (write failure, absent storage, lock rejection, success path, no key leakage), T2 intent races (redelivered-A kills B; stale B cannot touch C; clear-safe; alias replay), T3 coordinate trust (91/181/NaN/Infinity rejected pre-write; boundaries pass; no invented US), T4 country-tier memory (tier-0 success preserves country; empty city pends country tier), T5 partial-restore reporting, T6 unknown-pointer popover grace, T7 image budget (no-key no-op, persistence, cap, fallthrough, key hygiene), T8 tier-store bounds + corruption recovery. Battery now **16 processes**, all green with clean exits; `node --check` over all runtime/config JS; JSON validation; `git diff --check` clean. Scratch SHA-256s in the release notes.

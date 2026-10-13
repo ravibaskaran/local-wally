@@ -2456,6 +2456,11 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             var locText = String(val == null ? '' : val).trim();
             var locApi = global.ApiService;
             if (locApi) {
+              // EVERY delivery is a new intent (v0.8.14) — bumped BEFORE the
+              // identical-value short-circuit: a redelivered saved location
+              // must invalidate any pending older request so a pending B can
+              // never resolve after the user visibly returned to saved A.
+              locApi.beginManualIntent();
               if (!locText) {
                 locApi.clearManualLocation();
                 self.loadAtmosphere(true);
@@ -2478,9 +2483,13 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
                     'Could not resolve "' + locText + '" — using automatic location');
                   self.loadAtmosphere(true);
                 }
-              }).catch(function() {
-                // Rejected input (empty/oversized) is also an unresolvable
-                // latest intent: clear the override, Auto takes over (R07).
+              }).catch(function(err) {
+                // Only the LATEST intent may clear/fall back (v0.8.14): an
+                // obsolete rejection (generation-tagged) is a silent no-op.
+                if (err && typeof err.generation === 'number' &&
+                    err.generation !== locApi._manualIntentGeneration) {
+                  return;
+                }
                 locApi.clearManualLocation();
                 self.setDomText(self.dom.locStatusLabel,
                   'Manual location failed — using automatic location');
@@ -3526,7 +3535,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       'openweathermapApiKey', 'waqiApiKey', 'newsApiKey', 'currentsApiKey'],
     // Operational (non-user) storage state that must never ride backups (R09).
     // Extensible: any reservation/lock state added by multi-instance work joins here.
-    _OPERATIONAL_STORAGE_KEYS: ['LIVELY_HUD_NEWS_QUOTA', 'LIVELY_HUD_NEWS_TIER'],
+    _OPERATIONAL_STORAGE_KEYS: ['LIVELY_HUD_NEWS_QUOTA', 'LIVELY_HUD_NEWS_TIER', 'LIVELY_HUD_NEWS_IMG_BUDGET'],
 
     _buildSettingsPayload: function() {
       var props = {};
@@ -3787,26 +3796,37 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
       var storageRestored = 0;
       var storageSkipped = 0;
-      try {
-        var ls = global.localStorage;
-        if (ls && payload.localStorage) {
-          for (var key in payload.localStorage) {
-            if (!Object.prototype.hasOwnProperty.call(payload.localStorage, key)) continue;
-            if (!this._SETTINGS_STORAGE_PREFIX.test(key)) continue;
-            // Operational state (e.g. old exports carrying quota stamps) is
-            // NEVER restored: the local active cooldown stays authoritative (R09).
-            if (this._OPERATIONAL_STORAGE_KEYS.indexOf(key) !== -1) { storageSkipped++; continue; }
-            var raw = payload.localStorage[key];
-            if (typeof raw !== 'string') continue;
+      var storageFailed = 0;
+      var ls = null;
+      try { ls = global.localStorage || null; } catch (e) { ls = null; }
+      if (ls && payload.localStorage) {
+        for (var key in payload.localStorage) {
+          if (!Object.prototype.hasOwnProperty.call(payload.localStorage, key)) continue;
+          if (!this._SETTINGS_STORAGE_PREFIX.test(key)) continue;
+          // Operational state (e.g. old exports carrying quota stamps) is
+          // NEVER restored: the local active cooldown stays authoritative (R09).
+          if (this._OPERATIONAL_STORAGE_KEYS.indexOf(key) !== -1) { storageSkipped++; continue; }
+          var raw = payload.localStorage[key];
+          if (typeof raw !== 'string') continue;
+          // Per-key failure isolation (v0.8.14): one failed write must not
+          // abort the rest, and it must be REPORTED as a partial restore.
+          try {
             ls.setItem(key, raw);
             storageRestored++;
+          } catch (e) {
+            storageFailed++;
           }
         }
-      } catch (e) {
-        console.warn('[App] Backup import: storage restore failed:', e && e.message);
       }
 
-      return { applied: applied, appliedPersist: appliedPersist, skipped: skipped, storageRestored: storageRestored, storageSkipped: storageSkipped };
+      return {
+        applied: applied,
+        appliedPersist: appliedPersist,
+        skipped: skipped,
+        storageRestored: storageRestored,
+        storageSkipped: storageSkipped,
+        storageFailed: storageFailed
+      };
     },
 
     importSettingsFile: function(file) {
@@ -3822,24 +3842,29 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           }
           var summary = self._applySettingsPayload(parse.payload);
           var runtimeOnly = summary.applied - summary.appliedPersist;
+          var partial = summary.storageFailed > 0;
           var msg = 'Imported: ' + summary.applied + ' properties';
           if (summary.applied > 0) {
-            msg += ' (' + summary.appliedPersist + ' persisted via host';
+            msg += ' (' + summary.appliedPersist + ' submitted to host';
             if (runtimeOnly > 0) msg += ', ' + runtimeOnly + ' runtime-only';
             msg += ')';
           }
           if (summary.skipped) msg += ' — ' + summary.skipped + ' skipped';
           msg += ' + ' + summary.storageRestored + ' storage entries';
           if (summary.storageSkipped) msg += ' (' + summary.storageSkipped + ' operational skipped)';
+          if (partial) {
+            // Honest partial restore (v0.8.14): no full-success claim, no
+            // automatic reload over a half-restored state.
+            msg += '. PARTIAL: ' + summary.storageFailed + ' storage entr' +
+              (summary.storageFailed === 1 ? 'y' : 'ies') + ' could not be written — re-run the import after freeing storage';
+          }
           if (runtimeOnly > 0) {
-            // Runtime-only values live in this session; a reload would UNDO
-            // them (R14). Keep them applied and explain how to persist.
-            msg += '. Runtime-only values apply now; update Lively\'s Customize panel to persist them.';
-          } else {
-            msg += '. Reloading...';
+            msg += '. Runtime-only values apply now; host persistence is unverified until a Lively restart test — update Lively\'s Customize panel to persist them.';
           }
           self.setDomText(self.dom.diagBackupStatus, msg);
-          if (runtimeOnly === 0 && summary.applied > 0) {
+          // Reload only for a complete, host-submitted import; a partial or
+          // runtime-only restore must stay visible instead of being undone.
+          if (!partial && runtimeOnly === 0 && summary.applied > 0) {
             setTimeout(function() { location.reload(); }, 1800);
           }
         } catch (e) {
@@ -4946,7 +4971,11 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     },
 
     _popoverCursorInsideBounds: function() {
-      if (this._popoverLastX === null || this._popoverLastY === null) return false;
+      // Unknown cursor position is NOT "outside" (v0.8.14): hover without a
+      // subsequent mousemove, keyboard focus, and touch all open the popover
+      // with no coordinates yet — those get the bounded inside grace instead
+      // of the short outside expiry.
+      if (this._popoverLastX === null || this._popoverLastY === null) return true;
       var x = this._popoverLastX;
       var y = this._popoverLastY;
       var anchor = this.currentPopoverAnchor;
@@ -4965,15 +4994,13 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     },
 
     /**
-     * Position-aware staleness (v0.8.12). The WebView receives NO mouse
-     * events while another window covers the wallpaper, so mouseleave never
-     * fires and a popover can linger; the old flat 10s/12s grace made that
-     * plainly visible (user report). Rules:
-     *   - last known cursor OUTSIDE the anchor/popover  -> stale after 3s
-     *     (covered, or the user moved elsewhere),
-     *   - last known cursor INSIDE  -> 8s hard cap even for a still reader
-     *     (micro-movements reset it; the popover also closes instantly when
-     *     a document mouseleave / window blur does fire).
+     * Position-aware staleness (v0.8.12; unknown-pointer fix v0.8.14). The
+     * WebView receives NO mouse events while another window covers the
+     * wallpaper, so mouseleave never fires and a popover can linger. Rules:
+     *   - last known cursor OUTSIDE the anchor/popover  -> stale after 3s,
+     *   - last known cursor INSIDE, or unknown (keyboard focus, touch, hover
+     *     with no mousemove yet) -> 8s hard cap; micro-movements reset it,
+     *   - instant close on document mouseleave / window blur where delivered.
      */
     _checkPopoverLinger: function() {
       if (!this.isHoverPopoverOpen) {
@@ -6618,16 +6645,20 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         return;
       }
       this.applyStoryBackground(null);
+      // No usable key => no request AND no budget slot consumed (v0.8.14).
+      var hasKey = (String((global.ApiService && global.ApiService.pixabayApiKey) || '').trim().length > 0) ||
+                   (String((global.ApiService && global.ApiService.unsplashApiKey) || '').trim().length > 0);
+      if (!hasKey) return;
       var keywords = this._newsImageKeywords(item.title);
       if (!keywords) return;
-      if (!this._newsImageBudgetOk()) return;
+      var gen = this._newsImgGeneration = (this._newsImgGeneration || 0) + 1;
       var storyId = item.id;
       var storyTitle = item.title;
       this._fetchKeywordImage(keywords, function(url) {
+        // Park / newer decoration invalidates late completion (single call).
+        if (gen !== self._newsImgGeneration) return;
         if (!url) return;
         self._writeNewsImageCache(storyTitle, url);
-        // The story may have rotated while the search was in flight — only
-        // paint when this is still the story on screen.
         if (self.newsItems && self.newsItems.length) {
           var current = self.newsItems[self.currentNewsIdx % self.newsItems.length];
           if (current && current.id === storyId) {
@@ -6658,13 +6689,36 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     },
 
     _newsImageBudgetOk: function() {
-      var now = Date.now();
-      if (!this._newsImgBudget || (now - this._newsImgBudget.windowStart) > 60 * 60 * 1000) {
-        this._newsImgBudget = { windowStart: now, count: 0 };
+      // Persisted rolling-hour budget (v0.8.14): the advertised six
+      // searches/hour hold across reloads — and across views only insofar as
+      // the storage bucket is shared (documented; host verification pending).
+      // Durable state is REQUIRED: if the budget cannot be read or written,
+      // optional image searches fail closed (decoration only — the card just
+      // stays plain).
+      try {
+        if (typeof global.localStorage === 'undefined' || !global.localStorage) return false;
+        var now = Date.now();
+        var state = null;
+        var raw = global.localStorage.getItem('LIVELY_HUD_NEWS_IMG_BUDGET');
+        if (raw) {
+          try {
+            var parsed = JSON.parse(raw);
+            if (parsed && typeof parsed.windowStart === 'number' && typeof parsed.count === 'number' &&
+                isFinite(parsed.windowStart) && isFinite(parsed.count) && parsed.count >= 0) {
+              state = parsed;
+            }
+          } catch (e) { state = null; }
+        }
+        if (!state || (now - state.windowStart) > 60 * 60 * 1000 || state.windowStart > now) {
+          state = { windowStart: now, count: 0 };
+        }
+        if (state.count >= 6) return false;
+        state.count++;
+        global.localStorage.setItem('LIVELY_HUD_NEWS_IMG_BUDGET', JSON.stringify(state));
+        return true;
+      } catch (e) {
+        return false; // fail closed for optional decoration
       }
-      if (this._newsImgBudget.count >= 6) return false;
-      this._newsImgBudget.count++;
-      return true;
     },
 
     _readNewsImageCache: function(title) {
@@ -6701,16 +6755,44 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     },
 
     /**
-     * Keyless-to-search topical image via the user's own keys. Pixabay first
-     * (its API is CORS-enabled and its key is a query parameter), Unsplash
-     * second. Failures are silent — decoration only, never an error state.
+     * Topical image search via the user's own keys (v0.8.12, hardened v0.8.14):
+     * Pixabay first (CORS-enabled, key in query); on error or no usable image
+     * — and only when another budget slot remains — fall through to Unsplash.
+     * Every ACTUAL provider HTTP search consumes a persisted budget slot
+     * (checked BEFORE the request). Fails closed on unavailable budget state.
+     * Calls back exactly once with a validated https URL or null.
      */
     _fetchKeywordImage: function(keywords, cb) {
       var api = global.ApiService;
       if (!api) { cb(null); return; }
+      var settled = false;
+      var done = function(url) {
+        if (settled) return;
+        settled = true;
+        cb(url);
+      };
       var pixabayKey = String(api.pixabayApiKey || '').trim();
       var unsplashKey = String(api.unsplashApiKey || '').trim();
+
+      var tryUnsplash = function() {
+        if (!unsplashKey) { done(null); return; }
+        if (!global.App || typeof global.App._newsImageBudgetOk !== 'function' ||
+            !global.App._newsImageBudgetOk()) { done(null); return; }
+        var uUrl = 'https://api.unsplash.com/search/photos?query=' + encodeURIComponent(keywords) +
+          '&per_page=3&orientation=landscape&client_id=' + encodeURIComponent(unsplashKey);
+        api.fetchWithTimeout(uUrl, 6000, {}).then(function(res) {
+          if (!res.ok) throw new Error('unsplash http ' + res.status);
+          return res.json();
+        }).then(function(data) {
+          var hit = data && Array.isArray(data.results) && data.results[0];
+          var url = hit && hit.urls && typeof hit.urls.regular === 'string' && /^https:\/\//i.test(hit.urls.regular) ? hit.urls.regular : null;
+          done(url);
+        }).catch(function() { done(null); });
+      };
+
       if (pixabayKey) {
+        if (!global.App || typeof global.App._newsImageBudgetOk !== 'function' ||
+            !global.App._newsImageBudgetOk()) { done(null); return; }
         var pUrl = 'https://pixabay.com/api/?key=' + encodeURIComponent(pixabayKey) +
           '&q=' + encodeURIComponent(keywords) +
           '&image_type=photo&orientation=horizontal&safesearch=true&per_page=3';
@@ -6720,24 +6802,15 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         }).then(function(data) {
           var hit = data && Array.isArray(data.hits) && data.hits[0];
           var url = hit && typeof hit.webformatURL === 'string' && /^https:\/\//i.test(hit.webformatURL) ? hit.webformatURL : null;
-          cb(url);
-        }).catch(function() { cb(null); });
+          if (url) { done(url); return; }
+          tryUnsplash(); // empty result: fall through on a fresh slot
+        }).catch(function() {
+          tryUnsplash(); // provider error: fall through on a fresh slot
+        });
         return;
       }
-      if (unsplashKey) {
-        var uUrl = 'https://api.unsplash.com/search/photos?query=' + encodeURIComponent(keywords) +
-          '&per_page=3&orientation=landscape&client_id=' + encodeURIComponent(unsplashKey);
-        api.fetchWithTimeout(uUrl, 6000, {}).then(function(res) {
-          if (!res.ok) throw new Error('unsplash http ' + res.status);
-          return res.json();
-        }).then(function(data) {
-          var hit = data && Array.isArray(data.results) && data.results[0];
-          var url = hit && hit.urls && typeof hit.urls.regular === 'string' && /^https:\/\//i.test(hit.urls.regular) ? hit.urls.regular : null;
-          cb(url);
-        }).catch(function() { cb(null); });
-        return;
-      }
-      cb(null);
+      if (unsplashKey) { tryUnsplash(); return; }
+      done(null);
     },
 
     /**
@@ -7149,6 +7222,15 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
       // Suggestion work stops too (R12): park invalidates in-flight queries.
       this._locSuggestGeneration = (this._locSuggestGeneration || 0) + 1;
+      // Clear a pending debounce outright (v0.8.14): a parked wallpaper must
+      // not launch a geocoder request from an expired timer.
+      if (this._locSuggestDebounce) {
+        clearTimeout(this._locSuggestDebounce);
+        this._locSuggestDebounce = null;
+      }
+      // Optional image decoration stops as well: late completions must not
+      // touch the DOM or the cache after parking (v0.8.14).
+      this._newsImgGeneration = (this._newsImgGeneration || 0) + 1;
       if (this.animationFrameId) {
         cancelAnimationFrame(this.animationFrameId);
         this.animationFrameId = null;

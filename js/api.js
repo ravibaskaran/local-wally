@@ -170,8 +170,21 @@
       var manual = this._readManualRecord();
       if (manual && manual.entry) {
         // A broken/offline manual entry never breaks the atmosphere pipeline:
-        // fall back to silent automatic detection without persisting.
+        // fall back to silent automatic detection without persisting. A
+        // SUPERSEDED resolution (a newer intent landed while this one ran)
+        // gets one retry against the LATEST record instead — the stale boot
+        // path must not jump to auto-detection while a newer manual intent
+        // is in flight (v0.8.14).
         return this._resolveManual(manual).catch(function(manualErr) {
+          var superseded = /superseded/i.test(String((manualErr && manualErr.message) || ''));
+          if (superseded) {
+            var latest = self._readManualRecord();
+            if (latest && latest.entry) {
+              return self._resolveManual(latest).catch(function() {
+                return self._runLocationDetect(false);
+              });
+            }
+          }
           console.warn('[ApiService] Manual location unavailable, falling back to automatic:', (manualErr && manualErr.message) || manualErr);
           return self._runLocationDetect(false);
         });
@@ -249,12 +262,12 @@
                         data.city || 'Local Area',
                         data.region || '',
                         data.country_name || data.country || '',
-                        data.country_code || data.country || 'US',
+                        data.country_code || '',
                         'gps'
                       ));
                     })
                     .catch(function() {
-                      finishOnce(formatLocation(gpsLat, gpsLon, 'Local Area', '', '', 'US', 'gps'));
+                      finishOnce(formatLocation(gpsLat, gpsLon, 'Local Area', '', '', '', 'gps'));
                     });
                 } else {
                   fallbackToIp(finishOnce);
@@ -300,7 +313,7 @@
               var defLon = typeof defaultLoc.longitude === 'number' ? defaultLoc.longitude : 139.6503;
               var defCity = defaultLoc.city || 'Tokyo';
               var defCountry = defaultLoc.country || 'Japan';
-              var defCountryCode = defaultLoc.countryCode || (defCity === 'Tokyo' ? 'JP' : 'US');
+              var defCountryCode = defaultLoc.countryCode || ''; // unknown stays unknown (v0.8.14)
               cb(formatLocation(defLat, defLon, defCity, 'Local Region', defCountry, defCountryCode, 'default'));
             });
         }
@@ -472,7 +485,9 @@
       var gen = ++this._manualIntentGeneration;
       var raw = String(text || '').trim();
       if (!raw) {
-        return Promise.reject(new Error('Location entry is empty'));
+        var emptyErr = new Error('Location entry is empty');
+        emptyErr.generation = gen;
+        return Promise.reject(emptyErr);
       }
 
       // Coordinates first: "-12.9716, 77.5946"
@@ -490,9 +505,10 @@
           .catch(function() { return null; })
           .then(function(place) {
             if (gen !== self._manualIntentGeneration) {
-              return { ok: false, superseded: true, error: 'Superseded by a newer location intent' };
+              return { ok: false, superseded: true, generation: gen, error: 'Superseded by a newer location intent' };
             }
-            var rec = place ? {
+            var validPlace = place && self._isValidCoordPair(place.latitude, place.longitude);
+            var rec = validPlace ? {
               entry: { type: 'coords', latitude: lat, longitude: lon },
               resolved: self._formatLocation(place.latitude, place.longitude, place.name, place.admin1 || '', place.country || '', place.country_code || '', 'manual')
             } : {
@@ -500,18 +516,20 @@
               resolved: self._formatLocation(lat, lon, 'Manual Area', '', '', '', 'manual')
             };
             self._writeManualRecord(rec);
-            return { ok: true, location: rec.resolved };
+            return { ok: true, location: rec.resolved, generation: gen };
           });
       }
 
       if (raw.length > 80) {
-        return Promise.reject(new Error('Location name too long'));
+        var longErr = new Error('Location name too long');
+        longErr.generation = gen;
+        return Promise.reject(longErr);
       }
       // A suggestion already carries its coordinates — skip the re-geocode
       // (and its re-ranking surprises): clicking "Bengaluru, India" must land
-      // exactly on the row the user picked.
-      if (preResolved && typeof preResolved.latitude === 'number' && Number.isFinite(preResolved.latitude) &&
-          typeof preResolved.longitude === 'number' && Number.isFinite(preResolved.longitude)) {
+      // exactly on the row the user picked. Range-validated (v0.8.14); an
+      // invalid pre-resolution falls through to the normal geocode path.
+      if (preResolved && this._isValidCoordPair(preResolved.latitude, preResolved.longitude)) {
         var direct = {
           entry: { type: 'name', name: preResolved.name || raw, alias: raw },
           resolved: this._formatLocation(
@@ -521,11 +539,11 @@
           )
         };
         this._writeManualRecord(direct);
-        return Promise.resolve({ ok: true, location: direct.resolved });
+        return Promise.resolve({ ok: true, location: direct.resolved, generation: gen });
       }
       return this._geocodeCity(raw, 1).then(function(list) {
         if (gen !== self._manualIntentGeneration) {
-          return { ok: false, superseded: true, error: 'Superseded by a newer location intent' };
+          return { ok: false, superseded: true, generation: gen, error: 'Superseded by a newer location intent' };
         }
         if (!list || !list.length) {
           // R07: the LATEST requested name cannot resolve — the previous
@@ -535,6 +553,13 @@
           return { ok: false, error: 'No matching place found — check spelling' };
         }
         var top = list[0];
+        // Validate the geocoder result before it can become active
+        // (v0.8.14): invalid remote coordinates fail like any unresolvable
+        // latest name — override cleared, Auto takes over (R07).
+        if (!self._isValidCoordPair(top.latitude, top.longitude)) {
+          self.clearManualLocation();
+          return { ok: false, error: 'Geocoder returned invalid coordinates — check spelling' };
+        }
         var rec = {
           // Canonical name (geocoder spelling) + the user's submitted alias
           // both live on the record (R05): re-delivery of either short-circuits
@@ -546,8 +571,19 @@
           )
         };
         self._writeManualRecord(rec);
-        return { ok: true, location: rec.resolved };
+        return { ok: true, location: rec.resolved, generation: gen };
       });
+    },
+
+    /**
+     * Marks the start of a manual-location intent and returns the new
+     * generation (v0.8.14). The Customize dispatcher calls this BEFORE its
+     * identical-value short-circuit, so even a re-delivered value invalidates
+     * pending older work — a pending B can never resolve after the user has
+     * visibly returned to the saved location A.
+     */
+    beginManualIntent: function() {
+      return ++this._manualIntentGeneration;
     },
 
     clearManualLocation: function() {
@@ -633,9 +669,14 @@
           throw new Error('No matching place for "' + rec.entry.name + '"');
         }
         var top = list[0];
+        // Validate the geocoder result before it can be trusted (v0.8.14):
+        // out-of-range or non-finite coordinates are treated as unresolvable.
+        if (!self._isValidCoordPair(top.latitude, top.longitude)) {
+          throw new Error('Geocoder returned invalid coordinates for "' + rec.entry.name + '"');
+        }
         var resolved = self._formatLocation(
           top.latitude, top.longitude, top.name, top.admin1 || '',
-          top.country || '', top.country_code || 'US', 'manual'
+          top.country || '', top.country_code || '', 'manual'
         );
         self._writeManualRecord({ entry: rec.entry, resolved: resolved });
         return resolved;
@@ -710,7 +751,7 @@
         numLon = defLon;
         city = city || defCity;
         country = country || defCountry;
-        countryCode = countryCode || 'US';
+        countryCode = countryCode || ''; // unknown stays unknown (v0.8.14)
       }
       return {
         latitude: Math.round(numLat * 10000) / 10000,
@@ -2919,18 +2960,26 @@
       } catch (e) {}
     },
 
+    /**
+     * Persists the quota stamps. Returns TRUE only when the write actually
+     * landed (v0.8.14): keyed reservations are durable evidence — if this
+     * cannot be written, the caller fails the request CLOSED instead of
+     * granting a private in-memory window that the next reload forgets.
+     */
     _persistNewsQuota: function() {
       try {
-        if (typeof localStorage !== 'undefined' && this._newsQuota) {
-          var flat = {};
-          for (var prov in this._newsQuota) {
-            if (Object.prototype.hasOwnProperty.call(this._newsQuota, prov)) {
-              flat[prov] = this._newsQuota[prov].epochMs;
-            }
+        if (typeof localStorage === 'undefined' || !localStorage || !this._newsQuota) return false;
+        var flat = {};
+        for (var prov in this._newsQuota) {
+          if (Object.prototype.hasOwnProperty.call(this._newsQuota, prov)) {
+            flat[prov] = this._newsQuota[prov].epochMs;
           }
-          localStorage.setItem(this._NEWS_QUOTA_STORE_KEY, JSON.stringify(flat));
         }
-      } catch (e) {}
+        localStorage.setItem(this._NEWS_QUOTA_STORE_KEY, JSON.stringify(flat));
+        return true;
+      } catch (e) {
+        return false;
+      }
     },
 
     /**
@@ -2969,10 +3018,17 @@
       return true;
     },
 
+    /**
+     * Marks an attempt and reports whether the stamp became DURABLE
+     * (v0.8.14): returns the persistence result so keyed reservations can
+     * fail closed when the quota store cannot be written. The in-memory mark
+     * happens regardless, so even a failed write still blocks further
+     * attempts in this session.
+     */
     _markNewsAttempt: function(provider) {
       this._loadNewsQuota();
       this._newsQuota[provider] = { monoMs: this._newsNow(), epochMs: Date.now() };
-      this._persistNewsQuota();
+      return this._persistNewsQuota();
     },
 
     /**
@@ -2995,8 +3051,10 @@
         self._newsQuota = null;
         self._loadNewsQuota();          // reread shared state inside the lock
         if (!self._newsCooldownReady(provider)) return false;
-        self._markNewsAttempt(provider); // persist our reservation
-        return true;
+        // The reservation must be DURABLE before the GET is issued: a failed
+        // quota-store write fails the keyed request CLOSED (v0.8.14). The
+        // in-memory mark still blocks this session either way.
+        return self._markNewsAttempt(provider) === true;
       };
       var locksApi = null;
       try {
@@ -3050,16 +3108,33 @@
       return null;
     },
 
+    /**
+     * Persists one tier entry. City hints are DISPOSABLE and bounded
+     * (v0.8.14): beyond 40 total entries the oldest city hints are evicted;
+     * country-level keys (`<provider>||<CC>`) are reusable and exempt.
+     * Corrupt persisted data is discarded rather than propagated; a failed
+     * write is tolerated here because the tier store is an optimization,
+     * not a safety boundary.
+     */
     _writeNewsTierState: function(tierKey, state) {
       this._newsVariantTier[tierKey] = state;
       try {
-        if (typeof localStorage !== 'undefined') {
+        if (typeof localStorage !== 'undefined' && localStorage) {
           var parsed = {};
           try {
             var raw = localStorage.getItem(this._NEWS_TIER_STORE_KEY);
             if (raw) parsed = JSON.parse(raw) || {};
           } catch (e2) { parsed = {}; }
+          if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) parsed = {};
           parsed[tierKey] = state;
+          var keys = Object.keys(parsed);
+          if (keys.length > 40) {
+            for (var i = 0; i < keys.length && Object.keys(parsed).length > 40; i++) {
+              if (keys[i].indexOf('||') === -1 && keys[i] !== tierKey) {
+                delete parsed[keys[i]];
+              }
+            }
+          }
           localStorage.setItem(this._NEWS_TIER_STORE_KEY, JSON.stringify(parsed));
         }
       } catch (e) {}
@@ -3093,16 +3168,23 @@
         }
       }
       var remembered = self._readNewsTierState(tierKey);
-      if (!remembered && countryTierKey) {
-        var countryState = self._readNewsTierState(countryTierKey);
-        if (countryState && countryState.status === 'ok') {
-          remembered = { tier: countryState.tier, status: 'pending' };
-        }
-      }
       var startIdx = 0;
       if (remembered && remembered.tier > 0) {
         for (var i = 0; i < tiers.length; i++) {
           if (tiers[i].tier === remembered.tier) { startIdx = i; break; }
+        }
+      }
+      // Fresh identities (no exact state) start at the CITY tier (tier 0):
+      // local news is the better product when it exists. The country memory
+      // is the FALLBACK TARGET — if the city tier comes back empty, the
+      // proven reusable country tier is pended directly (v0.8.14), so an
+      // empty-city location still lands on real news in its next eligible
+      // window instead of walking tiers one by one.
+      var countryFallbackTier = null;
+      if (!remembered && countryTierKey) {
+        var countryState = self._readNewsTierState(countryTierKey);
+        if (countryState && countryState.status === 'ok' && countryState.tier >= 1) {
+          countryFallbackTier = countryState.tier;
         }
       }
       var entry = tiers[startIdx];
@@ -3112,15 +3194,28 @@
       return entry.run().then(
         function(articles) {
           self._writeNewsTierState(tierKey, { tier: entry.tier, status: 'ok' });
-          if (countryTierKey) {
-            self._writeNewsTierState(countryTierKey, { tier: entry.tier, status: 'ok' });
+          // Country-level memory is for REUSABLE tiers only (v0.8.14): tier 0
+          // is city-specific and must never overwrite the proven country/world
+          // hint; among reusable tiers the best (lowest) proven one wins.
+          if (countryTierKey && entry.tier >= 1) {
+            var existingCountry = self._readNewsTierState(countryTierKey);
+            if (!existingCountry || existingCountry.status !== 'ok' || existingCountry.tier > entry.tier) {
+              self._writeNewsTierState(countryTierKey, { tier: entry.tier, status: 'ok' });
+            }
           }
           return articles;
         },
         function(err) {
           console.warn('[ApiService] ' + provider + ' tier ' + entry.tier + ' empty or failed: ' + (err && err.message));
           var sameTierRetry = !!(remembered && remembered.status === 'ok');
-          var nextTier = sameTierRetry ? entry.tier : entry.tier + 1;
+          var nextTier;
+          if (sameTierRetry) {
+            nextTier = entry.tier; // remembered working tier: one same-tier retry
+          } else if (entry.tier === 0 && countryFallbackTier !== null) {
+            nextTier = countryFallbackTier; // empty city: jump to the proven country tier
+          } else {
+            nextTier = entry.tier + 1;
+          }
           var hasNext = false;
           for (var j = 0; j < tiers.length; j++) {
             if (tiers[j].tier === nextTier) { hasNext = true; break; }
