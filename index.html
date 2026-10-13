@@ -573,11 +573,13 @@
       </div>
     </div>
 
-    <!-- Background Photo Attribution -->
-    <a id="unsplash-credit" class="unsplash-attribution" href="https://unsplash.com" target="_blank" rel="noopener noreferrer">Photo via Unsplash</a>
     <!-- Contextual Floating Hover Popover -->
     <div id="hud-hover-popover" class="hud-hover-popover" role="tooltip" aria-hidden="true"></div>
   </div>
+
+  <!-- Background Photo Attribution (viewport-fixed, outside the HUD card so
+       it pins to the WALLPAPER's bottom-right corner and is never clipped) -->
+  <a id="unsplash-credit" class="unsplash-attribution" href="https://unsplash.com" target="_blank" rel="noopener noreferrer">Photo via Unsplash</a>
 
   <!-- Scripts: Ordered for Dependency Resolution -->
   <script src="js/suncalc.js"></script>

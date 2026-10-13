@@ -1536,3 +1536,17 @@ Six user-reported issues, fixed as a focused release ahead of the next audit rou
 
 ### 43.6 Verification
 - New `scratch/test_v0812_ui_news.js` (six sections: picker paths both ways, fallback + cancel honesty, country-tier seeding with shared storage across contexts, keyword/cache/budget decorator, position-aware popover rules, empty-state tip conditions). `test_v088_hud_polish.js` updated to the v0.8.12 popover semantics + picker wiring. Battery now **14 processes**, all green with clean exits; syntax + JSON + whitespace gates clean. Scratch SHA-256s in the release notes.
+
+## 44. Upgrade Path & Wallpaper Credit (v0.8.13)
+
+### 44.1 One-click updater (`tools/updater/`)
+- `upgrade-local-wally.bat` — self-updating launcher: raw-fetches the engine from `main`, runs it with `-ExecutionPolicy Bypass`. `upgrade-local-wally.ps1` — the engine: pulls `releases/latest/download/local-wally.zip`, sanity-checks the runtime layout (index.html + js/app.js + js/api.js + css/style.css + LivelyInfo.json), discovers wallpaper roots (installer `%LOCALAPPDATA%\Lively Wallpaper\Library\wallpapers` and Store `Packages\12030rocksdanister.LivelyWallpaper*\LocalCache\Local\...`), matches installed folders by that exact layout, overlays in place (`Copy-Item -Recurse -Force`), cleans its temp folder.
+- **Why settings survive**: Lively stores customized values in `Library\SaveData\wpdata<wallpaper-id><monitor>\LivelyProperties.json` (per-id, per-monitor) — the overlay never touches it; the overwritten root `LivelyProperties.json` is what introduces new controls (re-surface via the Customize panel's reload where available). Encoded in the README's "Upgrading" section, with the settings-JSON fallback documented for new machines.
+- **Hard-won constraint**: Windows PowerShell 5.1 parses BOM-less `.ps1` files as ANSI — non-ASCII characters (an em-dash inside a string) break the parser exactly as a user would experience it. Both updater files are pure ASCII and the suite guards it (T3).
+- The release publishes two assets: `local-wally.zip` (runtime, 14 files — packaging convention unchanged) and `upgrade-local-wally.bat` (discoverability; the launcher itself works from anywhere).
+
+### 44.2 Wallpaper source credit
+- The attribution anchor moved OUT of `#hud` — previously absolutely positioned inside the 580px `overflow: hidden` glass card (clipped, effectively invisible; user report) — to a body-level `position: fixed` glass pill at the viewport's bottom-right corner (z 30, contrast-safe over any wallpaper). `.is-visible` gates reveal (set by both the live apply path and the boot-cache restore), hover shows the full https source URL, and the `<a>` keeps target/rel noopener discipline.
+
+### 44.3 Verification
+- New `scratch/test_v0813_credits_updater.js` (credit DOM placement after the popover = outside the card; fixed pill + reveal semantics; updater static integrity — latest-release URL, both layout roots, layout identity, self-updating launcher; ASCII guards for both files). Battery now **15 processes**, all green with clean exits; syntax + JSON + whitespace gates clean.

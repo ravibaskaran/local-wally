@@ -1948,6 +1948,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           this.dom.bgA.style.backgroundImage = 'url("' + safeCachedUrl + '")';
           if (this.dom.unsplashCredit && cachedPhotographer) {
             this.dom.unsplashCredit.textContent = 'Photo by ' + cachedPhotographer;
+            this.dom.unsplashCredit.classList.add('is-visible');
             var safePhotogUrl = (cachedPhotographerUrl && /^https:\/\//i.test(String(cachedPhotographerUrl).trim()))
               ? String(cachedPhotographerUrl).trim()
               : 'https://unsplash.com';
@@ -6978,11 +6979,13 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           ) : 'Unsplash';
           var photographerName = (bg && bg.photographer) || (providerLabel + ' Artist');
           self.dom.unsplashCredit.textContent = 'Photo by ' + photographerName + ' (' + providerLabel + ')';
+          self.dom.unsplashCredit.classList.add('is-visible');
           var rawCreditUrl = (bg && (bg.photographerUrl || bg.sourceUrl)) || '';
           var safeCreditUrl = (typeof rawCreditUrl === 'string' && /^https:\/\//i.test(rawCreditUrl.trim()))
             ? rawCreditUrl.trim()
             : 'https://unsplash.com';
           self.dom.unsplashCredit.href = safeCreditUrl;
+          self.dom.unsplashCredit.setAttribute('title', 'Wallpaper source: ' + safeCreditUrl);
           self.dom.unsplashCredit.setAttribute('target', '_blank');
           self.dom.unsplashCredit.setAttribute('rel', 'noopener noreferrer');
         }

@@ -139,6 +139,29 @@ You can preview and test Local Wally in any modern browser (Microsoft Edge, Goog
 
 ---
 
+## ⬆️ Upgrading Local Wally (Keep Your Settings)
+
+Lively keeps your customized values **per wallpaper id**, so a freshly imported zip normally starts from defaults. Two ways to upgrade without re-entering anything:
+
+### Method 1: One-Click Updater (automatic, in-place)
+
+1. Download **`upgrade-local-wally.bat`** from the [Latest GitHub Release](https://github.com/ravibaskaran/local-wally/releases) (or from this repo's `tools/updater/` folder) and double-click it.
+2. The updater downloads the newest release, finds every installed Local Wally folder (installer and Microsoft Store layouts alike), and overlays the new files **in place**.
+3. Re-select your wallpaper in Lively (or restart Lively) — the new version loads with **all settings preserved** (they live in Lively's per-wallpaper SaveData, which the updater never touches).
+
+No admin rights needed; safe to run repeatedly; it updates the old *and* any duplicate entries. If Lively is holding a file open, switch to another wallpaper and run it again.
+
+### Method 2: Settings Backup (guaranteed fallback, also for new machines)
+
+1. On the existing wallpaper entry: press <kbd>D</kbd> on the desktop (or **Customise → Export Settings**) and save the JSON file.
+2. Import the new `local-wally.zip` into Lively (this creates a new entry).
+3. On the new entry: **Customise → Import Settings** and pick the JSON file — keys, manual location, units, and preferences return.
+4. Delete the old entry once satisfied.
+
+> **Why not just remove and re-add?** Removing the old entry and importing the new zip always mints a new wallpaper id — that is why plain re-imports look like "settings were lost". Both methods above avoid that by either updating in place (Method 1) or carrying the values across (Method 2).
+
+---
+
 ## ⚙️ Customizing Local Wally in Lively Wallpaper
 
 Right-click the wallpaper in your Lively Wallpaper library and choose **Customise Wallpaper** to adjust any setting:
@@ -269,6 +292,10 @@ local-wally/
 ---
 
 ## 🛡️ Recent Updates & Quality Improvements
+
+### Version 0.8.13 — One-Click Updater, Wallpaper Source Credit
+- **One-click updater** (`tools/updater/upgrade-local-wally.bat`): double-click it to fetch the newest release and overlay it **in place** onto every installed Local Wally folder (installer + Store layouts) — Lively's per-wallpaper SaveData keeps your keys, manual location, and preferences untouched. The launcher re-fetches its engine from the repo each run, so the updater itself stays current; a README section documents the full upgrade story (including the settings-JSON fallback for new machines).
+- **Wallpaper source credit, actually visible**: the photo attribution now sits as a small glass pill pinned to the **wallpaper's bottom-right corner** (it used to be clipped inside the HUD card), reveals itself once a photo applies, hover shows the full source URL, and the link keeps https-only + `noopener` discipline. Say goodbye to mystery wallpapers.
 
 ### Version 0.8.12 — Save-As Export, Instant Regional News, Compact Telemetry, Story Images, Fast Popover Expiry
 - **Export opens a real Save-As dialog**: the File System Access picker writes your settings JSON wherever you choose (with the classic download as a graceful fallback when the host can't offer a picker — the status line always says which path ran; cancelling is reported honestly).

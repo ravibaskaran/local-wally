@@ -2630,21 +2630,35 @@ html, body {
   flex-shrink: 0;
 }
 
-/* Unsplash Attribution Pill */
+/* Wallpaper source note (v0.8.13): a small glass pill fixed to the
+   WALLPAPER's bottom-right corner (outside the HUD card — previously it was
+   clipped inside the card and easy to miss). Hidden until a photo credit
+   applies; high enough contrast to read over any wallpaper. */
 .unsplash-attribution {
-  position: absolute;
-  bottom: 12px;
-  right: 18px;
-  z-index: 4;
-  font-size: 0.675rem;
-  color: rgba(255, 255, 255, 0.4);
-  text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+  position: fixed;
+  bottom: 10px;
+  right: 14px;
+  z-index: 30;
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.62);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.65);
   pointer-events: auto;
   text-decoration: none;
-  transition: color 0.2s;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(8, 12, 20, 0.34);
+  -webkit-backdrop-filter: blur(6px) saturate(120%);
+  backdrop-filter: blur(6px) saturate(120%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: color 0.2s, background 0.2s, opacity 0.3s;
+  opacity: 0;
+}
+.unsplash-attribution.is-visible {
+  opacity: 1;
 }
 .unsplash-attribution:hover {
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(255, 255, 255, 0.92);
+  background: rgba(8, 12, 20, 0.52);
 }
 
 /* ==========================================================================
