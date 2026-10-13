@@ -293,6 +293,14 @@ local-wally/
 
 ## 🛡️ Recent Updates & Quality Improvements
 
+### Version 0.8.17 — Independent QA Cycle: Five Real Fixes, Two Legacy Suites Retired Green
+*A fresh QA lab (three new tool families — cross-file static audit, seeded adversarial fuzz, boot/lifecycle matrix — plus archaeology on the two long-standing "known-open" suites) ran against the v0.8.16 baseline. Findings, all fixed:*
+- **Dead moon-panel wiring removed**: four DOM ids referenced by the app didn't exist in the HUD markup (the night-moon panel's real wiring was fine — these were silent no-op leftovers); the stale toggles and dead caches are gone.
+- **Crash-proof location input**: a malformed paste with lone UTF-16 surrogates made `encodeURIComponent` throw *synchronously* out of `setManualLocation` ("URI malformed") — every user-entered location string is now sanitized (`toWellFormed` with a lookbehind fallback) so the pipeline can only ever reject through its promise contract.
+- **Stale-failure containment hardened**: network errors from an obsolete location request carried no generation tag, so an old failure could clear a *newer* location through the UI catch — every rejection path is now generation-tagged.
+- **Honest night/day tone under bad inputs**: a non-finite solar altitude used to read as night (midday flip if inputs were corrupted) — it now falls back to the weather day flag; regression-proofed.
+- **Legacy suites retired green**: `test_v064` Test 3 depended on the *real* Tokyo solar altitude at run time (it failed every evening IST) — now deterministic via the documented simulation modes, with the product gaining the NaN-altitude guard behind it; the focused suite's forecast test still encoded a pre-honesty contract — updated to the null-gap policy (valid zeros/negatives preserved, no fabricated fallbacks), which now doubles as a regression gate for it.
+
 ### Version 0.8.16 — Wallpaper Source Watermark Done Right
 - **Provider-first labels**: the bottom-right watermark now reads simply **"Wallhaven"** (or "Pexels", "Unsplash", "Pixabay") — the providers' generic stand-in "photographers" ("Wallhaven Community", "Unsplash Artist") are suppressed; a *real* photographer still shows as `Pexels · Jane Doe`.
 - **Always visible at boot**: the watermark now appears from the restored wallpaper cache **even for caches written by older builds** (the provider is derived from the image URL's hostname when no provider key is stored) — you no longer need a fresh wallpaper swap to see it.

@@ -1607,3 +1607,22 @@ Six user-reported issues, fixed as a focused release ahead of the next audit rou
 
 ### 47.4 Verification
 - New `scratch/test_v0816_credit_visibility.js` — label suppression/kept cases, hostname mapping for all four providers, old-cache boot visibility (url-only), rich-cache boot (label + href + tooltip + rel), swap-path provider persistence, CSS legibility guards. Battery now **18 processes**, all green with clean exits; syntax/JSON/whitespace gates clean.
+
+## 48. Independent QA Lab (v0.8.17)
+
+### 48.1 Method — new tool families, not the regression battery
+Three independent tool families were built at the v0.8.16 baseline (they now run as gates alongside the suites):
+- **`scratch/qa_cross_file_audit.js`** — cross-file static integrity: JS `getElementById` ↔ HTML id wiring; `SETTINGS_PROPNAMES` ↔ dispatcher cases ↔ `LivelyProperties.json` three-way drift; duplicate object-literal methods; invented-`US` residue; storage-key backup-prefix inventory; innerHTML interpolation escapes (escape-aware heuristic); classList orphan scan.
+- **`scratch/qa_property_fuzz.js`** — seeded (mulberry32, 0xC0FFEE) adversarial property fuzz: 300 randomized location intents (unicode/control/lone-surrogate/coordinate soup) against promise-contract, record-validity and no-`US` invariants; tier/image-cache bounds; garbage settings payloads (proto-safety, operational-key rejection); corrupt-storage read degradation.
+- **`scratch/qa_boot_matrix.js`** — storage variant × {playing, paused} integration matrix (10 combos): wallpaper restore, stale paint with persisted stories, forced-refresh deferral under pause, diagnostics toggle, `stopLoop`/popover idempotence.
+- Real-browser channel attempted via the review-pane browser MCP + `serve.js`: **environmentally blocked** — the browser executes desktop-side, so its `localhost:8080` is not this workspace's server (502s proved the boundary). Documented; the node-level matrix substitutes. A future on-target smoke remains an open host gate.
+
+### 48.2 Findings (all fixed in v0.8.17)
+1. HIGH — four dead DOM references (`hudEphemerisMoon`, `ephemerisMoonGlyph/Phase/Illum`) + two silent no-op toggles; the real night-moon wiring (`ephemerisNightMoon*`) was healthy. Removed.
+2. HIGH — `setManualLocation` threw synchronously (`URIError: URI malformed`) on lone-surrogate input via `encodeURIComponent`. Fixed with `_toWellFormedSafe` at both entry points (`setManualLocation`, `_geocodeCity`).
+3. HIGH — rejections from the manual-location pipeline lacked generation tags (network errors), so an obsolete failure could clear a newer location via the UI catch. Every rejection path now tags `err.generation`.
+4. MEDIUM — non-finite solar altitude read as night. `altitudeValid` guard + weather-day-flag fallback added.
+5. Test-software — `test_v064_features` Test 3's real-time dependence (the durable "flake": fails whenever real Tokyo is night) and `test_focused_bugfixes`' pre-LW09 fallback contract; both suites updated and **retired green** (constraint #12 is now historical).
+
+### 48.3 Verification
+- Full gate set now **23 processes**: the 3 QA-lab tools + 20 regression suites (`test_v064_features` and `test_focused_bugfixes` promoted back into the battery). All green with clean exits; `node --check`, JSON validation, `git diff --check` clean. Scratch SHA-256s in the release notes.

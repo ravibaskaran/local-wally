@@ -1772,7 +1772,6 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         hudEphemerisCard: document.getElementById('hud-ephemeris-card'),
         hudEphemerisSunRow: document.getElementById('hud-ephemeris-sun-row'),
         hudEphemerisMoonRow: document.getElementById('hud-ephemeris-moon-row'),
-        hudEphemerisMoon: document.getElementById('hud-ephemeris-moon'),
         ephemerisDayRain: document.getElementById('ephemeris-day-rain'),
         ephemerisRainVal: document.getElementById('ephemeris-rain-val'),
         ephemerisRainSub: document.getElementById('ephemeris-rain-sub'),
@@ -1800,9 +1799,6 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         ephemerisNightMoonPhase: document.getElementById('ephemeris-night-moon-phase'),
         ephemerisNightMoonIllum: document.getElementById('ephemeris-night-moon-illum'),
         ephemerisMoonset: document.getElementById('ephemeris-moonset'),
-        ephemerisMoonGlyph: document.getElementById('ephemeris-moon-glyph'),
-        ephemerisMoonPhase: document.getElementById('ephemeris-moon-phase'),
-        ephemerisMoonIllum: document.getElementById('ephemeris-moon-illum'),
         hudHoverPopover: document.getElementById('hud-hover-popover'),
         hudAqiCard: document.getElementById('hud-aqi-card'),
         hudAqiBadge: document.getElementById('hud-aqi-badge'),
@@ -4138,18 +4134,21 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         }
       }
 
-      // Sun altitude > -0.01454 rad (-0.833 deg) is the geometric solar horizon accounting for atmospheric refraction and solar radius
-      var isDay = (sunPos && typeof sunPos.altitude === 'number') ? (sunPos.altitude > -0.01454) : true;
+    // Sun altitude > -0.01454 rad (-0.833 deg) is the geometric solar horizon accounting for atmospheric refraction and solar radius.
+    // Non-finite altitude (stale/NaN inputs) must NOT silently paint night
+    // (QA v0.8.17): fall back to the weather day flag below instead.
+    var altitudeValid = !!(sunPos && typeof sunPos.altitude === 'number' && isFinite(sunPos.altitude));
+    var isDay = altitudeValid ? (sunPos.altitude > -0.01454) : true;
 
-      // Allow simulation mode (e.g. 4: Starry Night, 1: Clear Day) override
-      if (typeof this.simulationMode === 'number' && this.simulationMode > 0) {
-        if (this.simulationMode === 4) isDay = false;
-        else if (this.simulationMode === 1) isDay = true;
-      } else if (!sunPos && this.state && this.state.weather &&
-                 (typeof this.state.weather.isDay === 'number' || typeof this.state.weather.isDay === 'boolean')) {
-        var dayFlag = this.state.weather.isDay;
-        isDay = (typeof dayFlag === 'number') ? (dayFlag === 1) : !!dayFlag;
-      }
+    // Allow simulation mode (e.g. 4: Starry Night, 1: Clear Day) override
+    if (typeof this.simulationMode === 'number' && this.simulationMode > 0) {
+      if (this.simulationMode === 4) isDay = false;
+      else if (this.simulationMode === 1) isDay = true;
+    } else if ((!sunPos || !altitudeValid) && this.state && this.state.weather &&
+               (typeof this.state.weather.isDay === 'number' || typeof this.state.weather.isDay === 'boolean')) {
+      var dayFlag = this.state.weather.isDay;
+      isDay = (typeof dayFlag === 'number') ? (dayFlag === 1) : !!dayFlag;
+    }
 
       var sunriseStr = '--:--';
       var sunsetStr = '--:--';
@@ -4263,15 +4262,14 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (this.dom.ephemerisMoonrise) this.setDomText(this.dom.ephemerisMoonrise, moonriseStr);
       if (this.dom.ephemerisMoonset) this.setDomText(this.dom.ephemerisMoonset, moonsetStr);
 
-      // 3. Day vs Night Row Toggling
+      // 3. Day vs Night Row Toggling (the night-moon item lives inside the
+      //    moon row; the stale standalone toggles were dead code — QA v0.8.17)
       if (isDay) {
         if (this.dom.hudEphemerisSunRow) this.dom.hudEphemerisSunRow.classList.remove('is-hidden');
         if (this.dom.hudEphemerisMoonRow) this.dom.hudEphemerisMoonRow.classList.add('is-hidden');
-        if (this.dom.hudEphemerisMoon) this.dom.hudEphemerisMoon.classList.remove('is-hidden');
       } else {
         if (this.dom.hudEphemerisSunRow) this.dom.hudEphemerisSunRow.classList.add('is-hidden');
         if (this.dom.hudEphemerisMoonRow) this.dom.hudEphemerisMoonRow.classList.remove('is-hidden');
-        if (this.dom.hudEphemerisMoon) this.dom.hudEphemerisMoon.classList.add('is-hidden');
       }
 
       // 4. Daytime 3-Card Calculations

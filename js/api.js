@@ -472,6 +472,26 @@
     _manualIntentGeneration: 0,
 
     /**
+     * Well-formedness guard (QA v0.8.17): lone UTF-16 surrogates (from
+     * malformed paste/IME input) make encodeURIComponent THROW
+     * "URIError: URI malformed" synchronously. Sanitize every user-entered
+     * location string up front so the intent pipeline can only ever reject
+     * through its promise contract, never throw into a property handler.
+     */
+    _toWellFormedSafe: function(input) {
+      var s = String(input == null ? '' : input);
+      try {
+        if (typeof s.toWellFormed === 'function') return s.toWellFormed();
+      } catch (e) {}
+      try {
+        return s.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '\uFFFD');
+      } catch (e2) {
+        // No lookbehind support: drop unpaired surrogates outright.
+        return s.replace(/[\uD800-\uDFFF]/g, '\uFFFD');
+      }
+    },
+
+    /**
      * Sets the manual location override. Accepts either a city name
      * ("Bengaluru") or "lat, lon" coordinates. City entries are geocoded via
      * the keyless Open-Meteo geocoding API (CORS-open) and cached so boots
@@ -483,7 +503,7 @@
     setManualLocation: function(text, preResolved) {
       var self = this;
       var gen = ++this._manualIntentGeneration;
-      var raw = String(text || '').trim();
+      var raw = this._toWellFormedSafe(text).trim();
       if (!raw) {
         var emptyErr = new Error('Location entry is empty');
         emptyErr.generation = gen;
@@ -496,7 +516,9 @@
         var lat = parseFloat(coords[1]);
         var lon = parseFloat(coords[2]);
         if (Math.abs(lat) > 90 || Math.abs(lon) > 180) {
-          return Promise.reject(new Error('Coordinates out of range'));
+          var rangeErr = new Error('Coordinates out of range');
+          rangeErr.generation = gen;
+          return Promise.reject(rangeErr);
         }
         // Best-effort reverse geocode gives the pin a real city/country
         // (cached in the record). Without it, the record stays city-less and
@@ -572,6 +594,13 @@
         };
         self._writeManualRecord(rec);
         return { ok: true, location: rec.resolved, generation: gen };
+      }).catch(function(err) {
+        // Tag EVERY rejection with its generation (QA v0.8.17): the UI catch
+        // handler must distinguish an OBSOLETE failure (network error from an
+        // older intent) from the latest one — an untagged stale failure could
+        // otherwise clear a newer location.
+        if (err && typeof err.generation !== 'number') err.generation = gen;
+        throw err;
       });
     },
 
@@ -715,7 +744,8 @@
      * country, country_code}].
      */
     _geocodeCity: function(name, count) {
-      var url = this._GEODING_BASE + '?name=' + encodeURIComponent(name) +
+      var safeName = this._toWellFormedSafe ? this._toWellFormedSafe(name) : String(name || '');
+      var url = this._GEODING_BASE + '?name=' + encodeURIComponent(safeName) +
         '&count=' + (count || 6) + '&language=en&format=json';
       return this._fetchJsonWithTimeout(url, 5000).then(function(data) {
         var out = [];
