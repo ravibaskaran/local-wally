@@ -3090,6 +3090,96 @@
 
     _NEWS_TIER_STORE_KEY: 'LIVELY_HUD_NEWS_TIER',
 
+    /**
+     * Lightweight in-memory per-provider outcome record for the D-panel news
+     * status line (v0.8.15) — how the user can SEE why a card is empty:
+     * attempted query, result count, tier and time of the last attempt.
+     */
+    _newsLastOutcome: {},
+
+    _noteNewsOutcome: function(provider, ok, info) {
+      info = info || {};
+      this._newsLastOutcome[provider] = {
+        at: Date.now(),
+        ok: !!ok,
+        tier: (typeof info.tier === 'number') ? info.tier : null,
+        count: (typeof info.count === 'number') ? info.count : null,
+        note: info.note || ''
+      };
+    },
+
+    /**
+     * Human-readable news pipeline state for the D panel (v0.8.15):
+     * per-provider last outcome + remaining quota window + pending tier.
+     */
+    newsStatusSummary: function(city, country) {
+      var self = this;
+      var cleanCity = String(city || '').trim();
+      var cc = String(country || '').trim().toUpperCase();
+      var lines = [];
+      var providers = [];
+      if (String(self.currentsApiKey || '').trim()) providers.push('currents');
+      if (String(self.newsApiKey || '').trim()) providers.push('newsapi');
+      providers.push('google-news');
+      providers.forEach(function(prov) {
+        var label = prov === 'google-news' ? 'Google News (keyless)' : prov;
+        var parts = [];
+        var outcome = self._newsLastOutcome[prov];
+        if (outcome) {
+          var mins = Math.max(0, Math.round((Date.now() - outcome.at) / 60000));
+          var when = mins < 1 ? 'just now' : (mins + 'm ago');
+          if (outcome.ok && outcome.count) {
+            parts.push(outcome.count + ' stories (' + when + (outcome.tier != null ? ', tier ' + outcome.tier : '') + ')');
+          } else {
+            parts.push('no stories (' + (outcome.note || 'empty') + ', ' + when + (outcome.tier != null ? ', tier ' + outcome.tier : '') + ')');
+          }
+        } else {
+          parts.push('no attempt this session');
+        }
+        if (prov !== 'google-news') {
+          // Remaining window from the persisted quota stamp
+          self._loadNewsQuota();
+          var entry = self._newsQuota && self._newsQuota[prov];
+          if (entry && typeof entry.epochMs === 'number') {
+            var remain = self._newsCooldownMsFor(prov) - (Date.now() - entry.epochMs);
+            if (remain > 0) {
+              parts.push('window opens in ' + Math.max(1, Math.ceil(remain / 60000)) + 'm');
+            }
+          }
+          // Pending tier for the current location identity
+          if (cleanCity) {
+            var tierKey = prov + '|' + cleanCity.toLowerCase() + '|' + cc;
+            var state = self._readNewsTierState(tierKey);
+            if (state && state.status === 'pending') {
+              parts.push('next: tier ' + state.tier);
+            }
+          }
+        }
+        lines.push(label + ': ' + parts.join(' · '));
+      });
+      return lines.join('\n');
+    },
+
+    /**
+     * True when a keyed provider has a PENDING tier for this location — the
+     * honest "regional stories arrive within 15 minutes" condition (v0.8.15).
+     */
+    newsPendingSummary: function(city, country) {
+      var cleanCity = String(city || '').trim().toLowerCase();
+      var cc = String(country || '').trim().toUpperCase();
+      if (!cleanCity) return null;
+      var providers = [];
+      if (String(this.currentsApiKey || '').trim()) providers.push('currents');
+      if (String(this.newsApiKey || '').trim()) providers.push('newsapi');
+      for (var i = 0; i < providers.length; i++) {
+        var state = this._readNewsTierState(providers[i] + '|' + cleanCity + '|' + cc);
+        if (state && state.status === 'pending') {
+          return { provider: providers[i], tier: state.tier };
+        }
+      }
+      return null;
+    },
+
     _readNewsTierState: function(tierKey) {
       if (this._newsVariantTier[tierKey]) return this._newsVariantTier[tierKey];
       try {
@@ -3193,6 +3283,7 @@
       }
       return entry.run().then(
         function(articles) {
+          self._noteNewsOutcome(provider, true, { tier: entry.tier, count: articles.length });
           self._writeNewsTierState(tierKey, { tier: entry.tier, status: 'ok' });
           // Country-level memory is for REUSABLE tiers only (v0.8.14): tier 0
           // is city-specific and must never overwrite the proven country/world
@@ -3207,6 +3298,7 @@
         },
         function(err) {
           console.warn('[ApiService] ' + provider + ' tier ' + entry.tier + ' empty or failed: ' + (err && err.message));
+          self._noteNewsOutcome(provider, false, { tier: entry.tier, note: (err && err.message) ? String(err.message).slice(0, 60) : 'empty' });
           var sameTierRetry = !!(remembered && remembered.status === 'ok');
           var nextTier;
           if (sameTierRetry) {

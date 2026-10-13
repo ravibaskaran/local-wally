@@ -1833,6 +1833,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         syncStatus: document.getElementById('sync-status'),
         unsplashCredit: document.getElementById('unsplash-credit'),
         diagPanel: document.getElementById('diagnostic-panel'),
+        diagNewsStatus: document.getElementById('diag-news-status'),
         diagGpu: document.getElementById('diag-gpu'),
         diagExportBtn: document.getElementById('diag-export-settings'),
         diagImportBtn: document.getElementById('diag-import-settings'),
@@ -3257,10 +3258,32 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           this.updateGpuDiagnostics();
           this.updateThemeDiagnostics();
           this.updateLocationDiagnostics();
+          this.updateNewsDiagnostics();
         } else {
           this.dom.diagPanel.classList.remove('is-active');
           this.hideLocationSuggestions();
         }
+      }
+    },
+
+    /**
+     * D-panel news status (v0.8.15): per-provider last outcome, remaining
+     * quota window and pending tier — the honest way to see WHY a news card
+     * is empty (bad key vs empty city tier vs window pending).
+     */
+    updateNewsDiagnostics: function() {
+      if (!this.dom.diagNewsStatus) return;
+      try {
+        var api = global.ApiService;
+        if (!api || typeof api.newsStatusSummary !== 'function') {
+          this.setDomText(this.dom.diagNewsStatus, 'News status unavailable');
+          return;
+        }
+        var loc = (this.state && this.state.location) || {};
+        this.setDomText(this.dom.diagNewsStatus,
+          api.newsStatusSummary(loc.city || '', loc.countryCode || ''));
+      } catch (e) {
+        this.setDomText(this.dom.diagNewsStatus, 'News status error: ' + (e && e.message));
       }
     },
 
@@ -5013,6 +5036,22 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       var now = Date.now();
       var sinceAny = now - (this._popoverAnyMoveAt || 0);
       var insideNow = this._popoverCursorInsideBounds();
+      // Foreground accelerator (v0.8.15): when another window owns the
+      // focus, the user is demonstrably working elsewhere — a popover that
+      // survives silence on an unfocused page is stale after 1.5s, even when
+      // the last known cursor position was over the card. (An actively
+      // hovering reader keeps generating mousemove events, so this never
+      // interrupts genuine interaction.)
+      var pageFocused = true;
+      try {
+        pageFocused = (typeof document !== 'undefined' && typeof document.hasFocus === 'function')
+          ? document.hasFocus()
+          : true;
+      } catch (e) { pageFocused = true; }
+      if (!pageFocused && sinceAny > 1500) {
+        this.hideHoverPopover();
+        return;
+      }
       if (insideNow ? (sinceAny > 8000) : (sinceAny > 3000)) {
         this.hideHoverPopover();
       }
@@ -5902,6 +5941,19 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             var staleCtxOk = (!staleSnap.weatherProvider || staleSnap.weatherProvider === curWProv) &&
                              (!staleSnap.aqiProvider || staleSnap.aqiProvider === curAProv);
             if (staleCtxOk) {
+              // Persisted stories paint at boot even when the atmosphere
+              // snapshot predates them (v0.8.15): the news snapshot is the
+              // durable store, so the card starts with last-known stories
+              // instead of an empty state while the network revalidates.
+              if ((!staleSnap.news || staleSnap.news.length === 0) &&
+                  global.ApiService && typeof global.ApiService.getCachedNews === 'function') {
+                var bootNews = global.ApiService.getCachedNews();
+                if (bootNews && Array.isArray(bootNews.data) && bootNews.data.length > 0) {
+                  staleSnap.news = bootNews.data.map(function(a) {
+                    return Object.assign({}, a, { isStale: true });
+                  });
+                }
+              }
               staleSnap.fromCache = true;
               staleSnap.isStalePaint = true;
               this.state = staleSnap;
@@ -5971,11 +6023,13 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (!global.ApiService || typeof global.ApiService.fetchNews !== 'function') return Promise.resolve([]);
       var loc = (this.state && this.state.location) || (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.defaultLocation) || {};
       var city = loc.city || 'Local Area';
-      var country = loc.countryCode || 'US';
+      // Unknown country stays unknown (v0.8.15) — no invented 'US' on the news path.
+      var country = loc.countryCode || '';
       // No force concept: news network eligibility is owned by the ApiService
       // quota firewall and can never be bypassed from the UI (LW06/CORR-3)
       return global.ApiService.fetchNews(city, country)
         .then(function(articles) {
+          if (self.showDiagnostics) self.updateNewsDiagnostics();
           if (articles && articles.length > 0) {
             self.newsItems = articles;
             if (self.state) {
@@ -5984,6 +6038,24 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             if (!self.isPlaybackPaused) {
               self.renderNews(articles);
             }
+            return articles;
+          }
+          // Empty network result: never blank a card that has a persisted
+          // story snapshot — render the last-known stories as marked-stale
+          // (v0.8.15) instead of letting an empty array wipe the card.
+          var cached = (typeof global.ApiService.getCachedNews === 'function') ? global.ApiService.getCachedNews() : null;
+          if (cached && Array.isArray(cached.data) && cached.data.length > 0) {
+            var stale = cached.data.map(function(a) {
+              return Object.assign({}, a, { isStale: true });
+            });
+            self.newsItems = stale;
+            if (self.state) {
+              self.state.news = stale;
+            }
+            if (!self.isPlaybackPaused) {
+              self.renderNews(stale);
+            }
+            return stale;
           }
           return articles;
         })
@@ -6878,6 +6950,14 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         var sel = String(api.newsProvider || 'auto').toLowerCase();
         if (sel === 'google-news') {
           return base + ' — tip: set News Provider to "Auto (API keys first)" in Customize';
+        }
+        // Keyed providers active: if a region tier is pending for this
+        // location, say so honestly (v0.8.15) — the card fills within the
+        // next quota window instead of looking broken.
+        var loc = (this.state && this.state.location) || {};
+        if (typeof api.newsPendingSummary === 'function' &&
+            api.newsPendingSummary(loc.city || '', loc.countryCode || '')) {
+          return 'No local stories yet — regional stories arrive within 15 minutes';
         }
       } catch (e) {}
       return base;

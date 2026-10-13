@@ -293,6 +293,12 @@ local-wally/
 
 ## 🛡️ Recent Updates & Quality Improvements
 
+### Version 0.8.15 — Stories Persist Across Sessions, Kill-Switch for Stale Popovers
+- **Your news card never starts empty again**: the last-known stories are now painted **at startup from the persisted snapshot** (even when the weather cache predates them), and an empty network result falls back to the snapshot instead of blanking the card — stories show marked-stale while a fresh fetch revalidates. The snapshot rides your **settings exports**, so it survives re-installs; the one-click updater keeps it automatically (same install folder).
+- **D-panel news health line** (press `D`): per provider it shows the last attempt's result, the remaining quota window and any pending region tier — the honest way to see *why* a card is empty (bad key vs empty city vs 15-minute window). The empty news card also says so itself when a regional tier is pending: "No local stories yet — regional stories arrive within 15 minutes".
+- **Stale popovers die when you switch to another window**: beyond the position-aware guard, a page that does not own the focus drops any open hover popover after ~1.5s of silence — the browser-foreground case from your screenshot is gone (an actively hovering reader keeps generating mouse movement and is never interrupted).
+- **Last invented `'US'` removed** from the news caller — unknown country stays unknown (world fallback), matching the v0.8.14 trust-boundary work.
+
 ### Version 0.8.14 — Production Hardening: Fail-Closed Quotas, Intent Races, Trust Boundaries
 *A hardening pass from an independent audit (arrived as "v0.8.13" — renumbered because that version already shipped).*
 - **Keyed-news reservations fail closed**: a reservation is granted only after the quota stamp is **durably written** — un-writable storage, absent storage, or a rejected Web Locks coordination all deny the keyed request outright (cache and keyless news keep working). The persisted quota state never contains key material.

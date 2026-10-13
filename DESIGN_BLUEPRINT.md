@@ -1576,3 +1576,20 @@ Six user-reported issues, fixed as a focused release ahead of the next audit rou
 
 ### 45.8 Verification
 - New `scratch/test_v0813_hardening.js` (work-order filename) — T1 fail-closed reservations (write failure, absent storage, lock rejection, success path, no key leakage), T2 intent races (redelivered-A kills B; stale B cannot touch C; clear-safe; alias replay), T3 coordinate trust (91/181/NaN/Infinity rejected pre-write; boundaries pass; no invented US), T4 country-tier memory (tier-0 success preserves country; empty city pends country tier), T5 partial-restore reporting, T6 unknown-pointer popover grace, T7 image budget (no-key no-op, persistence, cap, fallthrough, key hygiene), T8 tier-store bounds + corruption recovery. Battery now **16 processes**, all green with clean exits; `node --check` over all runtime/config JS; JSON validation; `git diff --check` clean. Scratch SHA-256s in the release notes.
+
+## 46. News Persistence & Popover Foreground (v0.8.15)
+
+### 46.1 Persisted stories paint at every start
+- **Boot stale paint** (`loadAtmosphere`): when the atmosphere snapshot lacks news, the persisted `LIVELY_HUD_NEWS_SNAPSHOT` is attached (marked `isStale`) before `renderAll` — the card shows last-known stories immediately, revalidated by the fresh fetch.
+- **Empty-result fallback** (`App.fetchNews`): a zero-length network result renders the snapshot marked-stale instead of returning `[]` into the void — a card with any history can no longer blank. Snapshots remain fresh-success-only writes (stale reads never rewrite timestamps, LW16).
+- **Cross-session/re-install story**: the snapshot lives in localStorage (survives reloads; the one-click updater preserves the install folder and its origin) and rides settings exports/imports (it is a normal `LIVELY_HUD_*` cache entry, not operational state) — a settings-imported reinstall starts with stories.
+
+### 46.2 News observability (the honest "why is it empty")
+- `ApiService._noteNewsOutcome` records per-provider last-attempt results (tier, count, note); `newsStatusSummary(city, country)` composes outcome + remaining quota window + pending region tier into the **D-panel news health line** (`diag-news-status`), refreshed on panel open and after each `App.fetchNews`. `newsPendingSummary` drives the pend-aware empty card: "No local stories yet — regional stories arrive within 15 minutes".
+- The invented `'US'` in `App.fetchNews` (missed by the v0.8.14 sweep — api.js had been fixed, the app.js caller not) is removed; unknown country stays empty.
+
+### 46.3 Popover foreground accelerator
+- `_checkPopoverLinger` adds: page not focused (`document.hasFocus() === false`) + 1.5s of silence → hide, even when the last known cursor position is inside the card. An actively hovering reader generates mousemove events and is never interrupted; the covered-window/browser-foreground case (user report + screenshot) now clears in ~1.5s.
+
+### 46.4 Verification
+- New `scratch/test_v0815_news_persistence.js` — T1 boot attaches persisted stories to a news-less stale atmosphere; T2 empty fetch renders the snapshot marked-stale; T3 pend-aware message; T4 status summary (outcome + window + keyless); T5 unfocused 1.5s kill vs focused grace; T6 static no-invented-US guards on both files. Battery now **17 processes**, all green with clean exits; syntax/JSON/whitespace gates clean.

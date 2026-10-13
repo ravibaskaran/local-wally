@@ -2522,6 +2522,15 @@ html, body {
   max-width: 396px;
   overflow-wrap: anywhere;
 }
+#diagnostic-panel .diag-news-status {
+  margin-top: 6px;
+  color: rgba(226, 232, 240, 0.72);
+  font-size: 0.62rem;
+  line-height: 1.45;
+  max-width: 396px;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
 #diagnostic-panel .diag-keys-section {
   margin-top: 10px;
   border-top: 1px solid rgba(255, 255, 255, 0.15);
