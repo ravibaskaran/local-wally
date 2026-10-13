@@ -1512,3 +1512,27 @@ An external audit (Codex, independent read-only pass over v0.8.10) produced 15 f
 
 ### 42.6 Verification
 - Battery now 13 processes (adds `test_v0811_audit_corrections.js`; `test_v089_news_cascade.js` rewritten for HTTP-boundary accounting; `test_v086_backup.js` and `test_v08_providers.js` updated to the corrected boundary semantics). All green with clean exits; `node --check` over 29 JS files; `git diff --check` clean; both JSON schema files validated. Passing suites are NOT hardware-performance or host-persistence proof — those gates stay open by design.
+
+## 43. UI & News Robustness (v0.8.12)
+
+Six user-reported issues, fixed as a focused release ahead of the next audit round.
+
+### 43.1 Export/Import dialogs (user issues 1–2)
+- `exportSettings` prefers the File System Access `showSaveFilePicker` (real Save-As dialog; `createWritable → write → close`); picker rejection (host-triggered exports may lack user activation) falls back to the classic blob download; `AbortError` reports "Export cancelled" — never a false success. Status names the actual destination path taken.
+- `openImportPicker` prefers `showOpenFilePicker` (window focused first so the dialog surfaces in the foreground wherever the host allows), then `getFile() → importSettingsFile`; rejection falls back to the legacy hidden-input dialog. All three import trigger sites (D-panel button, dispatcher case, wiring) route through it.
+
+### 43.2 Compact telemetry + growing news card (user issue 3)
+- The v0.8.4 height-distribution rule is retired: `#hud-hw-block` keeps its natural height (`flex: 0 0 auto`; rows `justify-content: flex-start; gap: 3px`), and the news card absorbs the secondary column's spare height (`flex: 1; min-height: 110px`; body centered) — the story card and its backdrop image get the room metric gaps used to waste.
+
+### 43.3 Story images with guaranteed legibility (user issue 4)
+- The v0.8.9 path (provider image → off-DOM decode → apply-on-success, fixed dark scrim + text shadow) is extended with a bounded decorator: `_decorateStoryBackground` uses the provider image, else a bounded headline→image cache (`LIVELY_HUD_NEWS_IMG_CACHE`, FIFO ≤80), else — within a strict 6-searches/hour budget — a Pixabay (key-in-query) then Unsplash search built from 3 stopword-stripped headline keywords. No key/budget/exhaustion = plain card, silently. Decoration never invents news data; late results only paint if the story is still on screen.
+
+### 43.4 Instant regional news via country tier memory (user issue 5)
+- `_runKeyedTier` now consults a country-level memory (`<provider>||<CC>`, successes only): a new location in a country whose working tier is proven starts there directly — Bengaluru inherits India's tier 1 and returns headlines on the first attempt (the per-request 15-minute quota window remains absolute; the test advances it synthetically, as in reality the user enters a new city in a later session).
+- Empty-state tip: when the News Provider is the keyless chain but API keys exist, `newsEmptyMessage()` adds "tip: set News Provider to 'Auto (API keys first)'" — the exact actionable situation the user hit.
+
+### 43.5 Hover popover expiry (user issue 6)
+- Position-aware staleness replaces the flat 10 s/12 s grace: last-known cursor OUTSIDE the anchor/popover → stale after 3 s; INSIDE → 8 s hard cap (micro-movements reset it); plus instant `hideHoverPopover` on document `mouseleave` and window blur. The WebView still receives no events while covered — that is why the timer is the backstop — but the visible lingering is now seconds, not ten.
+
+### 43.6 Verification
+- New `scratch/test_v0812_ui_news.js` (six sections: picker paths both ways, fallback + cancel honesty, country-tier seeding with shared storage across contexts, keyword/cache/budget decorator, position-aware popover rules, empty-state tip conditions). `test_v088_hud_polish.js` updated to the v0.8.12 popover semantics + picker wiring. Battery now **14 processes**, all green with clean exits; syntax + JSON + whitespace gates clean. Scratch SHA-256s in the release notes.

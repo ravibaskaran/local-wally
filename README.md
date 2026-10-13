@@ -270,6 +270,15 @@ local-wally/
 
 ## 🛡️ Recent Updates & Quality Improvements
 
+### Version 0.8.12 — Save-As Export, Instant Regional News, Compact Telemetry, Story Images, Fast Popover Expiry
+- **Export opens a real Save-As dialog**: the File System Access picker writes your settings JSON wherever you choose (with the classic download as a graceful fallback when the host can't offer a picker — the status line always says which path ran; cancelling is reported honestly).
+- **Import picker comes to the foreground**: the window is focused first and the modern picker is preferred; the hidden-input dialog remains as fallback.
+- **News gets the room**: the hardware telemetry rows sit compact at natural height again — the secondary column's spare height now goes to the news card (and its backdrop image), not to metric gaps.
+- **Story images for every headline**: provider images paint behind the headline (fixed dark scrim + text shadow — legible on any photo); headlines *without* a provider image get a topical placeholder found via your own Pixabay/Unsplash key from the headline keywords — capped at 6 searches/hour with a bounded headline→image cache, and no keys means no fetch, never an error.
+- **Manual cities get instant regional news**: a new country-level tier memory means once *any* city in a country has proven a working news tier, a newly entered city in that country starts there directly — Bengaluru returns India headlines on the first attempt (the 15-minute quota window still binds every request).
+- **Empty news card explains itself**: if the keyless Google News source is selected while API keys are configured, the empty state adds a one-line tip pointing at "Auto (API keys first)".
+- **Hover popovers now expire in seconds**: popovers sit behind a position-aware guard — 3 s after the cursor was last seen away from the card, at most 8 s even if the cursor was last on it, plus instant closes on document mouseleave / window blur. The covered-window lingering is gone.
+
 ### Version 0.8.11 — Audit Corrections: Location Intent, News Quota Boundary, Honest Restore
 - **Manual-location intents are generation-guarded**: every Customize delivery, D-panel apply, and clear is a fresh intent; late geocodes can never resurrect an abandoned entry, clear a newer location, or fire stale refreshes. An unresolvable *latest* name clears the override and falls back to Auto with an explicit message instead of silently showing a stale place.
 - **News quota boundary hardened to the actual request**: every keyed HTTP GET now reserves its own 15-minute window at the request boundary (previously one reservation could cover a multi-GET ladder). On empty/failure, the next region tier pends for the next eligible window — discovery across tiers spans windows by design — while other eligible providers can still answer in the same attempt. **≤96 keyed GETs/day per provider**; daily limits stay unreachable, and cached reads consume nothing.

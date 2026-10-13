@@ -3074,10 +3074,31 @@
      * Discovery across region tiers therefore spans cooldown windows by
      * design; the cross-provider ladder still tries other eligible
      * providers in the SAME attempt.
+     *
+     * v0.8.12: country-level memory. When a tier has proven to work for ANY
+     * location in a country, a NEW location in that country starts directly
+     * at that tier — so a manual city like Bengaluru inherits India's
+     * working tier immediately instead of rediscovering tiers window by
+     * window. Country keys live at `<provider>||<CC>` and only ever store
+     * successes.
      */
     _runKeyedTier: function(provider, tierKey, tiers) {
       var self = this;
+      var countryTierKey = null;
+      var sep = tierKey.lastIndexOf('|');
+      if (sep !== -1) {
+        var cc = tierKey.slice(sep + 1);
+        if (cc && cc.length === 2) {
+          countryTierKey = provider + '||' + cc;
+        }
+      }
       var remembered = self._readNewsTierState(tierKey);
+      if (!remembered && countryTierKey) {
+        var countryState = self._readNewsTierState(countryTierKey);
+        if (countryState && countryState.status === 'ok') {
+          remembered = { tier: countryState.tier, status: 'pending' };
+        }
+      }
       var startIdx = 0;
       if (remembered && remembered.tier > 0) {
         for (var i = 0; i < tiers.length; i++) {
@@ -3091,6 +3112,9 @@
       return entry.run().then(
         function(articles) {
           self._writeNewsTierState(tierKey, { tier: entry.tier, status: 'ok' });
+          if (countryTierKey) {
+            self._writeNewsTierState(countryTierKey, { tier: entry.tier, status: 'ok' });
+          }
           return articles;
         },
         function(err) {

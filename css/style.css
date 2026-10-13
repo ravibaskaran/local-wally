@@ -2016,15 +2016,15 @@ html, body {
    Secondary Column Auto-Adaptation (Dynamic Expansion & Flex Balancing)
    ========================================================================== */
 
-/* Hardware Monitor absorbs the column's spare height in EVERY visibility
-   combination (v0.8.4): slack spreads across its metric rows instead of
-   pooling as one large gap between it and the news card. */
+/* Hardware Monitor keeps its NATURAL height (v0.8.12): the column's spare
+   height goes to the news card instead of stretching the metric rows apart.
+   (v0.8.4 used to spread slack across the rows — user feedback: gaps too
+   large, news card too small.) */
 #hud-hw-block,
 #hud-hw-block.flex-expand {
-  flex: 1;
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
   padding-bottom: 8px;
 }
 
@@ -2040,9 +2040,23 @@ html, body {
 
 #hud-hw-block .hw-metrics-container,
 #hud-hw-block.flex-expand .hw-metrics-container {
+  flex: 0 0 auto;
+  justify-content: flex-start;
+  gap: 3px;
+}
+
+/* (v0.8.12) The news card absorbs the secondary column's spare height
+   whenever both cards are visible — the story card (and its backdrop image)
+   gets the room the metric gaps used to waste. */
+.bento-col-secondary:has(#hud-news-block:not(.is-hidden)) #hud-news-block {
   flex: 1;
-  justify-content: space-around;
-  gap: 5px;
+  min-height: 110px;
+}
+
+.bento-col-secondary:has(#hud-news-block:not(.is-hidden)) .hud-news-body {
+  flex: 1;
+  justify-content: center;
+  min-height: 78px;
 }
 
 /* When Hardware Monitor is hidden: News Block expands gracefully */

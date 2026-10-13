@@ -2078,11 +2078,12 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           self.exportSettings();
         });
       }
-      if (this.dom.diagImportBtn && this.dom.diagImportFile) {
+      if (this.dom.diagImportBtn) {
         this.dom.diagImportBtn.addEventListener('click', function() {
-          self.dom.diagImportFile.value = '';
-          self.dom.diagImportFile.click();
+          self.openImportPicker();
         });
+      }
+      if (this.dom.diagImportFile) {
         this.dom.diagImportFile.addEventListener('change', function() {
           var picked = self.dom.diagImportFile.files && self.dom.diagImportFile.files[0];
           self.importSettingsFile(picked);
@@ -2492,8 +2493,11 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             self.exportSettings();
             break;
           case 'settingsImport':
-            // Customize-panel button: opens the file picker from wallpaper UI
-            if (self.dom.diagImportFile) {
+            // Customize-panel button: opens the settings picker (prefers the
+            // File System Access dialog with the window focused first)
+            if (self.openImportPicker) {
+              self.openImportPicker();
+            } else if (self.dom.diagImportFile) {
               self.dom.diagImportFile.value = '';
               self.dom.diagImportFile.click();
             }
@@ -3564,20 +3568,74 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       };
     },
 
+    /**
+     * Export through a real Save-As dialog when the runtime supports the
+     * File System Access API (Chromium/WebView2 do): the user picks the
+     * destination and filename. The picker needs user activation, so a
+     * host-triggered export may reject it — in that case (and where the API
+     * is missing) the classic blob download runs instead, with the status
+     * line saying exactly which path was taken. Never claims success for
+     * bytes that were not written.
+     */
     exportSettings: function() {
+      var self = this;
       if (this.dom.diagBackupStatus) this.setDomText(this.dom.diagBackupStatus, 'Preparing export...');
       var result = this._buildSettingsPayload();
       if (!result.ok) {
         if (this.dom.diagBackupStatus) this.setDomText(this.dom.diagBackupStatus, 'Export failed: ' + result.error);
         return;
       }
+      var json = null;
+      var fileName = '';
       try {
-        var json = JSON.stringify(result.payload, null, 2);
+        json = JSON.stringify(result.payload, null, 2);
         var stamp = new Date();
         var pad = function(n) { return (n < 10 ? '0' : '') + n; };
-        var fileName = 'local-wally-settings-' +
+        fileName = 'local-wally-settings-' +
           stamp.getFullYear() + pad(stamp.getMonth() + 1) + pad(stamp.getDate()) +
           '-' + pad(stamp.getHours()) + pad(stamp.getMinutes()) + pad(stamp.getSeconds()) + '.json';
+      } catch (e) {
+        this.setDomText(this.dom.diagBackupStatus, 'Export failed: ' + (e && e.message));
+        return;
+      }
+      var nProps = Object.keys(result.payload.livelyProperties).length;
+      var nKeys = Object.keys(result.payload.localStorage).length;
+      var describe = function(target) {
+        self.setDomText(self.dom.diagBackupStatus,
+          'Exported ' + nProps + ' properties (incl. keys) + ' + nKeys + ' storage entries → ' + target);
+      };
+
+      var picker = (typeof global.showSaveFilePicker === 'function') ? global.showSaveFilePicker : null;
+      if (picker) {
+        picker.call(global, {
+          suggestedName: fileName,
+          types: [{ description: 'Local Wally settings', accept: { 'application/json': ['.json'] } }]
+        }).then(function(handle) {
+          return handle.createWritable().then(function(writable) {
+            return writable.write(json).then(function() {
+              return writable.close();
+            });
+          }).then(function() {
+            return (handle && handle.name) || fileName;
+          });
+        }).then(function(name) {
+          describe(name);
+        }).catch(function(err) {
+          if (err && err.name === 'AbortError') {
+            self.setDomText(self.dom.diagBackupStatus, 'Export cancelled');
+            return;
+          }
+          // No user activation (host-triggered) or picker unavailable here —
+          // the download fallback keeps the export functional.
+          self._exportViaDownload(json, fileName, describe);
+        });
+        return;
+      }
+      this._exportViaDownload(json, fileName, describe);
+    },
+
+    _exportViaDownload: function(json, fileName, describe) {
+      try {
         var blob = new Blob([json], { type: 'application/json' });
         var url = URL.createObjectURL(blob);
         var link = document.createElement('a');
@@ -3587,13 +3645,45 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         link.click();
         document.body.removeChild(link);
         setTimeout(function() { URL.revokeObjectURL(url); }, 2000);
-        var nProps = Object.keys(result.payload.livelyProperties).length;
-        var nKeys = Object.keys(result.payload.localStorage).length;
-        this.setDomText(this.dom.diagBackupStatus,
-          'Exported ' + nProps + ' properties (incl. keys) + ' + nKeys + ' storage entries → ' + fileName);
+        describe(fileName + ' (Downloads — click Export from the D panel for a Save-As dialog)');
       } catch (e) {
         this.setDomText(this.dom.diagBackupStatus, 'Export failed: ' + (e && e.message));
       }
+    },
+
+    /**
+     * Import picker: prefers the File System Access API (a proper dialog
+     * owned by this window); focuses the window first so the dialog surfaces
+     * in the foreground wherever the host allows; falls back to the hidden
+     * file input. Cancelling is never an error.
+     */
+    openImportPicker: function() {
+      var self = this;
+      try { if (typeof global.focus === 'function') global.focus(); } catch (e) {}
+      var picker = (typeof global.showOpenFilePicker === 'function') ? global.showOpenFilePicker : null;
+      if (picker) {
+        picker.call(global, {
+          multiple: false,
+          types: [{ description: 'Local Wally settings', accept: { 'application/json': ['.json'] } }]
+        }).then(function(handles) {
+          if (!handles || !handles.length) return;
+          return handles[0].getFile().then(function(file) {
+            self.importSettingsFile(file);
+          });
+        }).catch(function(err) {
+          if (err && err.name === 'AbortError') return;
+          self._openLegacyImportPicker();
+        });
+        return;
+      }
+      this._openLegacyImportPicker();
+    },
+
+    _openLegacyImportPicker: function() {
+      if (!this.dom.diagImportFile) return;
+      try { if (typeof global.focus === 'function') global.focus(); } catch (e) {}
+      this.dom.diagImportFile.value = '';
+      this.dom.diagImportFile.click();
     },
 
     /**
@@ -4807,6 +4897,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       var now = Date.now();
       this._popoverAnyMoveAt = now;
       this._popoverAnchorMoveAt = now;
+      // Fresh open: position unknown until the first mousemove (v0.8.12).
+      this._popoverLastX = null;
+      this._popoverLastY = null;
       this.currentPopoverLingerAnchor = anchorEl;
       if (!this._popoverMouseMoveBound) {
         this._popoverMouseMoveBound = true;
@@ -4814,6 +4907,16 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         document.addEventListener('mousemove', function(e) {
           selfRef._popoverMouseMoveHandler(e);
         }, { passive: true, capture: true });
+        // The OS delivers these when the cursor leaves our window entirely or
+        // focus moves elsewhere — instant closes for paths where they fire.
+        document.addEventListener('mouseleave', function() {
+          if (selfRef.isHoverPopoverOpen) selfRef.hideHoverPopover();
+        });
+        if (typeof global.addEventListener === 'function') {
+          global.addEventListener('blur', function() {
+            if (selfRef.isHoverPopoverOpen) selfRef.hideHoverPopover();
+          });
+        }
       }
       var self = this;
       this._popoverLingerTimer = setInterval(function() {
@@ -4825,6 +4928,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (!this.isHoverPopoverOpen) return;
       var now = Date.now();
       this._popoverAnyMoveAt = now;
+      this._popoverLastX = e.clientX;
+      this._popoverLastY = e.clientY;
       var inside = false;
       var anchor = this.currentPopoverAnchor;
       var pop = this.dom.hudHoverPopover;
@@ -4839,6 +4944,36 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (inside) this._popoverAnchorMoveAt = now;
     },
 
+    _popoverCursorInsideBounds: function() {
+      if (this._popoverLastX === null || this._popoverLastY === null) return false;
+      var x = this._popoverLastX;
+      var y = this._popoverLastY;
+      var anchor = this.currentPopoverAnchor;
+      var pop = this.dom.hudHoverPopover;
+      try {
+        if (anchor && typeof anchor.getBoundingClientRect === 'function') {
+          var r = anchor.getBoundingClientRect();
+          if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return true;
+        }
+        if (pop && typeof pop.getBoundingClientRect === 'function') {
+          var pr = pop.getBoundingClientRect();
+          if (x >= pr.left && x <= pr.right && y >= pr.top && y <= pr.bottom) return true;
+        }
+      } catch (e) {}
+      return false;
+    },
+
+    /**
+     * Position-aware staleness (v0.8.12). The WebView receives NO mouse
+     * events while another window covers the wallpaper, so mouseleave never
+     * fires and a popover can linger; the old flat 10s/12s grace made that
+     * plainly visible (user report). Rules:
+     *   - last known cursor OUTSIDE the anchor/popover  -> stale after 3s
+     *     (covered, or the user moved elsewhere),
+     *   - last known cursor INSIDE  -> 8s hard cap even for a still reader
+     *     (micro-movements reset it; the popover also closes instantly when
+     *     a document mouseleave / window blur does fire).
+     */
     _checkPopoverLinger: function() {
       if (!this.isHoverPopoverOpen) {
         if (this._popoverLingerTimer) {
@@ -4848,9 +4983,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         return;
       }
       var now = Date.now();
-      var pageIdle = (now - (this._popoverAnyMoveAt || 0)) > 10000;
-      var anchorIdle = (now - (this._popoverAnchorMoveAt || 0)) > 12000;
-      if (pageIdle || anchorIdle) {
+      var sinceAny = now - (this._popoverAnyMoveAt || 0);
+      var insideNow = this._popoverCursorInsideBounds();
+      if (insideNow ? (sinceAny > 8000) : (sinceAny > 3000)) {
         this.hideHoverPopover();
       }
     },
@@ -6463,6 +6598,148 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     },
 
     /**
+     * Story background decoration (v0.8.12): provider image when present,
+     * else a cached keyword image, else — within a strict hourly budget — a
+     * topical stock image searched from the headline keywords via the user's
+     * own Pixabay/Unsplash key. Purely decorative: never invents news data,
+     * and a missing key or exhausted budget simply leaves the plain card.
+     */
+    _decorateStoryBackground: function(item) {
+      var self = this;
+      var direct = (item && typeof item.image === 'string' && /^https:\/\//i.test(item.image)) ? item.image : null;
+      if (direct) {
+        this.applyStoryBackground(direct);
+        return;
+      }
+      var cached = this._readNewsImageCache(item.title);
+      if (cached) {
+        this.applyStoryBackground(cached);
+        return;
+      }
+      this.applyStoryBackground(null);
+      var keywords = this._newsImageKeywords(item.title);
+      if (!keywords) return;
+      if (!this._newsImageBudgetOk()) return;
+      var storyId = item.id;
+      var storyTitle = item.title;
+      this._fetchKeywordImage(keywords, function(url) {
+        if (!url) return;
+        self._writeNewsImageCache(storyTitle, url);
+        // The story may have rotated while the search was in flight — only
+        // paint when this is still the story on screen.
+        if (self.newsItems && self.newsItems.length) {
+          var current = self.newsItems[self.currentNewsIdx % self.newsItems.length];
+          if (current && current.id === storyId) {
+            self.applyStoryBackground(url);
+          }
+        }
+      });
+    },
+
+    /**
+     * Headline → 3 significant keywords (stopwords stripped). Returns '' when
+     * nothing usable remains, in which case no search is made.
+     */
+    _newsImageKeywords: function(title) {
+      if (!title || typeof title !== 'string') return '';
+      var stop = { a: 1, an: 1, the: 1, of: 1, in: 1, on: 1, at: 1, to: 1, for: 1, and: 1,
+        or: 1, is: 1, are: 1, was: 1, were: 1, with: 1, from: 1, by: 1, as: 1, its: 1,
+        it: 1, this: 1, that: 1, after: 1, before: 1, over: 1, under: 1, new: 1, says: 1,
+        say: 1, will: 1, has: 1, have: 1, had: 1, not: 1, but: 1, how: 1, why: 1, what: 1,
+        who: 1, his: 1, her: 1, their: 1, out: 1, up: 1, down: 1, into: 1, amid: 1 };
+      var words = String(title).toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/);
+      var picked = [];
+      for (var i = 0; i < words.length && picked.length < 3; i++) {
+        var w = words[i];
+        if (w.length >= 4 && !stop[w]) picked.push(w);
+      }
+      return picked.join(' ');
+    },
+
+    _newsImageBudgetOk: function() {
+      var now = Date.now();
+      if (!this._newsImgBudget || (now - this._newsImgBudget.windowStart) > 60 * 60 * 1000) {
+        this._newsImgBudget = { windowStart: now, count: 0 };
+      }
+      if (this._newsImgBudget.count >= 6) return false;
+      this._newsImgBudget.count++;
+      return true;
+    },
+
+    _readNewsImageCache: function(title) {
+      try {
+        var raw = global.localStorage && global.localStorage.getItem('LIVELY_HUD_NEWS_IMG_CACHE');
+        if (!raw) return null;
+        var list = JSON.parse(raw);
+        if (!Array.isArray(list)) return null;
+        var key = String(title || '').trim().toLowerCase().slice(0, 80);
+        for (var i = list.length - 1; i >= 0; i--) {
+          if (list[i] && list[i].k === key && typeof list[i].v === 'string' && /^https:\/\//i.test(list[i].v)) {
+            return list[i].v;
+          }
+        }
+      } catch (e) {}
+      return null;
+    },
+
+    _writeNewsImageCache: function(title, url) {
+      try {
+        if (!global.localStorage) return;
+        var key = String(title || '').trim().toLowerCase().slice(0, 80);
+        if (!key || !/^https:\/\//i.test(url)) return;
+        var raw = global.localStorage.getItem('LIVELY_HUD_NEWS_IMG_CACHE');
+        var list = [];
+        if (raw) {
+          try { var parsed = JSON.parse(raw); if (Array.isArray(parsed)) list = parsed; } catch (e2) { list = []; }
+        }
+        list = list.filter(function(entry) { return entry && entry.k !== key; });
+        list.push({ k: key, v: url });
+        while (list.length > 80) list.shift(); // bounded FIFO
+        global.localStorage.setItem('LIVELY_HUD_NEWS_IMG_CACHE', JSON.stringify(list));
+      } catch (e) {}
+    },
+
+    /**
+     * Keyless-to-search topical image via the user's own keys. Pixabay first
+     * (its API is CORS-enabled and its key is a query parameter), Unsplash
+     * second. Failures are silent — decoration only, never an error state.
+     */
+    _fetchKeywordImage: function(keywords, cb) {
+      var api = global.ApiService;
+      if (!api) { cb(null); return; }
+      var pixabayKey = String(api.pixabayApiKey || '').trim();
+      var unsplashKey = String(api.unsplashApiKey || '').trim();
+      if (pixabayKey) {
+        var pUrl = 'https://pixabay.com/api/?key=' + encodeURIComponent(pixabayKey) +
+          '&q=' + encodeURIComponent(keywords) +
+          '&image_type=photo&orientation=horizontal&safesearch=true&per_page=3';
+        api.fetchWithTimeout(pUrl, 6000, {}).then(function(res) {
+          if (!res.ok) throw new Error('pixabay http ' + res.status);
+          return res.json();
+        }).then(function(data) {
+          var hit = data && Array.isArray(data.hits) && data.hits[0];
+          var url = hit && typeof hit.webformatURL === 'string' && /^https:\/\//i.test(hit.webformatURL) ? hit.webformatURL : null;
+          cb(url);
+        }).catch(function() { cb(null); });
+        return;
+      }
+      if (unsplashKey) {
+        var uUrl = 'https://api.unsplash.com/search/photos?query=' + encodeURIComponent(keywords) +
+          '&per_page=3&orientation=landscape&client_id=' + encodeURIComponent(unsplashKey);
+        api.fetchWithTimeout(uUrl, 6000, {}).then(function(res) {
+          if (!res.ok) throw new Error('unsplash http ' + res.status);
+          return res.json();
+        }).then(function(data) {
+          var hit = data && Array.isArray(data.results) && data.results[0];
+          var url = hit && hit.urls && typeof hit.urls.regular === 'string' && /^https:\/\//i.test(hit.urls.regular) ? hit.urls.regular : null;
+          cb(url);
+        }).catch(function() { cb(null); });
+        return;
+      }
+      cb(null);
+    },
+
+    /**
      * News card story background (v0.8.9): paints the headline's image behind
      * a fixed dark scrim — text contrast is guaranteed by the CSS scrim, never
      * by the image itself. Loads off-DOM first; only a successfully decoded
@@ -6510,6 +6787,28 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       pre.src = safe;
     },
 
+    /**
+     * Honest empty-state copy; adds a one-line pointer when the News
+     * Provider is set to the keyless Google News chain but API keys ARE
+     * configured (v0.8.12 — the exact situation where a user sees an empty
+     * card while a working keyed source sits one dropdown entry away).
+     */
+    newsEmptyMessage: function() {
+      var base = 'No stories right now — new stories arrive automatically';
+      try {
+        var api = global.ApiService;
+        if (!api) return base;
+        var hasKeys = (String(api.newsApiKey || '').trim().length > 0) ||
+                      (String(api.currentsApiKey || '').trim().length > 0);
+        if (!hasKeys) return base;
+        var sel = String(api.newsProvider || 'auto').toLowerCase();
+        if (sel === 'google-news') {
+          return base + ' — tip: set News Provider to "Auto (API keys first)" in Customize';
+        }
+      } catch (e) {}
+      return base;
+    },
+
     displayNewsItem: function(idx) {
       if (this.dom.hudNewsLink) {
         this.dom.hudNewsLink.classList.remove('is-fading');
@@ -6517,7 +6816,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
       if (!this.newsItems || this.newsItems.length === 0) {
         if (this.dom.hudNewsHeadline) {
-          this.setDomText(this.dom.hudNewsHeadline, 'No stories right now — new stories arrive automatically');
+          this.setDomText(this.dom.hudNewsHeadline, this.newsEmptyMessage());
         }
         if (this.dom.hudNewsDots) {
           this.dom.hudNewsDots.style.display = 'none';
@@ -6571,7 +6870,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         this.dom.hudNewsBlock.setAttribute('aria-label', providerName + ' news');
         this.dom.hudNewsBlock.title = providerName + ': ' + (item.title || 'News') + sourceLabel + ' (Click to inspect stories)';
       }
-      this.applyStoryBackground(item.image || null);
+      this._decorateStoryBackground(item);
 
       if (this.dom.hudNewsDots) {
         var totalDots = this.newsItems.length;
