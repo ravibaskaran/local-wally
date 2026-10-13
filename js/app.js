@@ -1654,6 +1654,12 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     showHardwareMonitor: true,
     showNetworkUsage: true,
     showBatteryInfo: true,
+
+    /**
+     * Product version (v0.8.20). Rendered into #hud-version (bottom-right of
+     * the card) so the running build is identifiable at a glance.
+     */
+    VERSION: '0.8.20',
     showCelestial: true,
     showAqi: true,
     showEnvironmentalMetrics: true,
@@ -1673,6 +1679,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
       this.cacheDom();
       this.restoreCachedWallpaper();
+      // Version stamp + taskbar-aware watermark placement (v0.8.20).
+      if (this.dom.hudVersion) this.dom.hudVersion.textContent = 'v' + this.VERSION;
+      this.positionWallpaperCredit();
       // 48-hour artifact retention (v0.8.18): sweep on boot and daily; the
       // daily tick skips while parked so a sleeping wallpaper does no work.
       this.purgeStaleArtifacts();
@@ -1834,6 +1843,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
         syncDot: document.getElementById('sync-dot'),
         syncStatus: document.getElementById('sync-status'),
+        hudVersion: document.getElementById('hud-version'),
         unsplashCredit: document.getElementById('unsplash-credit'),
         diagPanel: document.getElementById('diagnostic-panel'),
         diagNewsStatus: document.getElementById('diag-news-status'),
@@ -2001,6 +2011,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             if (bootLabel) {
               this.dom.unsplashCredit.textContent = bootLabel;
               this.dom.unsplashCredit.classList.add('is-visible');
+              this.positionWallpaperCredit();
               var bootHref = (cachedPhotographerUrl && /^https:\/\//i.test(String(cachedPhotographerUrl).trim()))
                 ? String(cachedPhotographerUrl).trim()
                 : this._wallpaperProviderHome(bootProvider);
@@ -3318,6 +3329,26 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           this.hideLocationSuggestions();
         }
       }
+    },
+
+    /**
+     * Keep the wallpaper watermark ABOVE the Windows taskbar (v0.8.20): the
+     * wallpaper page spans the full screen while the taskbar floats over its
+     * bottom edge — a fixed bottom:10px pill sits permanently UNDER it and is
+     * never seen. Use the screen's reserved strip (screen.height -
+     * screen.availHeight); the 72px CSS floor is the no-JS fallback.
+     */
+    positionWallpaperCredit: function() {
+      var el = this.dom && this.dom.unsplashCredit;
+      if (!el || !el.style) return;
+      var reserved = 0;
+      try {
+        if (typeof screen !== 'undefined' && screen &&
+            typeof screen.height === 'number' && typeof screen.availHeight === 'number') {
+          reserved = Math.max(0, screen.height - screen.availHeight);
+        }
+      } catch (e) {}
+      el.style.bottom = Math.max(18, reserved + 12) + 'px';
     },
 
     /**
@@ -6377,15 +6408,15 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             });
           }).catch(function() {
             self.hasPhysicalBattery = false;
-            self.hideBatteryRow();
+            self.showBatteryUnavailableMode();
           });
         } catch (e) {
           self.hasPhysicalBattery = false;
-          self.hideBatteryRow();
+          self.showBatteryUnavailableMode();
         }
       } else {
         self.hasPhysicalBattery = false;
-        self.hideBatteryRow();
+        self.showBatteryUnavailableMode();
       }
     },
 
@@ -6458,6 +6489,37 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (this.dom.hwBatteryIcon) {
         this.dom.hwBatteryIcon.textContent = '⚡';
         this.dom.hwBatteryIcon.className = 'hw-battery-badge is-charging';
+      }
+      if (this.dom.hwBatteryBar) {
+        this.setBarFill(this.dom.hwBatteryBar, 0);
+        this.dom.hwBatteryBar.className = 'hw-bar-fill hw-battery-fill';
+      }
+    },
+
+    /**
+     * Honest "host does not expose battery data" row (v0.8.20): shown when
+     * navigator.getBattery is missing or fails (common in hosted WebView2).
+     * The user asked for the BAT row to always be visible — it is, with no
+     * invented numbers.
+     */
+    showBatteryUnavailableMode: function() {
+      if (!this.showBatteryInfo) {
+        this.hideBatteryRow();
+        return;
+      }
+      if (this.dom.hwBatteryRow) {
+        this.dom.hwBatteryRow.classList.remove('is-hidden');
+        if (this.dom.hwBatteryRow.style && this.dom.hwBatteryRow.style.setProperty) {
+          this.dom.hwBatteryRow.style.setProperty('display', 'flex', 'important');
+        } else if (this.dom.hwBatteryRow.style) {
+          this.dom.hwBatteryRow.style.display = 'flex';
+        }
+      }
+      if (this.dom.hwBatteryVal) this.dom.hwBatteryVal.textContent = '--%';
+      if (this.dom.hwBatteryStatus) this.dom.hwBatteryStatus.textContent = 'Not available';
+      if (this.dom.hwBatteryIcon) {
+        this.dom.hwBatteryIcon.textContent = '—';
+        this.dom.hwBatteryIcon.className = 'hw-battery-badge';
       }
       if (this.dom.hwBatteryBar) {
         this.setBarFill(this.dom.hwBatteryBar, 0);
@@ -7295,6 +7357,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           // "Wallhaven" or "Pexels · Jane Doe" — never "Wallhaven Community".
           self.dom.unsplashCredit.textContent = self._wallpaperCreditLabel(providerLabel, photographerName) || 'Wallpaper';
           self.dom.unsplashCredit.classList.add('is-visible');
+          self.positionWallpaperCredit();
           var rawCreditUrl = (bg && (bg.photographerUrl || bg.sourceUrl)) || '';
           var safeCreditUrl = (typeof rawCreditUrl === 'string' && /^https:\/\//i.test(rawCreditUrl.trim()))
             ? rawCreditUrl.trim()

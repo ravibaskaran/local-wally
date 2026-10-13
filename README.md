@@ -304,6 +304,11 @@ local-wally/
 
 ## 🛡️ Recent Updates & Quality Improvements
 
+### Version 0.8.20 — Version Stamp, Always-Visible Battery Row, Watermark Above the Taskbar
+- **Version stamp**: a tiny `v0.8.20` in the bottom-right corner of the HUD card (below the news block) — the running build is now identifiable at a glance.
+- **Battery row shows in every host state**: real laptop telemetry when the host exposes it, an honest **AC Power** row for the AC/dummy signature, and an honest **Not available** row when the host exposes no battery data at all (common in hosted WebView2) — it never silently disappears again.
+- **The wallpaper watermark was rendered but hidden UNDER the Windows taskbar**: the wallpaper page spans the full screen while the taskbar floats over its bottom edge, so a `bottom: 10px` pill was permanently covered. The pill now sits above the taskbar, with its distance computed from the screen's working area (72px fallback) — visible on every taskbar size, including auto-hidden ones.
+
 ### Version 0.8.19 — Updater Finds Relocated and Random-ID Library Folders
 - **The one-click updater now works with any Lively setup**: it reads Lively's own `Settings.json` → `WallpaperDir` and scans the relocated library (e.g. a library moved to another drive), and it matches wallpaper folders by their **content** — Lively 2.x names imported wallpaper folders by random id, so name-based discovery never found them.
 - **Development checkouts are protected**: folders containing `.git` or `scratch` are never overlaid, so a source checkout can't be clobbered by an update.

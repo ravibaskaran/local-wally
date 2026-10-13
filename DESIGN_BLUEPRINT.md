@@ -1654,3 +1654,20 @@ Three independent tool families were built at the v0.8.16 baseline (they now run
 
 ### 50.2 Fix
 - Discovery now (1) reads `WallpaperDir` from Lively's `Settings.json` in the Store and installer layouts and scans `<WallpaperDir>\wallpapers` plus `<WallpaperDir>` (legacy layout), (2) keeps the standard default roots, (3) matches candidates by **content** (index.html + js/app.js + js/api.js + css/style.css + LivelyInfo.json), (4) excludes any folder containing `.git` or `scratch` (development checkouts), (5) de-duplicates roots and targets. Dry-run against the reporting machine resolves exactly `E:\utils\lively\wallpapers\cyogibc0.sw1` with the repo folder untouched. The engine remains pure ASCII and PS 5.1-parseable; the credits/updater suite grew assertions for the new discovery.
+
+## 51. Version Stamp, Battery Coverage, Taskbar-Aware Watermark (v0.8.20)
+
+### 51.1 Version stamp (user request)
+- `App.VERSION` rendered into a tiny muted `#hud-version` (`.hud-version`, bottom-right of the card below the news block, `margin-left: auto`). "Which build am I running?" is now answerable at a glance — and doubles as the definitive stale-build tell during support.
+
+### 51.2 Battery row in every host state
+- Verified on the reporting machine: the installed build WAS current (all v0.8.18 markers present) yet the BAT row was absent — the host exposes **no** `navigator.getBattery` at all (hosted WebView2), and the absent-API path called `hideBatteryRow()`. New `showBatteryUnavailableMode()` renders the row with an honest `Not available` / `--%` state; the three host-failure paths (API missing, promise rejection, sync throw) now all reach it. Real hosts keep live telemetry; the AC/dummy signature keeps the honest AC row; the `showBatteryInfo` switch still wins.
+
+### 51.3 Watermark hidden by the taskbar — root cause found
+- The pill was rendered the whole time but positioned `bottom: 10px` — **underneath the Windows taskbar**, which floats above the wallpaper page's bottom edge (the page spans the full screen). Fix: CSS floor raised to `72px` plus `positionWallpaperCredit()` — computes the reserved strip (`screen.height - screen.availHeight`) and places the pill above the taskbar on every screen shape (fallbacks: 18px when unknown or auto-hidden). Called from init and both credit-reveal paths.
+
+### 51.4 Verification
+- New `scratch/test_v0820_version_battery_pill.js` — version stamp wiring (html/css/js), all three battery host states incl. the never-silent guarantee, taskbar placement math (60px/40px/absent/auto-hidden), static guards. Gate set now **25 processes**, all green; the credits suite's pill-position assertion updated to the new floor. Syntax/JSON/whitespace gates clean.
+
+### 51.5 Support note — settings after a fresh import
+- The user's wallpaper folder id changed (`cyogibc0.sw1` → `ubvvowpx.ym4`) at the update: the zip had been imported as a NEW Lively entry, which mints a new id and starts from default SaveData — hence the news card falling back to the keyless Google News source (empty). Re-entering the API keys (or importing a settings backup) in **Customise** restores keyed news; future updates should use the one-click updater or the Manual ZIP Overlay (Method 2) to keep settings attached.

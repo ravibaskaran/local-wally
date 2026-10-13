@@ -2169,6 +2169,18 @@ html, body {
   gap: 5px;
 }
 
+/* Version stamp (v0.8.20): tiny, muted, bottom-right of the card below the
+   news block — the always-visible answer to "which build am I running?" */
+.hud-version {
+  margin-left: auto;
+  font-size: 0.6rem;
+  font-weight: 500;
+  color: var(--text-dim);
+  letter-spacing: 0.05em;
+  opacity: 0.85;
+  user-select: none;
+}
+
 .sync-pulse {
   width: 5px;
   height: 5px;
@@ -2678,7 +2690,7 @@ html, body {
    applies; high enough contrast to read over any wallpaper. */
 .unsplash-attribution {
   position: fixed;
-  bottom: 10px;
+  bottom: 72px; /* v0.8.20: above the Windows taskbar; JS refines per screen */
   right: 14px;
   z-index: 30;
   font-size: 0.72rem;
