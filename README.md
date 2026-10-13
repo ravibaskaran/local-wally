@@ -293,6 +293,12 @@ local-wally/
 
 ## 🛡️ Recent Updates & Quality Improvements
 
+### Version 0.8.16 — Wallpaper Source Watermark Done Right
+- **Provider-first labels**: the bottom-right watermark now reads simply **"Wallhaven"** (or "Pexels", "Unsplash", "Pixabay") — the providers' generic stand-in "photographers" ("Wallhaven Community", "Unsplash Artist") are suppressed; a *real* photographer still shows as `Pexels · Jane Doe`.
+- **Always visible at boot**: the watermark now appears from the restored wallpaper cache **even for caches written by older builds** (the provider is derived from the image URL's hostname when no provider key is stored) — you no longer need a fresh wallpaper swap to see it.
+- **Better legibility over any wallpaper**: slightly larger type, higher contrast, a stronger text shadow and a darker glass pill.
+- Provider is persisted alongside the cached wallpaper so boots are instant and correctly labelled; hover still discloses the full source URL, link discipline unchanged (`https`-only, `noopener`).
+
 ### Version 0.8.15 — Stories Persist Across Sessions, Kill-Switch for Stale Popovers
 - **Your news card never starts empty again**: the last-known stories are now painted **at startup from the persisted snapshot** (even when the weather cache predates them), and an empty network result falls back to the snapshot instead of blanking the card — stories show marked-stale while a fresh fetch revalidates. The snapshot rides your **settings exports**, so it survives re-installs; the one-click updater keeps it automatically (same install folder).
 - **D-panel news health line** (press `D`): per provider it shows the last attempt's result, the remaining quota window and any pending region tier — the honest way to see *why* a card is empty (bad key vs empty city vs 15-minute window). The empty news card also says so itself when a regional tier is pending: "No local stories yet — regional stories arrive within 15 minutes".

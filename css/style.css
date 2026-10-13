@@ -2648,17 +2648,18 @@ html, body {
   bottom: 10px;
   right: 14px;
   z-index: 30;
-  font-size: 0.68rem;
-  color: rgba(255, 255, 255, 0.62);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.65);
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.82);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8), 0 0 12px rgba(0, 0, 0, 0.45);
   pointer-events: auto;
   text-decoration: none;
-  padding: 3px 9px;
+  padding: 4px 11px;
   border-radius: 999px;
-  background: rgba(8, 12, 20, 0.34);
+  background: rgba(8, 12, 20, 0.48);
   -webkit-backdrop-filter: blur(6px) saturate(120%);
   backdrop-filter: blur(6px) saturate(120%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   transition: color 0.2s, background 0.2s, opacity 0.3s;
   opacity: 0;
 }

@@ -1593,3 +1593,17 @@ Six user-reported issues, fixed as a focused release ahead of the next audit rou
 
 ### 46.4 Verification
 - New `scratch/test_v0815_news_persistence.js` — T1 boot attaches persisted stories to a news-less stale atmosphere; T2 empty fetch renders the snapshot marked-stale; T3 pend-aware message; T4 status summary (outcome + window + keyless); T5 unfocused 1.5s kill vs focused grace; T6 static no-invented-US guards on both files. Battery now **17 processes**, all green with clean exits; syntax/JSON/whitespace gates clean.
+
+## 47. Wallpaper Source Watermark (v0.8.16)
+
+### 47.1 Provider-first labels
+- `_wallpaperCreditLabel(provider, photographer)`: generic stand-ins (`Wallhaven Community`, `Unsplash Artist`, `Pexels Creator`, `Pixabay Creator`, `Ambient Nature`) and photographer names containing the provider name are suppressed — the watermark reads **"Wallhaven"**; a real photographer renders as `Pexels · Jane Doe`. Photo by Jane (Pexels) style parentheticals are gone.
+
+### 47.2 Always visible at boot (old caches included)
+- `_wallpaperProviderFromUrl` maps the cached image hostname (`wallhaven.cc → Wallhaven`, `unsplash.com → Unsplash`, `pexels.com → Pexels`, `pixabay.com → Pixabay`) — the boot restore now shows the watermark **whenever a wallpaper was restored**, with or without a photographer, including caches written by builds that predate the provider key. The swap path persists `local_wally_cached_bg_provider` for exact future labelling; the source link falls back to each provider's home page when the cache has no photographer URL; tooltip + `target`/`rel` discipline retained.
+
+### 47.3 Legibility
+- Pill typography/contrast bumped (0.72rem, weight 500, 0.82 alpha, dual text-shadow, darker glass) — readable as a watermark over bright and dark wallpapers alike.
+
+### 47.4 Verification
+- New `scratch/test_v0816_credit_visibility.js` — label suppression/kept cases, hostname mapping for all four providers, old-cache boot visibility (url-only), rich-cache boot (label + href + tooltip + rel), swap-path provider persistence, CSS legibility guards. Battery now **18 processes**, all green with clean exits; syntax/JSON/whitespace gates clean.

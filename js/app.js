@@ -1922,6 +1922,45 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       };
     },
 
+    /**
+     * Wallpaper source watermark helpers (v0.8.16). Provider-first labels:
+     * "Wallhaven · <photographer>" when a REAL photographer exists, plain
+     * "Wallhaven" for the providers' generic stand-in names (Wallhaven
+     * Community, Unsplash Artist, …). The provider is derivable from the URL
+     * hostname too, so the watermark shows correctly at boot even for caches
+     * written by older builds.
+     */
+    _wallpaperProviderFromUrl: function(url) {
+      var u = String(url || '').toLowerCase();
+      if (u.indexOf('wallhaven') !== -1) return 'Wallhaven';
+      if (u.indexOf('unsplash') !== -1) return 'Unsplash';
+      if (u.indexOf('pexels') !== -1) return 'Pexels';
+      if (u.indexOf('pixabay') !== -1) return 'Pixabay';
+      return '';
+    },
+
+    _wallpaperCreditLabel: function(providerName, photographer) {
+      var provider = String(providerName || '').trim();
+      var who = String(photographer || '').trim();
+      var generic = /^(wallhaven community|unsplash artist|pexels creator|pixabay creator|ambient nature)$/i;
+      var whoIsUseful = who && !generic.test(who) &&
+        (!provider || who.toLowerCase().indexOf(provider.toLowerCase()) === -1);
+      if (provider && whoIsUseful) return provider + ' · ' + who;
+      if (provider) return provider;
+      if (who) return who;
+      return '';
+    },
+
+    _wallpaperProviderHome: function(provider) {
+      var map = {
+        Wallhaven: 'https://wallhaven.cc',
+        Unsplash: 'https://unsplash.com',
+        Pexels: 'https://www.pexels.com',
+        Pixabay: 'https://pixabay.com'
+      };
+      return map[provider] || 'https://unsplash.com';
+    },
+
     restoreCachedWallpaper: function() {
       try {
         var cachedUrl = null;
@@ -1947,15 +1986,25 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         if (cachedUrl && this.dom.bgA) {
           var safeCachedUrl = String(cachedUrl || '').replace(/["\\\n\r]/g, '');
           this.dom.bgA.style.backgroundImage = 'url("' + safeCachedUrl + '")';
-          if (this.dom.unsplashCredit && cachedPhotographer) {
-            this.dom.unsplashCredit.textContent = 'Photo by ' + cachedPhotographer;
-            this.dom.unsplashCredit.classList.add('is-visible');
-            var safePhotogUrl = (cachedPhotographerUrl && /^https:\/\//i.test(String(cachedPhotographerUrl).trim()))
-              ? String(cachedPhotographerUrl).trim()
-              : 'https://unsplash.com';
-            this.dom.unsplashCredit.href = safePhotogUrl;
-            this.dom.unsplashCredit.setAttribute('target', '_blank');
-            this.dom.unsplashCredit.setAttribute('rel', 'noopener noreferrer');
+          if (this.dom.unsplashCredit) {
+            // Always show the watermark when a wallpaper was restored —
+            // provider-first, derived from cache or the URL hostname so old
+            // caches (no provider key) still label correctly (v0.8.16).
+            var cachedProvider = '';
+            try { cachedProvider = localStorage.getItem('local_wally_cached_bg_provider') || ''; } catch (e3) { cachedProvider = ''; }
+            var bootProvider = cachedProvider || this._wallpaperProviderFromUrl(cachedUrl);
+            var bootLabel = this._wallpaperCreditLabel(bootProvider, cachedPhotographer);
+            if (bootLabel) {
+              this.dom.unsplashCredit.textContent = bootLabel;
+              this.dom.unsplashCredit.classList.add('is-visible');
+              var bootHref = (cachedPhotographerUrl && /^https:\/\//i.test(String(cachedPhotographerUrl).trim()))
+                ? String(cachedPhotographerUrl).trim()
+                : this._wallpaperProviderHome(bootProvider);
+              this.dom.unsplashCredit.href = bootHref;
+              this.dom.unsplashCredit.setAttribute('title', 'Wallpaper source: ' + bootHref);
+              this.dom.unsplashCredit.setAttribute('target', '_blank');
+              this.dom.unsplashCredit.setAttribute('rel', 'noopener noreferrer');
+            }
           }
           console.log('[App] Restored cached wallpaper instantly on boot (no pop-in)');
         }
@@ -7130,8 +7179,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             bg.provider === 'pixabay' ? 'Pixabay' :
             'Unsplash'
           ) : 'Unsplash';
-          var photographerName = (bg && bg.photographer) || (providerLabel + ' Artist');
-          self.dom.unsplashCredit.textContent = 'Photo by ' + photographerName + ' (' + providerLabel + ')';
+          var photographerName = (bg && bg.photographer) || '';
+          // Provider-first, generic-photographer-aware label (v0.8.16):
+          // "Wallhaven" or "Pexels · Jane Doe" — never "Wallhaven Community".
+          self.dom.unsplashCredit.textContent = self._wallpaperCreditLabel(providerLabel, photographerName) || 'Wallpaper';
           self.dom.unsplashCredit.classList.add('is-visible');
           var rawCreditUrl = (bg && (bg.photographerUrl || bg.sourceUrl)) || '';
           var safeCreditUrl = (typeof rawCreditUrl === 'string' && /^https:\/\//i.test(rawCreditUrl.trim()))
@@ -7143,10 +7194,16 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           self.dom.unsplashCredit.setAttribute('rel', 'noopener noreferrer');
         }
 
-        // Persist wallpaper URL and photographer credit to eliminate startup blank pop-in
+        // Persist wallpaper URL and credit to eliminate startup blank pop-in
         try {
           if (incomingUrl && typeof localStorage !== 'undefined') {
             localStorage.setItem('local_wally_cached_bg_url', incomingUrl);
+            if (bg && bg.provider) {
+              localStorage.setItem('local_wally_cached_bg_provider',
+                bg.provider === 'wallhaven' ? 'Wallhaven' :
+                bg.provider === 'pexels' ? 'Pexels' :
+                bg.provider === 'pixabay' ? 'Pixabay' : 'Unsplash');
+            }
             if (bg && bg.photographer) {
               localStorage.setItem('local_wally_cached_bg_photographer', bg.photographer);
             }
