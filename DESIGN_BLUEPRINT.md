@@ -1671,3 +1671,34 @@ Three independent tool families were built at the v0.8.16 baseline (they now run
 
 ### 51.5 Support note — settings after a fresh import
 - The user's wallpaper folder id changed (`cyogibc0.sw1` → `ubvvowpx.ym4`) at the update: the zip had been imported as a NEW Lively entry, which mints a new id and starts from default SaveData — hence the news card falling back to the keyless Google News source (empty). Re-entering the API keys (or importing a settings backup) in **Customise** restores keyed news; future updates should use the one-click updater or the Manual ZIP Overlay (Method 2) to keep settings attached.
+
+## 52. Performance Hardening, Security Safeguards & Telemetry Accuracy (v0.9)
+
+### 52.1 Currents News Localization & City Aliases
+- In `js/api.js`, added mandatory `&language=en` to Currents search and latest endpoints, and introduced query aliases (e.g. `Bengaluru OR Bangalore`).
+- Removed unconstrained international wire Tier 2 in Currents adapter that caused unrelated world headlines (Tokyo/Japan) when regional Indian stories returned 0 results.
+- Hardened `_readNewsTierState` to cleanse legacy tier >= 2 records from `localStorage`.
+
+### 52.2 Battery Telemetry & State Consistency
+- In `js/app.js`, `handleSystemInfo` checks if `batteryManager` or corroborated battery telemetry exists before updating status, preventing Lively host "unknown/none" notifications from wiping active browser battery telemetry.
+- When `showBatteryInfo` is active, the battery row remains consistently visible, gracefully rendering live stats, AC Power, or honest unavailable status.
+
+### 52.3 Compositor & 60 FPS GPU Performance
+- Removed 3-second `box-shadow` CSS transition over heavy acrylic glass (`backdrop-filter`) on `#hud` and `#dock-media-focus` in `css/style.css`, eliminating 180 consecutive frames of CPU/GPU rasterization churn whenever `SolarLightingEngine` updates `--dynamic-card-shadow`.
+- Removed redundant `will-change` on `#solar-light-bloom` and `.bg-layer` to conserve ~130MB of VRAM at 4K resolution.
+- Optimized snow particle canvas rendering with fast `rect` drawing for small particles (`pr <= 1.5`), cutting trigonometric operations by >70%.
+- Replaced string parsing `parseFloat(toFixed(1))` in fallback hardware ticker with zero-allocation rounding `Math.round((sim + delta) * 10) / 10`.
+- Cached date string formatting in 1-second clock loop using `tz + '_' + now.toDateString()`, formatting only once per calendar day.
+- Throttled popover mousemove bounding rect queries to one per animation frame via RAF.
+- Cleared news story preloader `pre.onload` and `pre.onerror` handlers immediately to prevent GC closure leaks.
+
+### 52.4 HiDPI Scaling & WCAG AA Contrast
+- Added `window.devicePixelRatio` backing store scaling to `#pomodoro-canvas` and `#audio-visualizer-canvas` so vector and canvas elements render razor-sharp on high DPI Windows displays (125%, 150%, 200%).
+- Boosted `--text-dim` in dark mode (`rgba(255, 255, 255, 0.48)`) and light mode (`rgba(15, 23, 42, 0.58)`), satisfying WCAG 2.1 AA text contrast ratio (>= 4.5:1).
+- Updated interactive card container roles in `index.html` from `role="button"` to `role="region"` to eliminate invalid nested interactive button ARIA violations.
+
+### 52.5 Security & Robustness
+- Hardened SMTC album art URI validation in `MediaVisualizerEngine.prototype.handleTrack`, rejecting `javascript:`, `vbscript:`, and unsafe protocols.
+- Attached outer rejection `.catch()` handler to `ApiService.fetchAtmosphere` outer promise chain, ensuring robust fallback to cached snapshot or mock data under geocoding or network failures.
+- Added listener deduplication and `offLocationChanged` unbinding to `ApiService.onLocationChanged`.
+- Aligned `LivelyProperties.json` and `config.js` settings.

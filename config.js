@@ -315,6 +315,27 @@
     // --------------------------------------------------------------------------
     // Active metric tab displayed upon wallpaper initialization.
     // Default: 'temp' | Options: 'temp', 'feels_like', 'precip', 'wind', 'humidity', 'aqi'
-    defaultForecastTab: 'temp'
+    defaultForecastTab: 'temp',
+
+    // --------------------------------------------------------------------------
+    // 35. CUSTOM LOCATION OVERRIDE (OPTIONAL)
+    // --------------------------------------------------------------------------
+    // Custom city name or "lat, lon" coordinates overriding IP/GPS detection.
+    // Default: '' (Uses automatic IP/GPS detection)
+    customLocation: '',
+
+    // --------------------------------------------------------------------------
+    // 36. PARTICLE DENSITY MULTIPLIER
+    // --------------------------------------------------------------------------
+    // Multiplier for rain/snow particle density.
+    // Default: 1.0 | Valid Range: 0.1 to 3.0
+    particleDensity: 1.0,
+
+    // --------------------------------------------------------------------------
+    // 37. WEATHER SIMULATION MODE (TESTING ONLY)
+    // --------------------------------------------------------------------------
+    // Forces specific particle/sky rendering for testing.
+    // 0 = Off (Live Weather), 1 = Rain, 2 = Snow, 3 = Thunderstorm, 4 = Clear
+    weatherSimulation: 0
   };
 })(typeof window !== 'undefined' ? window : this);

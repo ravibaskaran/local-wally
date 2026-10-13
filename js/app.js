@@ -109,7 +109,7 @@
 
   MediaVisualizerEngine.prototype.initGradient = function() {
     if (!this.ctx || !this.dom.canvas) return;
-    var h = this.dom.canvas.height;
+    var h = this.logicalHeight || this.dom.canvas.height;
     this.gradient = this.ctx.createLinearGradient(0, h, 0, 0);
     if (this.isLightTheme) {
       this.gradient.addColorStop(0, '#0284c7');
@@ -139,8 +139,20 @@
     this._wrapWidthSample = 0;
     if (wrapWidth > 0) {
       var targetW = wrapWidth - 8;
-      if (targetW > 60 && Math.abs(this.dom.canvas.width - targetW) > 2) {
-        this.dom.canvas.width = targetW;
+      var curW = this.logicalWidth || this.dom.canvas.width;
+      if (targetW > 60 && Math.abs(curW - targetW) > 2) {
+        var dpr = (typeof window !== 'undefined' && typeof window.devicePixelRatio === 'number' && window.devicePixelRatio > 1) ? window.devicePixelRatio : 1;
+        this.logicalWidth = targetW;
+        this.logicalHeight = 44;
+        this.dom.canvas.width = Math.round(targetW * dpr);
+        this.dom.canvas.height = Math.round(44 * dpr);
+        if (this.dom.canvas.style) {
+          this.dom.canvas.style.width = targetW + 'px';
+          this.dom.canvas.style.height = '44px';
+        }
+        if (dpr > 1 && typeof this.ctx.setTransform === 'function') {
+          this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
         this.initGradient();
       }
     }
@@ -412,10 +424,16 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         this.dom.card.title = 'Now Playing: ' + title + (artist ? ' - ' + artist : '') + ' (' + sourceBadge + ') (Click to inspect track)';
       }
 
-      if (albumArt && albumArt.length > 20) {
-        var src = albumArt;
-        if (!src.startsWith('data:') && !src.startsWith('http') && !src.startsWith('file:')) {
+      if (albumArt && typeof albumArt === 'string' && albumArt.length > 20) {
+        var src = albumArt.trim();
+        if (/^(javascript|vbscript|data:(?!image\/))/i.test(src)) {
+          src = this.defaultArt;
+        } else if (/^(https?:\/\/|file:\/\/|data:image\/[a-z0-9.+_-]+;base64,)/i.test(src)) {
+          // Validated safe scheme
+        } else if (!src.startsWith('data:') && !src.startsWith('http') && !src.startsWith('file:') && !/^\s*[a-z0-9+.-]+:/i.test(src)) {
           src = 'data:image/jpeg;base64,' + src;
+        } else {
+          src = this.defaultArt;
         }
         if (this.dom.art) this.dom.art.src = src;
       } else {
@@ -701,6 +719,18 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     }
 
     if (!this.ctx || !this.dom.canvas) return;
+    var dpr = (typeof window !== 'undefined' && typeof window.devicePixelRatio === 'number' && window.devicePixelRatio > 1) ? window.devicePixelRatio : 1;
+    if (dpr > 1 && !this._dprScaled && typeof this.ctx.scale === 'function') {
+      this.dom.canvas.width = Math.round(88 * dpr);
+      this.dom.canvas.height = Math.round(88 * dpr);
+      if (this.dom.canvas.style) {
+        this.dom.canvas.style.width = '88px';
+        this.dom.canvas.style.height = '88px';
+      }
+      this.ctx.scale(dpr, dpr);
+      this._dprScaled = true;
+      this.initGradients();
+    }
     var ctx = this.ctx;
     var cx = 44;
     var cy = 44;
@@ -1453,15 +1483,16 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         dot.setAttribute('cy', ys[i].toFixed(1));
         dot.setAttribute('fill', dotColor);
         dot.setAttribute('title', dotTooltip);
-        var titleNode = (typeof dot.getElementsByTagName === 'function')
+        var titleNode = dot._titleNode || ((typeof dot.getElementsByTagName === 'function')
           ? dot.getElementsByTagName('title')[0]
-          : (typeof dot.querySelector === 'function' ? dot.querySelector('title') : null);
+          : (typeof dot.querySelector === 'function' ? dot.querySelector('title') : null));
         if (!titleNode && typeof document !== 'undefined' && document.createElementNS) {
           titleNode = document.createElementNS('http://www.w3.org/2000/svg', 'title');
           if (dot.appendChild) {
             dot.appendChild(titleNode);
           }
         }
+        dot._titleNode = titleNode;
         if (titleNode) {
           titleNode.textContent = dotTooltip;
         }
@@ -1656,10 +1687,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     showBatteryInfo: true,
 
     /**
-     * Product version (v0.8.20). Rendered into #hud-version (bottom-right of
+     * Product version (v0.9). Rendered into #hud-version (bottom-right of
      * the card) so the running build is identifiable at a glance.
      */
-    VERSION: '0.8.20',
+    VERSION: '0.9',
     showCelestial: true,
     showAqi: true,
     showEnvironmentalMetrics: true,
@@ -2455,8 +2486,15 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             self.setShowEnvironmentalMetrics(val === true || val === 1 || val === 'true');
             break;
           case 'weatherProvider':
-            var wProviders = ['open-meteo', 'met-norway', 'openweathermap'];
-            var wpVal = (typeof val === 'number') ? (wProviders[val] || 'open-meteo') : val;
+            var wProviders = ['open-meteo', 'openweathermap'];
+            var wpVal = 'open-meteo';
+            if (typeof val === 'number') {
+              wpVal = wProviders[val] || 'open-meteo';
+            } else if (typeof val === 'string') {
+              if (/openweather/i.test(val)) wpVal = 'openweathermap';
+              else if (/norway|met-norway/i.test(val)) wpVal = 'met-norway';
+              else wpVal = 'open-meteo';
+            }
             if (global.ApiService) global.ApiService.weatherProvider = wpVal;
             self.loadAtmosphere(true);
             break;
@@ -2807,11 +2845,13 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
     setShowBatteryInfo: function(show) {
       this.showBatteryInfo = !!show;
-      if (this.showBatteryInfo && this.hasPhysicalBattery) {
+      if (this.showBatteryInfo) {
         if (this.batteryManager) {
           this.syncBatteryState(this.batteryManager);
-        } else {
+        } else if (this.hasPhysicalBattery) {
           this.showBatteryRow(this.lastBatteryPct || 100, this.lastBatteryCharging || false, 'Battery');
+        } else {
+          this.showBatteryUnavailableMode();
         }
       } else {
         this.hideBatteryRow();
@@ -4063,7 +4103,14 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             else if (clockParts[pi].type === 'minute') mStr = clockParts[pi].value;
             else if (clockParts[pi].type === 'dayPeriod') periodStr = clockParts[pi].value.replace(/\s+/g, ' ').toUpperCase();
           }
-          dateStr = this._tzFormatters[tz + '_date'].format(now);
+          var dateKey = tz + ':' + now.toDateString();
+          if (this._cachedDateKey === dateKey && this._cachedDateStr) {
+            dateStr = this._cachedDateStr;
+          } else {
+            dateStr = this._tzFormatters[tz + '_date'].format(now);
+            this._cachedDateKey = dateKey;
+            this._cachedDateStr = dateStr;
+          }
         } catch (e) {
           tz = null;
         }
@@ -4077,10 +4124,17 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         if (hours === 0) hours = 12;
         hStr = hours < 10 ? '0' + hours : '' + hours;
         mStr = minutes < 10 ? '0' + minutes : '' + minutes;
-        if (!this._localDateFormatter) {
-          this._localDateFormatter = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+        var localDateKey = 'local:' + now.toDateString();
+        if (this._cachedDateKey === localDateKey && this._cachedDateStr) {
+          dateStr = this._cachedDateStr;
+        } else {
+          if (!this._localDateFormatter) {
+            this._localDateFormatter = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+          }
+          dateStr = this._localDateFormatter.format(now);
+          this._cachedDateKey = localDateKey;
+          this._cachedDateStr = dateStr;
         }
-        dateStr = this._localDateFormatter.format(now);
       }
 
       if (this.dom.hudClock) {
@@ -5093,18 +5147,29 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       this._popoverAnyMoveAt = now;
       this._popoverLastX = e.clientX;
       this._popoverLastY = e.clientY;
-      var inside = false;
-      var anchor = this.currentPopoverAnchor;
-      var pop = this.dom.hudHoverPopover;
-      if (anchor && typeof anchor.getBoundingClientRect === 'function') {
-        var r = anchor.getBoundingClientRect();
-        inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
-      }
-      if (!inside && pop && typeof pop.getBoundingClientRect === 'function') {
-        var pr = pop.getBoundingClientRect();
-        inside = e.clientX >= pr.left && e.clientX <= pr.right && e.clientY >= pr.top && e.clientY <= pr.bottom;
-      }
-      if (inside) this._popoverAnchorMoveAt = now;
+      if (this._popoverMoveCheckThrottled) return;
+      this._popoverMoveCheckThrottled = true;
+      var self = this;
+      var checkFn = (typeof requestAnimationFrame === 'function') ? requestAnimationFrame : setTimeout;
+      checkFn(function() {
+        self._popoverMoveCheckThrottled = false;
+        if (!self.isHoverPopoverOpen) return;
+        var cx = self._popoverLastX;
+        var cy = self._popoverLastY;
+        if (cx === null || cy === null) return;
+        var inside = false;
+        var anchor = self.currentPopoverAnchor;
+        var pop = self.dom.hudHoverPopover;
+        if (anchor && typeof anchor.getBoundingClientRect === 'function') {
+          var r = anchor.getBoundingClientRect();
+          inside = cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom;
+        }
+        if (!inside && pop && typeof pop.getBoundingClientRect === 'function') {
+          var pr = pop.getBoundingClientRect();
+          inside = cx >= pr.left && cx <= pr.right && cy >= pr.top && cy <= pr.bottom;
+        }
+        if (inside) self._popoverAnchorMoveAt = Date.now();
+      });
     },
 
     _popoverCursorInsideBounds: function() {
@@ -6135,7 +6200,23 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     fetchNews: function() {
       var self = this;
       if (!global.ApiService || typeof global.ApiService.fetchNews !== 'function') return Promise.resolve([]);
-      var loc = (this.state && this.state.location) || (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.defaultLocation) || {};
+      var loc = (this.state && this.state.location);
+      if (!loc && global.ApiService) {
+        var manual = (typeof global.ApiService._readManualRecord === 'function') ? global.ApiService._readManualRecord() : null;
+        if (manual && manual.resolved) {
+          loc = manual.resolved;
+        } else if (manual && manual.entry && manual.entry.type === 'name' && manual.entry.name) {
+          loc = { city: manual.entry.name, countryCode: '' };
+        } else {
+          var persisted = (typeof global.ApiService._readPersistedLocation === 'function') ? global.ApiService._readPersistedLocation() : null;
+          if (persisted && persisted.location) {
+            loc = persisted.location;
+          }
+        }
+      }
+      if (!loc) {
+        loc = (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.defaultLocation) || {};
+      }
       var city = loc.city || 'Local Area';
       // Unknown country stays unknown (v0.8.15) — no invented 'US' on the news path.
       var country = loc.countryCode || '';
@@ -6528,10 +6609,11 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     },
 
     showBatteryRow: function(pct, isCharging, statusText) {
-      if (!this.showBatteryInfo || !this.hasPhysicalBattery) {
+      if (!this.showBatteryInfo) {
         this.hideBatteryRow();
         return;
       }
+      this.hasPhysicalBattery = true;
 
       if (this.dom.hwBatteryRow) {
         this.dom.hwBatteryRow.classList.remove('is-hidden');
@@ -6578,19 +6660,23 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
     handleSystemInfo: function(data) {
       if (!data || this.isPlaybackPaused || !this.showHardwareMonitor) return;
-      var setDomText = (typeof this.setDomText === 'function') ? this.setDomText.bind(this)
-        : (typeof App !== 'undefined' && typeof App.setDomText === 'function') ? App.setDomText.bind(App)
-        : function(n, t) { if (n && n.textContent !== t) n.textContent = t; };
+      var self = this;
+      var setDomText = function(n, t) {
+        if (typeof self.setDomText === 'function') self.setDomText(n, t);
+        else if (typeof App !== 'undefined' && typeof App.setDomText === 'function') App.setDomText(n, t);
+        else if (n && n.textContent !== t) n.textContent = t;
+      };
       // Bar fills tolerate detached/mock receivers the same way setDomText does
-      var setBar = (typeof this.setBarFill === 'function') ? this.setBarFill.bind(this)
-        : function(el, pct) {
-            if (!el || !el.style) return;
-            var p = (typeof pct === 'number' && Number.isFinite(pct)) ? pct : 0;
-            var frac = p / 100;
-            if (frac < 0) frac = 0; else if (frac > 1) frac = 1;
-            el.style.width = '';
-            el.style.transform = 'scaleX(' + frac + ')';
-          };
+      var setBar = function(el, pct) {
+        if (typeof self.setBarFill === 'function') self.setBarFill(el, pct);
+        else if (el && el.style) {
+          var p = (typeof pct === 'number' && Number.isFinite(pct)) ? pct : 0;
+          var frac = p / 100;
+          if (frac < 0) frac = 0; else if (frac > 1) frac = 1;
+          el.style.width = '';
+          el.style.transform = 'scaleX(' + frac + ')';
+        }
+      };
 
       this.lastHwUpdate = Date.now();
       this.lastHwData = data;
@@ -6692,11 +6778,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       // Laptop Battery Telemetry from Lively host
       var batteryPct = typeof data.BatteryPercent === 'number' ? data.BatteryPercent :
                        (typeof data.BatteryLevel === 'number' ? (data.BatteryLevel <= 1.0 ? Math.round(data.BatteryLevel * 100) : Math.round(data.BatteryLevel)) : null);
-      var hasNoBatteryStatus = (typeof data.BatteryStatus === 'string' && /^(no battery|nobattery|notpresent|none|unknown)$/i.test(data.BatteryStatus.trim())) || data.HasBattery === false;
-      if (hasNoBatteryStatus) {
-        this.hasPhysicalBattery = false;
-        this.hideBatteryRow();
-      } else if (batteryPct !== null && batteryPct >= 0 && batteryPct <= 100) {
+
+      if (batteryPct !== null && batteryPct >= 0 && batteryPct <= 100) {
         var isCharging = data.BatteryStatus === 'Charging' || data.BatteryStatus === 1 || data.BatteryCharging === true;
         var statusStr = (typeof data.BatteryStatus === 'string' && data.BatteryStatus.trim()) ? data.BatteryStatus.trim() : (isCharging ? '⚡ Charging' : 'On Battery');
         this.syncBatteryState({
@@ -6704,6 +6787,12 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           charging: isCharging,
           statusText: statusStr
         });
+      } else if (!this.batteryManager && !this.batteryCorroborated) {
+        if (!this.showBatteryInfo) {
+          if (typeof this.hideBatteryRow === 'function') this.hideBatteryRow();
+        } else {
+          if (typeof this.showBatteryUnavailableMode === 'function') this.showBatteryUnavailableMode();
+        }
       }
 
       // Switch badge to Live
@@ -6776,7 +6865,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       this.simulatedGpuLoad = Math.max(5, Math.min(48, Math.round(this.simulatedGpuLoad + gpuDelta)));
 
       var ramDelta = (Math.random() - 0.5) * 0.4;
-      this.simulatedRamUsed = Math.max(8.0, Math.min(26.0, parseFloat((this.simulatedRamUsed + ramDelta).toFixed(1))));
+      this.simulatedRamUsed = Math.max(8.0, Math.min(26.0, Math.round((this.simulatedRamUsed + ramDelta) * 10) / 10));
       var ramPct = Math.round((this.simulatedRamUsed / this.simulatedRamTotal) * 100);
 
       var diskDelta = (Math.random() - 0.5) * 2;
@@ -7138,12 +7227,16 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       var self = this;
       var pre = new Image();
       pre.onload = function() {
+        pre.onload = null;
+        pre.onerror = null;
         if (self.dom.hudNewsBg && self.dom.hudNewsBg.getAttribute('data-src') === safe) {
           self.dom.hudNewsBg.style.backgroundImage = 'url("' + safe + '")';
           if (self.dom.hudNewsBlock) self.dom.hudNewsBlock.classList.add('has-story-image');
         }
       };
       pre.onerror = function() {
+        pre.onload = null;
+        pre.onerror = null;
         if (self.dom.hudNewsBg && self.dom.hudNewsBg.getAttribute('data-src') === safe) {
           self.dom.hudNewsBg.setAttribute('data-src', '');
           self.dom.hudNewsBg.style.backgroundImage = '';

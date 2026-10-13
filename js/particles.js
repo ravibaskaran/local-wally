@@ -440,15 +440,19 @@
     var count = this.activePrecipCount;
     if (count > 0) {
       if (this.mode === 'SNOW') {
-        // Single Batched Arc Path for Snow
+        // Single Batched Arc Path for Snow (with fast rect for small flakes)
         ctx.fillStyle = COLOR_SNOW;
         ctx.beginPath();
         for (i = 0; i < count; i++) {
           var px = this.pX[i];
           var py = this.pY[i];
           var pr = this.pSize[i];
-          ctx.moveTo(px + pr, py);
-          ctx.arc(px, py, pr, 0, TWO_PI);
+          if (pr <= 1.5) {
+            ctx.rect(px - pr, py - pr, pr * 2, pr * 2);
+          } else {
+            ctx.moveTo(px + pr, py);
+            ctx.arc(px, py, pr, 0, TWO_PI);
+          }
         }
         ctx.fill();
       } else {

@@ -97,7 +97,7 @@
         </section>
 
         <!-- Google-Style Space-Efficient Multi-Tab SVG Forecast Chart -->
-        <section id="hud-forecast-card" class="hud-forecast-card hud-card-interactive" aria-label="Hourly Forecast Telemetry" tabindex="0" role="button" aria-haspopup="dialog" title="Hourly Forecast Telemetry (Click to inspect 24h timeline)">
+        <section id="hud-forecast-card" class="hud-forecast-card hud-card-interactive" aria-label="Hourly Forecast Telemetry" tabindex="0" role="region" aria-haspopup="dialog" title="Hourly Forecast Telemetry (Click to inspect 24h timeline)">
           <div class="forecast-tab-bar" role="tablist" aria-label="Forecast Metrics">
             <button class="forecast-tab is-active" data-tab="temp" role="tab" aria-selected="true" type="button" title="Temperature">Temp</button>
             <button class="forecast-tab" data-tab="feels_like" role="tab" aria-selected="false" type="button" title="Feels Like">Feels</button>
@@ -143,7 +143,7 @@
         </section>
 
         <!-- Dynamic Day / Night Ephemeris Block -->
-        <section id="hud-ephemeris-card" class="hud-celestial-block hud-card-interactive" aria-label="Day and Night Ephemeris Telemetry" tabindex="0" role="button" aria-haspopup="dialog" title="Day & Night Ephemeris: Glanceable outlook, celestial tracking, and solar cycles (Click to inspect details)">
+        <section id="hud-ephemeris-card" class="hud-celestial-block hud-card-interactive" aria-label="Day and Night Ephemeris Telemetry" tabindex="0" role="region" aria-haspopup="dialog" title="Day & Night Ephemeris: Glanceable outlook, celestial tracking, and solar cycles (Click to inspect details)">
           <!-- Daytime 3-Card Row: Rain Outlook | Feels-Like Peak | Golden Hour / Daylight Left -->
           <div id="hud-ephemeris-sun-row" class="hud-ephemeris-grid hud-ephemeris-sun">
             <div id="ephemeris-day-rain" class="ephemeris-item" tabindex="0" role="group" aria-label="Rain Outlook" title="Rain Outlook">
@@ -474,7 +474,7 @@
     <!-- Layer 3.5: Companion Bento Dock - Media Player & Pomodoro Focus Timer -->
     <aside id="dock-media-focus" class="dock-media-focus top-right" aria-label="Media and Focus Productivity Dock">
       <!-- Left Card: Pomodoro Focus Timer -->
-      <section id="pomodoro-card" class="dock-card pomo-card hud-card-interactive" aria-label="Pomodoro Focus Timer" tabindex="0" role="button" aria-haspopup="dialog" title="Pomodoro Focus Timer (Click to inspect focus controls)">
+      <section id="pomodoro-card" class="dock-card pomo-card hud-card-interactive" aria-label="Pomodoro Focus Timer" tabindex="0" role="region" aria-haspopup="dialog" title="Pomodoro Focus Timer (Click to inspect focus controls)">
         <div class="dock-card-header">
           <div class="dock-card-title-group">
             <svg class="bento-icon pomo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -503,7 +503,7 @@
       </section>
 
       <!-- Right Card: Universal Windows SMTC Media Player & Visualizer -->
-      <section id="media-card" class="dock-card media-card hud-card-interactive" aria-label="Windows Media Player" tabindex="0" role="button" aria-haspopup="dialog" title="Windows Media Player & 60 FPS Visualizer (Click to inspect track)">
+      <section id="media-card" class="dock-card media-card hud-card-interactive" aria-label="Windows Media Player" tabindex="0" role="region" aria-haspopup="dialog" title="Windows Media Player & 60 FPS Visualizer (Click to inspect track)">
         <div class="dock-card-header">
           <div class="dock-card-title-group">
             <svg class="bento-icon media-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>

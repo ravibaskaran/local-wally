@@ -273,6 +273,7 @@
       var defaultLoc = (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.defaultLocation) || {};
       var defCity = defaultLoc.city || 'Tokyo';
       var defCountry = defaultLoc.country || 'Japan';
+      var defCountryCode = defaultLoc.countryCode || (defCity === 'Tokyo' ? 'JP' : '');
       var defLat = typeof defaultLoc.latitude === 'number' ? defaultLoc.latitude : 35.6762;
       var defLon = typeof defaultLoc.longitude === 'number' ? defaultLoc.longitude : 139.6503;
 
@@ -282,6 +283,7 @@
           city: defCity,
           region: 'Local Region',
           country: defCountry,
+          countryCode: defCountryCode,
           latitude: defLat,
           longitude: defLon,
           isOffline: true

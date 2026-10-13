@@ -138,7 +138,16 @@
      * the background after boot painted a persisted location.
      */
     onLocationChanged: function(cb) {
-      if (typeof cb === 'function') this._locationChangedListeners.push(cb);
+      if (typeof cb === 'function' && this._locationChangedListeners.indexOf(cb) === -1) {
+        this._locationChangedListeners.push(cb);
+      }
+    },
+
+    offLocationChanged: function(cb) {
+      var idx = this._locationChangedListeners.indexOf(cb);
+      if (idx !== -1) {
+        this._locationChangedListeners.splice(idx, 1);
+      }
     },
 
     _notifyLocationChanged: function(loc) {
@@ -313,7 +322,7 @@
               var defLon = typeof defaultLoc.longitude === 'number' ? defaultLoc.longitude : 139.6503;
               var defCity = defaultLoc.city || 'Tokyo';
               var defCountry = defaultLoc.country || 'Japan';
-              var defCountryCode = defaultLoc.countryCode || ''; // unknown stays unknown (v0.8.14)
+              var defCountryCode = defaultLoc.countryCode || (defCity === 'Tokyo' ? 'JP' : '');
               cb(formatLocation(defLat, defLon, defCity, 'Local Region', defCountry, defCountryCode, 'default'));
             });
         }
@@ -781,7 +790,7 @@
         numLon = defLon;
         city = city || defCity;
         country = country || defCountry;
-        countryCode = countryCode || ''; // unknown stays unknown (v0.8.14)
+        countryCode = countryCode || (city === 'Tokyo' ? 'JP' : '');
       }
       return {
         latitude: Math.round(numLat * 10000) / 10000,
@@ -2785,18 +2794,21 @@
         var cleanCity = (city && String(city).trim()) || 'Local';
         var cleanCountry = (countryCode && String(countryCode).trim().toUpperCase()) || '';
 
+        var queryCity = cleanCity;
+        if (/^bengaluru$/i.test(cleanCity)) {
+          queryCity = 'Bengaluru OR Bangalore';
+        }
+
         /**
-         * Region ladder tiers (v0.8.9; one-per-window accounting since
-         * v0.8.11 R01): a small town like 'Arsikere' legitimately returns
-         * zero keyword hits; tiers widen to country top stories, then a
-         * world pass. Each tier issues exactly ONE keyed GET through
-         * _keyedNewsRequest; the next tier pends for the next eligible
-         * window (see _runKeyedTier).
+         * Region ladder tiers: tier 0 = city keyword search with language=en,
+         * tier 1 = country top stories with language=en. If both come back empty,
+         * Currents rejects cleanly so the cross-provider ladder falls through to
+         * Google News instead of serving unrelated international wire stories.
          */
         var tierKey = 'currents|' + cleanCity.toLowerCase() + '|' + cleanCountry;
         var tiers = [
           { tier: 0, run: function() {
-              var url = 'https://api.currentsapi.services/v1/search?keywords=' + encodeURIComponent(cleanCity);
+              var url = 'https://api.currentsapi.services/v1/search?keywords=' + encodeURIComponent(queryCity) + '&language=en';
               if (cleanCountry && cleanCountry.length === 2) {
                 url += '&country=' + encodeURIComponent(cleanCountry.toLowerCase());
               }
@@ -2811,16 +2823,8 @@
               if (!cleanCountry || cleanCountry.length !== 2) {
                 return Promise.reject(new Error('No country code for Currents country tier'));
               }
-              var url = 'https://api.currentsapi.services/v1/latest?country=' + encodeURIComponent(cleanCountry.toLowerCase());
+              var url = 'https://api.currentsapi.services/v1/latest?country=' + encodeURIComponent(cleanCountry.toLowerCase()) + '&language=en';
               return self._keyedNewsRequest('currents', url, 6000, { 'Authorization': key })
-                .then(function(res) {
-                  if (!res.ok) throw new Error('Currents HTTP ' + res.status);
-                  return res.json();
-                })
-                .then(self._normalizeCurrentsPayload);
-            } },
-          { tier: 2, run: function() {
-              return self._keyedNewsRequest('currents', 'https://api.currentsapi.services/v1/latest', 6000, { 'Authorization': key })
                 .then(function(res) {
                   if (!res.ok) throw new Error('Currents HTTP ' + res.status);
                   return res.json();
@@ -3211,7 +3215,13 @@
     },
 
     _readNewsTierState: function(tierKey) {
-      if (this._newsVariantTier[tierKey]) return this._newsVariantTier[tierKey];
+      if (this._newsVariantTier[tierKey]) {
+        if (this._newsVariantTier[tierKey].tier >= 2 && tierKey.indexOf('currents|') === 0) {
+          delete this._newsVariantTier[tierKey];
+          return null;
+        }
+        return this._newsVariantTier[tierKey];
+      }
       try {
         if (typeof localStorage !== 'undefined') {
           var raw = localStorage.getItem(this._NEWS_TIER_STORE_KEY);
@@ -3219,6 +3229,11 @@
             var parsed = JSON.parse(raw);
             if (parsed && parsed[tierKey] && typeof parsed[tierKey].tier === 'number' &&
                 (parsed[tierKey].status === 'ok' || parsed[tierKey].status === 'pending')) {
+              if (parsed[tierKey].tier >= 2 && tierKey.indexOf('currents|') === 0) {
+                delete parsed[tierKey];
+                try { localStorage.setItem(this._NEWS_TIER_STORE_KEY, JSON.stringify(parsed)); } catch (e2) {}
+                return null;
+              }
               this._newsVariantTier[tierKey] = parsed[tierKey];
               return parsed[tierKey];
             }
@@ -3303,7 +3318,7 @@
       var countryFallbackTier = null;
       if (!remembered && countryTierKey) {
         var countryState = self._readNewsTierState(countryTierKey);
-        if (countryState && countryState.status === 'ok' && countryState.tier >= 1) {
+        if (countryState && countryState.status === 'ok' && countryState.tier >= 1 && countryState.tier < tiers.length) {
           countryFallbackTier = countryState.tier;
         }
       }
@@ -3686,32 +3701,32 @@
 
               return payload;
             });
-        }).catch(function(err) {
-          console.error('[ApiService] Pipeline failed:', err);
-          // Return any expired cache or mock data as safe harbor
-          if (global.CacheManager) {
-            var anyCached = global.CacheManager.getAny();
-            if (anyCached) {
-              anyCached.fromCache = true;
-              anyCached.isEmergency = true;
-              if (!anyCached.hourlyForecast && anyCached.weather) {
-                anyCached.hourlyForecast = self.normalizeForecastPoints([], anyCached.weather, anyCached.aqi);
-              }
-              if (anyCached.weather && !anyCached.weather.hourlyForecast) {
-                anyCached.weather.hourlyForecast = anyCached.hourlyForecast;
-              }
-              if (!anyCached.hourlyAnalytics) {
-                anyCached.hourlyAnalytics = anyCached.hourlyForecast || [];
-              }
-              if (anyCached.weather && !anyCached.weather.hourlyAnalytics) {
-                anyCached.weather.hourlyAnalytics = anyCached.hourlyAnalytics;
-              }
-              return anyCached;
-            }
-            return global.CacheManager.getMockData();
-          }
-          throw err;
         });
+      }).catch(function(err) {
+        console.error('[ApiService] Pipeline failed:', err);
+        // Return any expired cache or mock data as safe harbor
+        if (global.CacheManager) {
+          var anyCached = global.CacheManager.getAny();
+          if (anyCached) {
+            anyCached.fromCache = true;
+            anyCached.isEmergency = true;
+            if (!anyCached.hourlyForecast && anyCached.weather) {
+              anyCached.hourlyForecast = self.normalizeForecastPoints([], anyCached.weather, anyCached.aqi);
+            }
+            if (anyCached.weather && !anyCached.weather.hourlyForecast) {
+              anyCached.weather.hourlyForecast = anyCached.hourlyForecast;
+            }
+            if (!anyCached.hourlyAnalytics) {
+              anyCached.hourlyAnalytics = anyCached.hourlyForecast || [];
+            }
+            if (anyCached.weather && !anyCached.weather.hourlyAnalytics) {
+              anyCached.weather.hourlyAnalytics = anyCached.hourlyAnalytics;
+            }
+            return anyCached;
+          }
+          return global.CacheManager.getMockData();
+        }
+        throw err;
       });
     }
   };
