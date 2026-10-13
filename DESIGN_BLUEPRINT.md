@@ -1461,3 +1461,21 @@ Replaces the fixed moon row with three nocturnal cards:
 
 ### 40.5 Verification
 - New scratch suite `test_v089_news_cascade.js`: ladder widening + protocol-safe image mapping + tier memory (asserts the exhausted city tier is never re-tried), exact cross-provider order (keyed before keyless), per-leg attempt marking, honest terminal state, static rebrand/CSS/keys checks. Full 10-suite battery green with clean exits; `node --check` clean. Scratch SHA-256 in release notes.
+
+## 41. Customize-Panel Manual Location (v0.8.10)
+
+### 41.1 The `customLocation` Property (single source of truth = the property)
+- LivelyProperties.json **first control**: `customLocation` textbox — "Custom Location (blank = Automatic) — e.g. Bangalore or 12.97,77.59". Blank = automatic detection; a value geocodes once (keyless Open-Meteo; coordinates or an alias both accepted), persists in `LIVELY_HUD_LOCATION_MANUAL` with the RESOLVED object, and overrides the whole resolver cascade (v0.8.7 layers below it).
+- Rationale (the trigger report): silent IP detection pinned a district-away ISP city (Arsikere) for a Bangalore user; a visible Customize-panel override — not just the `D` panel — is what a wallpaper actually needs.
+
+### 41.2 Round-Trip Discipline
+- The dispatcher case `customLocation`: blank → `clearManualLocation()` + resync; a value matching the stored record (`manualLocationMatches`: entry name OR resolved city, case-insensitive; coordinates within 0.05°) short-circuits — boot re-delivery and host round-trips never re-geocode.
+- Geocode path canonicalizes the record's entry to the geocoder's name (Bangalore → Bengaluru); the matcher accepts EITHER spelling so the user's typed alias never churns.
+- D-panel actions publish back (`syncCustomLocationProperty`): suggestion/city-apply → the canonical resolved city; Use-automatic → blank. Host writes go through `livelyPropertyValueChanged` (Lively persists + re-delivers into the case above), preview/tests replay via `LivelyBridge.emitProperty`; neither present → cosmetic no-op (the localStorage record stays the truth).
+- `customLocation` is in `SETTINGS_PROPNAMES` — export/import (v0.8.6) carries it across machines; a location record without it still self-resolves (`_resolveManual` cache-miss re-geocode).
+
+### 41.3 Hardening
+- `_writeManualRecord` falls back to the in-memory record when storage is ABSENT (not only when it throws) — matching the #14 family resilience; `_readManualRecord` unchanged (memory fallback already present).
+
+### 41.4 Verification
+- New scratch suite `test_v0810_location_property.js`: guard semantics (names/aliases/coords tolerance/rejections — geocode not re-triggered), property publishing paths (host/bridge/neither), static wiring (dispatcher case incl. blank-clear + short-circuit, whitelist membership, schema first-control + blank default), export payload behavior (storage record exported; untracked property never fabricated; tracked property carried). Full 11-suite battery green with clean exits; `node --check` clean; schema JSON valid. Scratch SHA-256 in release notes.

@@ -403,14 +403,14 @@
 
     _writeManualRecord: function(rec) {
       try {
-        global.localStorage && global.localStorage.setItem(
-          this._LOCATION_MANUAL_CACHE_KEY,
-          JSON.stringify(rec)
-        );
+        if (global.localStorage) {
+          global.localStorage.setItem(this._LOCATION_MANUAL_CACHE_KEY, JSON.stringify(rec));
+          return;
+        }
       } catch (e) {
-        // Storage unavailable — manual entry stays memory-only this session
-        this._memoryManualRecord = rec;
+        // Storage unavailable — fall through to the memory-only record
       }
+      this._memoryManualRecord = rec;
     },
 
     /**
@@ -478,7 +478,10 @@
         }
         var top = list[0];
         var rec = {
-          entry: { type: 'name', name: raw },
+          // Canonicalize: the record stores the geocoder's spelling
+          // (Bengaluru) so property re-delivery of either the user's alias
+          // (Bangalore) or the canonical name matches (v0.8.10).
+          entry: { type: 'name', name: top.name || raw },
           resolved: self._formatLocation(
             top.latitude, top.longitude, top.name, top.admin1 || '',
             top.country || '', top.country_code || 'US', 'manual'
@@ -496,6 +499,39 @@
         // best effort
       }
       this._memoryManualRecord = null;
+    },
+
+    /**
+     * True when the requested manual entry already matches the stored record
+     * (v0.8.10): guards Customize-panel re-delivery and property round-trips
+     * from re-geocoding an identical entry. Name entries compare
+     * case-insensitively; coordinate entries compare within ~5 km (0.05°) so
+     * re-typing coordinates at different precision still matches.
+     */
+    manualLocationMatches: function(text) {
+      var rec = this._readManualRecord();
+      if (!text || typeof text !== 'string' || !rec || !rec.entry) return false;
+      var t = text.trim().toLowerCase();
+      if (rec.entry.type === 'name') {
+        // The user may re-deliver either the canonical geocoded name
+        // (Bengaluru) or the alias they typed (Bangalore) — both match.
+        var candidates = [];
+        if (rec.entry.name) candidates.push(String(rec.entry.name));
+        if (rec.resolved && rec.resolved.city) candidates.push(String(rec.resolved.city));
+        for (var i = 0; i < candidates.length; i++) {
+          if (candidates[i].trim().toLowerCase() === t) return true;
+        }
+        return false;
+      }
+      if (rec.entry.type === 'coords') {
+        var m = /^(-?\d{1,3}(?:\.\d+)?),\s*(-?\d{1,3}(?:\.\d+)?)$/.exec(text.trim());
+        if (m) {
+          return Math.abs(parseFloat(m[1]) - rec.entry.latitude) < 0.05 &&
+                 Math.abs(parseFloat(m[2]) - rec.entry.longitude) < 0.05;
+        }
+        return false;
+      }
+      return false;
     },
 
     /**

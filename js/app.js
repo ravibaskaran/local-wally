@@ -2443,6 +2443,34 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
               self.updateClock();
             }
             break;
+          case 'customLocation': {
+            // Manual location from the Lively Customize panel (v0.8.10):
+            // blank = automatic. Re-delivered values that already match the
+            // stored record short-circuit (no re-geocode churn on boot or
+            // property round-trips).
+            var locText = String(val == null ? '' : val).trim();
+            var locApi = global.ApiService;
+            if (locApi) {
+              if (!locText) {
+                locApi.clearManualLocation();
+                self.loadAtmosphere(true);
+                break;
+              }
+              if (locApi.manualLocationMatches && locApi.manualLocationMatches(locText)) {
+                break;
+              }
+              locApi.setManualLocation(locText).then(function(res) {
+                if (res && res.ok) {
+                  self.loadAtmosphere(true);
+                } else {
+                  self.updateLocationDiagnostics();
+                }
+              }).catch(function() {
+                self.updateLocationDiagnostics();
+              });
+            }
+            break;
+          }
           case 'settingsExport':
             // Customize-panel button (Lively fires a property event on click)
             self.exportSettings();
@@ -3318,6 +3346,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         var resolved = res.location;
         self.setDomText(self.dom.locStatusLabel,
           'Manual location: ' + resolved.city + (resolved.country ? ', ' + resolved.country : '') + ' — refreshing...');
+        self.syncCustomLocationProperty(resolved.city);
         self.loadAtmosphere(true);
       }).catch(function(err) {
         self.setDomText(self.dom.locStatusLabel, 'Manual location failed: ' + (err && err.message));
@@ -3336,7 +3365,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       var input = this.dom.locManageInput;
       if (input) input.value = '';
       this.setDomText(this.dom.locStatusLabel, hadManual ? 'Switching back to automatic location...' : 'Already using automatic location');
-      if (hadManual) this.loadAtmosphere(true);
+      if (hadManual) {
+        this.syncCustomLocationProperty('');
+        this.loadAtmosphere(true);
+      }
     },
 
     _handleLocationInput: function() {
@@ -3392,7 +3424,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         var resolved = res.location;
         self.setDomText(self.dom.locStatusLabel,
           'Manual location: ' + resolved.city + (resolved.country ? ', ' + resolved.country : '') + ' — refreshing...');
-        if (self.showDiagnostics) self.loadAtmosphere(true);
+        self.syncCustomLocationProperty(resolved.city);
+        self.loadAtmosphere(true);
       }).catch(function(err) {
         self.setDomText(self.dom.locStatusLabel, 'Manual location failed: ' + (err && err.message));
       });
@@ -3418,6 +3451,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
      * emitter instead.
      */
     SETTINGS_PROPNAMES: [
+      'customLocation',
       'hudPosition', 'glassBlur', 'particleDensity', 'tempUnit', 'refreshInterval',
       'wallpaperProvider', 'unsplashApiKey', 'wallhavenApiKey', 'pexelsApiKey',
       'pixabayApiKey', 'weatherSimulation', 'contrastMode', 'showMediaFocusDock',
@@ -3530,6 +3564,25 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         return { ok: false, error: 'Invalid localStorage section' };
       }
       return { ok: true, payload: data };
+    },
+
+    /**
+     * Publishes the manual-location property so the Lively Customize panel
+     * (and the property model) reflects the D-panel selection (v0.8.10).
+     * Host writes go through livelyPropertyValueChanged; the preview replays
+     * via the bridge emitter. The dispatcher case short-circuits re-delivery.
+     */
+    syncCustomLocationProperty: function(value) {
+      try {
+        if (typeof value !== 'string') return;
+        if (typeof global.livelyPropertyValueChanged === 'function') {
+          global.livelyPropertyValueChanged('customLocation', value);
+        } else if (global.LivelyBridge && global.LivelyBridge.emitProperty) {
+          global.LivelyBridge.emitProperty('customLocation', value);
+        }
+      } catch (e) {
+        // The localStorage record carries the truth; panel sync is cosmetic.
+      }
     },
 
     /**

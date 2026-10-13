@@ -1,4 +1,9 @@
 {
+  "customLocation": {
+    "type": "textbox",
+    "value": "",
+    "text": "Custom Location (blank = Automatic) — e.g. Bangalore or 12.97,77.59"
+  },
   "hudPosition": {
     "type": "dropdown",
     "value": 0,
@@ -240,6 +245,6 @@
   },
   "settingsHelp": {
     "type": "label",
-    "value": "Buttons above export/import your full setup (keys included). Manual location with city autocomplete, backup status and diagnostics live in the HUD's own panel: press D with the mouse over the desktop."
+    "value": "Custom Location at the top sets your city manually (blank = automatic). Buttons below export/import your full setup (keys included). City autocomplete, backup status and diagnostics live in the HUD panel: press D over the desktop."
   }
 }

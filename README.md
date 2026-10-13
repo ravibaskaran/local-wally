@@ -270,6 +270,12 @@ local-wally/
 
 ## 🛡️ Recent Updates & Quality Improvements
 
+### Version 0.8.10 — Manual Location in the Customize Panel
+- **Custom Location is now the first control in Lively's Customize settings**: right-click the wallpaper → **Customize Wallpaper** → type your city into **"Custom Location (blank = Automatic)"** — e.g. `Bangalore` (aliases welcome), a precise name, or raw `12.97, 77.59`. Blank = automatic detection. The entry geocodes once (keyless), persists, and overrides auto-detection everywhere — permanently until cleared.
+- **Why**: IP-based auto-detection can pin a city a district away (an ISP exchange city — your report: auto said *Arsikere*, you're in Bangalore). The property-based override fixes that at the source, rides the backup/restore across machines, and its re-delivery is short-circuited (an identical value never re-geocodes).
+- The two surfaces stay in sync: picking a city in the `D` panel's autocomplete updates the same Customize field (via the host), and "Use automatic"/blanking the field restores detection.
+- Hardening bonus: when localStorage is unavailable, the manual record now survives in memory for the session (matching the cursor/history resilience rule) instead of silently vanishing.
+
 ### Version 0.8.9 — News That Always Fills, Story-Image Card, Tightened Telemetry, Key Links
 - **News reliability (the "Regional dispatch unavailable" fix)**: your report showed the card dead on *Arsikere, India* — a small town where city-keyword searches legitimately return **zero results** on NewsAPI/Currents, after which the app fell to the (mostly dead) keyless chain. New behavior: a **region ladder** widens city keywords → **country top stories** → a world pass, per provider — and the deepest working tier is *remembered* so later attempts cost exactly one call. If a provider comes up empty, the app hands to the **other keyed provider before** ever touching the keyless chain. Every leg stays inside the quota firewall.
 - **News card with story image**: headlines with images (Currents/NewsAPI supply them) now paint a background picture behind a **fixed dark scrim + text-shadow** — the card text is legible regardless of image brightness; images load off-DOM and only appear on success (no broken-image flash); imageless stories render the classic card.
