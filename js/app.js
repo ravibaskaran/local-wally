@@ -1673,6 +1673,13 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
       this.cacheDom();
       this.restoreCachedWallpaper();
+      // 48-hour artifact retention (v0.8.18): sweep on boot and daily; the
+      // daily tick skips while parked so a sleeping wallpaper does no work.
+      this.purgeStaleArtifacts();
+      var purgeSelf = this;
+      this._artifactPurgeTimer = setInterval(function() {
+        if (!purgeSelf.isPlaybackPaused) purgeSelf.purgeStaleArtifacts();
+      }, 24 * 60 * 60 * 1000);
       this.initEngines();
       this.applyInitialConfig();
       this.updateGpuDiagnostics();
@@ -1830,6 +1837,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         unsplashCredit: document.getElementById('unsplash-credit'),
         diagPanel: document.getElementById('diagnostic-panel'),
         diagNewsStatus: document.getElementById('diag-news-status'),
+        diagWallpaperStatus: document.getElementById('diag-wallpaper-status'),
         diagGpu: document.getElementById('diag-gpu'),
         diagExportBtn: document.getElementById('diag-export-settings'),
         diagImportBtn: document.getElementById('diag-import-settings'),
@@ -3304,10 +3312,38 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           this.updateThemeDiagnostics();
           this.updateLocationDiagnostics();
           this.updateNewsDiagnostics();
+          this.updateWallpaperDiagnostics();
         } else {
           this.dom.diagPanel.classList.remove('is-active');
           this.hideLocationSuggestions();
         }
+      }
+    },
+
+    /**
+     * D-panel wallpaper source line (v0.8.18): always answers "where is the
+     * wallpaper from?" even when the on-screen watermark is missed —
+     * provider label + the exact source/URL from the cached credit.
+     */
+    updateWallpaperDiagnostics: function() {
+      if (!this.dom.diagWallpaperStatus) return;
+      try {
+        var ls = global.localStorage;
+        var url = ls ? (ls.getItem('local_wally_cached_bg_url') || '') : '';
+        var provider = ls ? (ls.getItem('local_wally_cached_bg_provider') || '') : '';
+        var photographer = ls ? (ls.getItem('local_wally_cached_bg_photographer') || '') : '';
+        var photographerUrl = ls ? (ls.getItem('local_wally_cached_bg_photographer_url') || '') : '';
+        if (!url) {
+          this.setDomText(this.dom.diagWallpaperStatus, 'Wallpaper source: none cached yet (applies after the next wallpaper load)');
+          return;
+        }
+        var label = (typeof this._wallpaperCreditLabel === 'function')
+          ? this._wallpaperCreditLabel(provider || this._wallpaperProviderFromUrl(url), photographer)
+          : (provider || 'Wallpaper');
+        var source = photographerUrl || url;
+        this.setDomText(this.dom.diagWallpaperStatus, 'Wallpaper source: ' + (label || 'Unknown') + ' — ' + source);
+      } catch (e) {
+        this.setDomText(this.dom.diagWallpaperStatus, 'Wallpaper source: unavailable');
       }
     },
 
@@ -6362,8 +6398,11 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
       var isDesktopDummy = (level === 1.0 && charging === true && chargingTime === 0 && dischargingTime === Infinity);
       if (isDesktopDummy && !this.batteryCorroborated) {
-        this.hasPhysicalBattery = false;
-        this.hideBatteryRow();
+        // v0.8.18: the dummy signature is not proof of "no battery" — Windows
+        // laptops on AC can report exactly this when charge times are unknown.
+        // Show the row in an honest AC state instead of vanishing (no invented
+        // numbers); real events upgrade it to live telemetry when they fire.
+        this.showBatteryAcMode();
         return;
       }
 
@@ -6393,6 +6432,37 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
 
       this.showBatteryRow(pct, charging, statusText);
+    },
+
+    /**
+     * Honest AC-mode battery row (v0.8.18): shown when the host exposes only
+     * the "no usable battery data" dummy. Never invents a percentage — the
+     * row states AC Power with an unavailable level until a real battery
+     * event corroborates live telemetry.
+     */
+    showBatteryAcMode: function() {
+      if (!this.showBatteryInfo) {
+        this.hideBatteryRow();
+        return;
+      }
+      if (this.dom.hwBatteryRow) {
+        this.dom.hwBatteryRow.classList.remove('is-hidden');
+        if (this.dom.hwBatteryRow.style && this.dom.hwBatteryRow.style.setProperty) {
+          this.dom.hwBatteryRow.style.setProperty('display', 'flex', 'important');
+        } else if (this.dom.hwBatteryRow.style) {
+          this.dom.hwBatteryRow.style.display = 'flex';
+        }
+      }
+      if (this.dom.hwBatteryVal) this.dom.hwBatteryVal.textContent = '--%';
+      if (this.dom.hwBatteryStatus) this.dom.hwBatteryStatus.textContent = 'AC Power';
+      if (this.dom.hwBatteryIcon) {
+        this.dom.hwBatteryIcon.textContent = '⚡';
+        this.dom.hwBatteryIcon.className = 'hw-battery-badge is-charging';
+      }
+      if (this.dom.hwBatteryBar) {
+        this.setBarFill(this.dom.hwBatteryBar, 0);
+        this.dom.hwBatteryBar.className = 'hw-bar-fill hw-battery-fill';
+      }
     },
 
     showBatteryRow: function(pct, isCharging, statusText) {
@@ -6856,6 +6926,49 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       return null;
     },
 
+    /**
+     * 48-hour artifact retention (v0.8.18, user request): downloaded-artifact
+     * CACHES are swept on boot and daily so nothing keeps growing. Kinds:
+     *  - keyword-image cache entries older than the TTL (legacy entries
+     *    without a timestamp are treated as expired — it is only a cache).
+     *  - the news story snapshot envelope when older than the TTL (stories
+     *    from two days ago are stale anyway; a fresh fetch backfills).
+     * NOT touched: the single wallpaper url/credit reference (not growth —
+     * it powers the instant-boot paint) and the bounded tier memory (≤40).
+     */
+    ARTIFACT_TTL_MS: 48 * 60 * 60 * 1000,
+
+    purgeStaleArtifacts: function() {
+      var ttl = this.ARTIFACT_TTL_MS;
+      var now = Date.now();
+      try {
+        if (!global.localStorage) return;
+        var raw = global.localStorage.getItem('LIVELY_HUD_NEWS_IMG_CACHE');
+        if (raw) {
+          var list = null;
+          try { list = JSON.parse(raw); } catch (e) { list = null; }
+          if (Array.isArray(list)) {
+            var kept = list.filter(function(en) {
+              return en && typeof en.at === 'number' && (now - en.at) < ttl;
+            });
+            if (kept.length !== list.length) {
+              global.localStorage.setItem('LIVELY_HUD_NEWS_IMG_CACHE', JSON.stringify(kept));
+            }
+          } else {
+            global.localStorage.removeItem('LIVELY_HUD_NEWS_IMG_CACHE');
+          }
+        }
+        var snapRaw = global.localStorage.getItem('LIVELY_HUD_NEWS_SNAPSHOT');
+        if (snapRaw) {
+          var env = null;
+          try { env = JSON.parse(snapRaw); } catch (e2) { env = null; }
+          if (!env || typeof env.timestamp !== 'number' || (now - env.timestamp) > ttl) {
+            global.localStorage.removeItem('LIVELY_HUD_NEWS_SNAPSHOT');
+          }
+        }
+      } catch (e3) {}
+    },
+
     _writeNewsImageCache: function(title, url) {
       try {
         if (!global.localStorage) return;
@@ -6867,7 +6980,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           try { var parsed = JSON.parse(raw); if (Array.isArray(parsed)) list = parsed; } catch (e2) { list = []; }
         }
         list = list.filter(function(entry) { return entry && entry.k !== key; });
-        list.push({ k: key, v: url });
+        list.push({ k: key, v: url, at: Date.now() });
         while (list.length > 80) list.shift(); // bounded FIFO
         global.localStorage.setItem('LIVELY_HUD_NEWS_IMG_CACHE', JSON.stringify(list));
       } catch (e) {}

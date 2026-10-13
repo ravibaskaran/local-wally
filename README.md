@@ -141,7 +141,7 @@ You can preview and test Local Wally in any modern browser (Microsoft Edge, Goog
 
 ## ⬆️ Upgrading Local Wally (Keep Your Settings)
 
-Lively keeps your customized values **per wallpaper id**, so a freshly imported zip normally starts from defaults. Two ways to upgrade without re-entering anything:
+Lively keeps your customized values **per wallpaper id**, so a freshly imported zip normally starts from defaults. **Importing a zip can never update an installed wallpaper in place** — Lively has no merge-on-import (verified against its documentation and internals: drag-and-drop import always creates a new library entry with a new id and fresh SaveData). The three ways to upgrade without re-entering anything:
 
 ### Method 1: One-Click Updater (automatic, in-place)
 
@@ -151,14 +151,25 @@ Lively keeps your customized values **per wallpaper id**, so a freshly imported 
 
 No admin rights needed; safe to run repeatedly; it updates the old *and* any duplicate entries. If Lively is holding a file open, switch to another wallpaper and run it again.
 
-### Method 2: Settings Backup (guaranteed fallback, also for new machines)
+### Method 2: Manual ZIP Overlay (zip-only, no script)
+
+The same in-place result as Method 1, done by hand with the release zip:
+
+1. Switch Lively to **another wallpaper** (this releases any file locks).
+2. Download the new **`local-wally.zip`** from the release page and **extract it directly over the installed folder** — by default:
+   `%LocalAppData%\Lively Wallpaper\Library\wallpapers\<your local-wally folder>` — choose **replace** when prompted.
+3. Back in Lively, re-select the wallpaper (or restart Lively). The new files load with **all settings preserved** — the install folder and its storage identity never changed.
+
+> The folder lives next to the other library wallpapers; if you renamed the entry, the folder name matches the original zip name (`local-wally`). No settings live inside it — customization is stored by Lively separately — so replacing files is always safe.
+
+### Method 3: Settings Backup (guaranteed fallback, also for new machines)
 
 1. On the existing wallpaper entry: press <kbd>D</kbd> on the desktop (or **Customise → Export Settings**) and save the JSON file.
 2. Import the new `local-wally.zip` into Lively (this creates a new entry).
-3. On the new entry: **Customise → Import Settings** and pick the JSON file — keys, manual location, units, and preferences return.
+3. On the new entry: **Customise → Import Settings** and pick the JSON file — keys, manual location, units, preferences — and even the last news stories — return.
 4. Delete the old entry once satisfied.
 
-> **Why not just remove and re-add?** Removing the old entry and importing the new zip always mints a new wallpaper id — that is why plain re-imports look like "settings were lost". Both methods above avoid that by either updating in place (Method 1) or carrying the values across (Method 2).
+> **Why not just remove and re-add?** Removing the old entry and importing the new zip always mints a new wallpaper id — that is why plain re-imports look like "settings were lost". All methods above avoid that by either updating in place (1/2) or carrying the values across (3).
 
 ---
 
@@ -292,6 +303,12 @@ local-wally/
 ---
 
 ## 🛡️ Recent Updates & Quality Improvements
+
+### Version 0.8.18 — Photo-Legible News, Battery Reinstated, 48h Artifact Sweep, Wallpaper Source in the Panel
+- **News text on photos is always white now**: with a story photo behind the card, every text element and icon switches to light ink with a stronger shadow — the light theme's dark palette can no longer sit on a dark photo (your screenshot case). The body gets a dark glass instead of the light card, and hover deepens it.
+- **Battery telemetry is back**: the BAT row was silently hidden on machines whose host reports the "no battery data" dummy signature (common on Windows laptops on AC) — it now shows an honest **AC Power** state with no invented percentage, and upgrades itself to live % / charging / time-remaining the moment real battery events fire. The Battery Info switch still hides it.
+- **48-hour artifact retention**: downloaded-artifact caches (keyword-image cache entries, the story snapshot) are swept on boot and daily — nothing keeps growing; aged entries are dropped, fresh ones survive; the sweep does no work while the wallpaper is parked.
+- **"Where is my wallpaper from?" — permanently answerable**: a new line in the diagnostics panel (**press `D`**) names the provider and the exact source URL, derived from the cache or the image hostname, so the source is visible even if the corner watermark is missed.
 
 ### Version 0.8.17 — Independent QA Cycle: Five Real Fixes, Two Legacy Suites Retired Green
 *A fresh QA lab (three new tool families — cross-file static audit, seeded adversarial fuzz, boot/lifecycle matrix — plus archaeology on the two long-standing "known-open" suites) ran against the v0.8.16 baseline. Findings, all fixed:*

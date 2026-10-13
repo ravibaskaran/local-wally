@@ -1626,3 +1626,23 @@ Three independent tool families were built at the v0.8.16 baseline (they now run
 
 ### 48.3 Verification
 - Full gate set now **23 processes**: the 3 QA-lab tools + 20 regression suites (`test_v064_features` and `test_focused_bugfixes` promoted back into the battery). All green with clean exits; `node --check`, JSON validation, `git diff --check` clean. Scratch SHA-256s in the release notes.
+
+## 49. Photo Legibility, Battery Reinstatement, Retention & Source Diagnostics (v0.8.18)
+
+### 49.1 Story-photo contrast (user report: dark ink on dark photo)
+- Root cause: `.hud-news-block.has-story-image` only added a text-shadow; the LIGHT theme's `--text-primary/--text-secondary` (dark ink) still applied over the dark scrim. Fix: story mode now forces `rgba(255,255,255,0.96)` ink on the header/body/footer and every descendant, pure-white bold headlines, a dark translucent glass body (hover deepens), lightened rotation dots and footer divider. The theme's dark palette can no longer sit on a photo.
+
+### 49.2 Battery reinstatement (user: BAT row vanished)
+- The row was hard-hidden (`display:none !important` inline) whenever `navigator.getBattery()` yielded the desktop dummy signature (`level 1, charging, chargingTime 0, dischargingTime ∞`) without corroboration — but Windows laptops on AC can report exactly that. New `showBatteryAcMode()`: the row stays visible in an honest **AC Power** state (`--%`, no invented numbers, ⚡ badge), upgrading to live % / charging / time-remaining the moment a real battery event corroborates. Truly absent APIs still hide the row; the `showBatteryInfo` switch always wins.
+
+### 49.3 48-hour artifact retention (user: stop unbounded growth)
+- `purgeStaleArtifacts()` (TTL `ARTIFACT_TTL_MS = 48h`) runs at boot and on a daily park-aware interval: keyword-image cache entries gain an `at` stamp and aged/legacy-unstamped entries are swept; the story-snapshot envelope is dropped once older than the TTL (a fresh fetch backfills). Deliberately untouched: the single wallpaper url/credit reference (not growth — it powers instant-boot) and the bounded (≤40) tier memory.
+
+### 49.4 Wallpaper source: always answerable
+- New D-panel line (`diag-wallpaper-status`, `updateWallpaperDiagnostics`): provider label (cache → hostname fallback) + exact source URL. "Where is my wallpaper from?" now has a permanent in-app answer independent of the corner watermark.
+
+### 49.5 Zip-based upgrading — research verdict (no implementation)
+- Investigated against Lively's wiki, release notes and schema: **Lively cannot update an installed wallpaper from a .zip in place** — drag-and-drop import always creates a new library entry with a new id and fresh SaveData; no merge/update/Repo-update path exists for local wallpapers. Per the user's instruction, no implementation was attempted. Instead the README now documents the zip-only **Manual ZIP Overlay** (extract the release zip over `%LocalAppData%\Lively Wallpaper\Library\wallpapers\<folder>` — settings preserved) alongside the one-click updater and the settings-backup path.
+
+### 49.6 Verification
+- New `scratch/test_v0818_contrast_battery_purge.js` — story-mode ink/dark-glass rules, AC dummy vs real battery rows vs the property switch, 48h purge (aged/legacy/corrupt/fresh), wallpaper-source diagnostics (derived provider, exact URL, honest empty state), static guards. Battery now **24 processes**, all green with clean exits; syntax/JSON/whitespace gates clean.

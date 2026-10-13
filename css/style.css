@@ -1887,6 +1887,39 @@ html, body {
   text-shadow: 0 1px 10px rgba(0, 0, 0, 0.6), 0 0 2px rgba(0, 0, 0, 0.5);
 }
 
+/* v0.8.18 — photo-legibility: with a story photo behind it, ALL card text
+   and icons switch to light ink regardless of theme. The light theme's dark
+   palette (--text-primary/--text-secondary) must never sit on a photo. */
+.hud-news-block.has-story-image .hud-news-header,
+.hud-news-block.has-story-image .hud-news-header *,
+.hud-news-block.has-story-image .hud-news-body,
+.hud-news-block.has-story-image .hud-news-body *,
+.hud-news-block.has-story-image .hud-news-footer,
+.hud-news-block.has-story-image .hud-news-footer * {
+  color: rgba(255, 255, 255, 0.96);
+}
+.hud-news-block.has-story-image .hud-news-headline {
+  color: #ffffff;
+  font-weight: 600;
+}
+.hud-news-block.has-story-image .hud-news-body {
+  background: rgba(10, 14, 22, 0.30);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+.hud-news-block.has-story-image .hud-news-body:hover {
+  background: rgba(10, 14, 22, 0.44);
+  border-color: rgba(255, 255, 255, 0.24);
+}
+.hud-news-block.has-story-image .hud-news-footer {
+  border-top-color: rgba(255, 255, 255, 0.18);
+}
+.hud-news-block.has-story-image .hud-news-dots .news-dot {
+  background: rgba(255, 255, 255, 0.35);
+}
+.hud-news-block.has-story-image .hud-news-dots .news-dot.is-active {
+  background: rgba(255, 255, 255, 0.95);
+}
+
 .hud-news-block {
   padding: 4px 0 2px;
   display: flex;
