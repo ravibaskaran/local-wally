@@ -860,11 +860,17 @@ html, body {
   transition: opacity 0.25s ease, transform 0.25s ease;
 }
 
-.media-card.is-playing .media-quick-launch {
+.media-card.is-playing .media-quick-launch,
+.media-card.is-audio-active .media-quick-launch {
   display: none !important;
 }
 
-.media-card.is-idle .media-visualizer-wrap {
+.media-card.is-playing .media-visualizer-wrap,
+.media-card.is-audio-active .media-visualizer-wrap {
+  display: flex !important;
+}
+
+.media-card.is-idle:not(.is-audio-active):not(.is-playing) .media-visualizer-wrap {
   display: none !important;
 }
 
@@ -1137,6 +1143,110 @@ html, body {
   filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.3));
 }
 
+.pomo-icon {
+  width: 14px;
+  height: 14px;
+  stroke: var(--accent-rose);
+  filter: drop-shadow(0 0 4px rgba(244, 63, 94, 0.45));
+  transition: transform 0.25s ease;
+}
+
+.media-icon {
+  width: 14px;
+  height: 14px;
+  stroke: var(--accent-cyan);
+  filter: drop-shadow(0 0 4px rgba(56, 189, 248, 0.45));
+  transition: transform 0.25s ease;
+}
+
+.close-icon {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  transition: transform 0.25s ease, stroke 0.2s ease;
+}
+
+.hud-detail-close-btn:hover .close-icon {
+  transform: rotate(90deg) scale(1.1);
+  stroke: var(--accent-rose);
+}
+
+.moon-svg-anim {
+  width: 18px;
+  height: 18px;
+  display: inline-block;
+  vertical-align: middle;
+  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.35));
+  transition: transform 0.25s ease;
+}
+
+.ephemeris-moon-phase-item:hover .moon-svg-anim,
+.moon-badge:hover .moon-svg-anim {
+  transform: scale(1.12);
+  filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.5));
+}
+
+/* Subtle CSS keyframe animations for icons */
+@keyframes icon-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+
+@keyframes icon-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-1.5px); }
+}
+
+@keyframes icon-twinkle {
+  0%, 100% { opacity: 0.85; transform: scale(1) rotate(0deg); }
+  50% { opacity: 1; transform: scale(1.12) rotate(12deg); filter: drop-shadow(0 0 7px rgba(192, 132, 252, 0.8)); }
+}
+
+@keyframes icon-shimmer {
+  0%, 100% { filter: drop-shadow(0 0 4px rgba(251, 191, 36, 0.4)); }
+  50% { filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.8)); }
+}
+
+.hud-location-badge:hover .bento-icon {
+  animation: icon-float 1.8s ease-in-out infinite;
+}
+
+.metric-card:hover .humidity-icon,
+.metric-card:hover .precip-icon {
+  animation: icon-float 1.5s ease-in-out infinite;
+}
+
+.ephemeris-item:hover .peak-icon {
+  animation: icon-pulse 1.6s ease-in-out infinite;
+}
+
+.ephemeris-item:hover .sun-icon,
+.ephemeris-item:hover .golden-icon {
+  animation: icon-shimmer 2s ease-in-out infinite;
+}
+
+.ephemeris-item:hover .event-icon {
+  animation: icon-twinkle 2.2s ease-in-out infinite;
+}
+
+.hud-hw-block:hover .hw-icon {
+  animation: icon-pulse 1.8s ease-in-out infinite;
+}
+
+.hud-news-block:hover .news-icon {
+  animation: icon-float 2s ease-in-out infinite;
+}
+
+.pomo-card:hover .pomo-icon {
+  animation: icon-pulse 2s ease-in-out infinite;
+}
+
+.media-card:hover .media-icon,
+.media-card.is-playing .media-icon,
+.media-card.is-audio-active .media-icon {
+  animation: icon-pulse 1.5s ease-in-out infinite;
+}
+
 /* ==========================================================================
    Column 1: Primary Weather Components
    ========================================================================== */
@@ -1193,6 +1303,21 @@ html, body {
   text-overflow: ellipsis;
 }
 
+/* Hero Ceiling Atmospheric Zone (Option B) */
+.hud-hero-ceiling {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.hud-hero-ceiling > *:not(.hud-wind-canvas) {
+  position: relative;
+  z-index: 1;
+}
+
 /* Main Temperature & Condition Summary */
 .hud-temp-block {
   position: relative;
@@ -1213,7 +1338,7 @@ html, body {
   height: 100%;
   pointer-events: none;
   z-index: 0;
-  opacity: 0.38;
+  opacity: 0.42;
   border-radius: inherit;
 }
 
