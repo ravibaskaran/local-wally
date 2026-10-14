@@ -146,6 +146,17 @@
     showMediaFocusDock: true,
 
     // --------------------------------------------------------------------------
+    // 14b. PRODUCTIVITY FOCUS TIMER MODE
+    // --------------------------------------------------------------------------
+    // Default focus timer methodology:
+    // 'pomodoro': Classic 25m Focus / 5m Break (with long break every 4 cycles)
+    // 'fiftytwo': 52/17 Rule (52m Focus / 17m Rest)
+    // 'ultradian': Ultradian Rhythm (90m Peak Focus / 20m Renewal Break)
+    // 'flowtime': Flowtime Stopwatch (Count-up deep work with proportional break)
+    // Default: 'pomodoro' | Options: 'pomodoro', 'fiftytwo', 'ultradian', 'flowtime'
+    focusTimerMode: 'pomodoro',
+
+    // --------------------------------------------------------------------------
     // 15. POMODORO FOCUS DURATION (MINUTES)
     // --------------------------------------------------------------------------
     // Length in minutes for deep work focus sessions.

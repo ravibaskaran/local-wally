@@ -99,6 +99,17 @@
     "value": true,
     "text": "Show Media & Focus Dock"
   },
+  "focusTimerMode": {
+    "type": "dropdown",
+    "value": 0,
+    "text": "Focus Timer Mode",
+    "items": [
+      "Pomodoro (25/5)",
+      "52/17 Rule",
+      "Ultradian (90/20)",
+      "Flowtime (Stopwatch)"
+    ]
+  },
   "pomodoroFocusMinutes": {
     "type": "slider",
     "value": 25,

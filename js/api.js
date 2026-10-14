@@ -2430,144 +2430,7 @@
     },
 
     /**
-     * Location-based regional news via GDELT DOC 2.0 API (Keyless & Proxy-Free)
-     * Queries GDELT using URLSearchParams, city/alias mapping, and country filtering.
-     * @param {string} cityName
-     * @param {string} [countryCode]
-     * @returns {Promise<Array<{title: string, source: string, link: string, seendate?: string, domain?: string}>>}
-     */
-    fetchGdeltNews: function(cityName, countryCode) {
-      var cleanCity = (cityName && String(cityName).trim()) || '';
-      var cleanCountry = (countryCode && String(countryCode).trim().toUpperCase()) || '';
-
-      if (!cleanCity || cleanCity === 'Local' || cleanCity === 'Metropolitan') {
-        return Promise.reject(new Error('City unspecified for GDELT query'));
-      }
-
-      // City alias mapping for major metropolitan centers where common variants exist
-      var cityAliases = {
-        'bengaluru': '(Bengaluru OR Bangalore)',
-        'bangalore': '(Bengaluru OR Bangalore)',
-        'mumbai': '(Mumbai OR Bombay)',
-        'bombay': '(Mumbai OR Bombay)',
-        'kolkata': '(Kolkata OR Calcutta)',
-        'calcutta': '(Kolkata OR Calcutta)',
-        'chennai': '(Chennai OR Madras)',
-        'madras': '(Chennai OR Madras)',
-        'kyiv': '(Kyiv OR Kiev)',
-        'kiev': '(Kyiv OR Kiev)'
-      };
-
-      var cityKey = cleanCity.toLowerCase();
-      var cityQuery = cityAliases[cityKey] || ('"' + cleanCity.replace(/["\\]/g, '') + '"');
-
-      // Country qualification filter when available
-      var fullQuery = cityQuery;
-      if (cleanCountry && cleanCountry.length === 2) {
-        fullQuery += ' sourcecountry:' + cleanCountry;
-      }
-
-      function executeQuery(q) {
-        var params = new URLSearchParams();
-        params.set('query', q);
-        params.set('mode', 'artlist');
-        params.set('format', 'json');
-        params.set('timespan', '2d');
-        params.set('maxrecords', '25');
-        params.set('sort', 'datedesc');
-
-        var url = 'https://api.gdeltproject.org/api/v2/doc/doc?' + params.toString();
-
-        return ApiService.fetchWithTimeout(url, 7000)
-          .then(function(res) {
-            if (!res.ok) throw new Error('GDELT HTTP ' + res.status);
-            return res.text();
-          })
-          .then(function(rawText) {
-            if (!rawText || typeof rawText !== 'string') {
-              throw new Error('Empty GDELT response');
-            }
-            var trimmed = rawText.trim();
-            if (trimmed.charAt(0) !== '{') {
-              throw new Error('Invalid GDELT JSON payload');
-            }
-            var data = JSON.parse(trimmed);
-            if (!data || !Array.isArray(data.articles) || data.articles.length === 0) {
-              throw new Error('No articles found in GDELT response');
-            }
-
-            var results = [];
-            var seenTitles = {};
-            var seenLinks = {};
-
-            for (var i = 0; i < data.articles.length && results.length < 5; i++) {
-              var item = data.articles[i];
-              if (!item) continue;
-
-              var rawTitle = item.title || '';
-              var rawUrl = item.url || '';
-              var rawDomain = item.domain || '';
-              var rawCountry = item.sourcecountry || '';
-
-              // Protocol validation for safe external links
-              if (!rawUrl || !/^https:\/\//i.test(rawUrl.trim())) continue;
-              var safeUrl = rawUrl.trim();
-
-              // Title cleanup and entity decoding
-              var cleanTitle = rawTitle
-                .replace(/&amp;/g, '&')
-                .replace(/&lt;/g, '<')
-                .replace(/&gt;/g, '>')
-                .replace(/&quot;/g, '"')
-                .replace(/&#39;/g, "'")
-                .trim();
-
-              if (!cleanTitle || cleanTitle.length < 10) continue;
-
-              // Title deduplication
-              var titleKey = cleanTitle.toLowerCase().substring(0, 40);
-              if (seenTitles[titleKey] || seenLinks[safeUrl]) continue;
-              seenTitles[titleKey] = true;
-              seenLinks[safeUrl] = true;
-
-              // Source attribution
-              var sourceName = rawDomain || rawCountry || 'Regional News';
-              if (sourceName.indexOf('.') !== -1) {
-                sourceName = sourceName.replace(/^www\./i, '');
-              }
-
-              results.push({
-                title: cleanTitle,
-                source: sourceName,
-                link: safeUrl,
-                seendate: item.seendate || null,
-                publishedMs: ApiService.parseNewsTimestamp(item.seendate),
-                domain: rawDomain || null,
-                provider: 'google-news',
-                providerName: 'Google News',
-                isWrapper: false
-              });
-            }
-
-            if (results.length === 0) {
-              throw new Error('Zero valid articles after GDELT normalization');
-            }
-            return results;
-          });
-      }
-
-      // Try city + country, fallback to city alone if first attempt produces no results
-      return executeQuery(fullQuery)
-        .catch(function() {
-          if (fullQuery !== cityQuery) {
-            return executeQuery(cityQuery);
-          }
-          throw new Error('GDELT city query yielded no articles');
-        });
-    },
-
-    /**
-     * Proximity-targeted regional news feed via GDELT DOC 2.0 with Google News RSS fallback
+     * Proximity-targeted regional news feed via Google News RSS proxy cascade (v0.10.0)
      * @param {string} cityName
      * @param {string} [countryCode]
      * @returns {Promise<Array<{title: string, source: string, link: string}>>} Top 5 articles
@@ -2663,22 +2526,37 @@
       }
 
       function requestXml(rssUrl) {
-        // Public CORS gateways, tried in order. Each leg is independently
-        // flaky (allorigins 429/timeouts, corsproxy.io now 401s unallowlisted
-        // origins), so a middle leg keeps the chain salvageable (v0.8.4).
+        // Multi-proxy CORS cascade (v0.10.0). Cycles through free public CORS gateways
+        // until a response is received, supporting both raw and JSON-wrapped responses.
         var proxies = [
           (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.primaryCorsProxy) || 'https://api.allorigins.win/raw?url=',
           (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.middleCorsProxy) || 'https://api.codetabs.com/v1/proxy?quest=',
-          (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.fallbackCorsProxy) || 'https://corsproxy.io/?url='
+          (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.fallbackCorsProxy) || 'https://corsproxy.io/?url=',
+          'https://cors.x2u.in/',
+          'https://api.allorigins.win/get?url='
         ];
 
         function attemptProxy(idx) {
-          return ApiService.fetchWithTimeout(proxies[idx] + encodeURIComponent(rssUrl), 5000)
+          var proxyBase = proxies[idx];
+          var targetUrl = (proxyBase.indexOf('?') !== -1)
+            ? (proxyBase + encodeURIComponent(rssUrl))
+            : (proxyBase + rssUrl);
+
+          return ApiService.fetchWithTimeout(targetUrl, 5000)
             .then(function(res) {
               if (!res.ok) throw new Error('HTTP ' + res.status);
               return res.text();
             })
-            .then(function(xmlString) {
+            .then(function(rawText) {
+              var xmlString = rawText;
+              if (rawText && typeof rawText === 'string' && rawText.trim().charAt(0) === '{') {
+                try {
+                  var json = JSON.parse(rawText.trim());
+                  if (json && typeof json.contents === 'string') {
+                    xmlString = json.contents;
+                  }
+                } catch (e) {}
+              }
               return parseItems(xmlString);
             })
             .catch(function(err) {
@@ -2690,24 +2568,12 @@
         return attemptProxy(0);
       }
 
-      // 1. Try GDELT DOC 2.0 API first (keyless, proxy-free, direct JSON).
-      //    Unusable locality names ('Local', 'Metropolitan', empty — Lively
-      //    doesn't always expose a real city) skip GDELT and the meaningless
-      //    geo feed attempt, and land directly on the country/world feed.
-      var chain = cityUsable
-        ? self.fetchGdeltNews(cleanCity, cleanCountry)
-        : Promise.reject(new Error('No usable locality name'));
-      return chain.catch(function(gdeltErr) {
-        // 2. Fall back to Google News RSS if GDELT fails or has no records
-        console.warn('[ApiService] GDELT news unavailable, attempting Google News RSS:', gdeltErr.message);
-        // The geo section feed requires a country edition; country-less pins
-        // go straight to the world feed (R03).
-        var geoAttempt = (cityUsable && cleanCountry)
-          ? requestXml(geoUrl)
-          : Promise.reject(new Error('Geo RSS skipped: no usable locality/country'));
-        return geoAttempt.catch(function() {
-          return requestXml(fallbackUrl);
-        });
+      // Proximity-targeted geo RSS feed first; fall back to country/world edition
+      var geoAttempt = (cityUsable && cleanCountry)
+        ? requestXml(geoUrl)
+        : Promise.reject(new Error('Geo RSS skipped: no usable locality/country'));
+      return geoAttempt.catch(function() {
+        return requestXml(fallbackUrl);
       });
       // Terminal fallback policy (LW05): errors propagate to fetchNews, which
       // serves matching real cached stories (stale-marked) or an explicit
@@ -2734,10 +2600,6 @@
             };
           });
         });
-      },
-
-      gdelt: function(city, countryCode) {
-        return ApiService.fetchGdeltNews(city, countryCode);
       },
 
       newsapi: function(city, countryCode) {
@@ -3482,6 +3344,10 @@
             Array.isArray(cachedEnvelope.data) && cachedEnvelope.data.length > 0) {
           return Promise.resolve(markStale(cachedEnvelope.data));
         }
+        var anyStoredCooldown = self.getCachedNews();
+        if (anyStoredCooldown && Array.isArray(anyStoredCooldown.data) && anyStoredCooldown.data.length > 0) {
+          return Promise.resolve(markStale(anyStoredCooldown.data));
+        }
         // Explicit unavailable state within cooldown; intent already updated
         return Promise.resolve([]);
       }
@@ -3560,6 +3426,14 @@
           if (cachedEnvelope && Array.isArray(cachedEnvelope.data) && cachedEnvelope.data.length > 0 &&
               envelopeMatches(cachedEnvelope)) {
             return markStale(cachedEnvelope.data);
+          }
+          // As resilient fallback (v0.10.0), return any stored news from earlier run if available
+          if (cachedEnvelope && Array.isArray(cachedEnvelope.data) && cachedEnvelope.data.length > 0) {
+            return markStale(cachedEnvelope.data);
+          }
+          var anyStored = self.getCachedNews();
+          if (anyStored && Array.isArray(anyStored.data) && anyStored.data.length > 0) {
+            return markStale(anyStored.data);
           }
           return []; // explicit news-unavailable state
         })

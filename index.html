@@ -63,9 +63,12 @@
 
         <!-- Main Temperature & Condition Summary -->
         <section id="hud-weather-card" class="hud-temp-block hud-card-interactive" tabindex="0" role="button" aria-haspopup="dialog" aria-label="Current Weather Conditions and Atmosphere Details" title="Current Weather & Atmosphere Conditions (Click to inspect detailed metrics)">
-          <div class="hud-temp-main">
-            <span id="hud-temp-val" class="hud-temp-val">--</span>
-            <span id="hud-temp-unit" class="hud-temp-unit">°C</span>
+          <div class="hud-temp-wrap">
+            <div id="hud-weather-icon" class="hud-weather-icon" aria-hidden="true"></div>
+            <div class="hud-temp-main">
+              <span id="hud-temp-val" class="hud-temp-val">--</span>
+              <span id="hud-temp-unit" class="hud-temp-unit">°C</span>
+            </div>
           </div>
           <div class="hud-condition-meta">
             <span id="hud-condition" class="hud-condition-text">Loading...</span>
@@ -449,7 +452,7 @@
             <div id="sync-dot" class="sync-pulse"></div>
             <span id="sync-status">Initializing...</span>
           </div>
-          <span id="hud-version" class="hud-version" title="Local Wally HUD version">v0.9.1</span>
+          <span id="hud-version" class="hud-version" title="Local Wally HUD version">v0.10.0</span>
         </footer>
       </div>
 
@@ -490,6 +493,12 @@
             </div>
           </div>
           <div class="pomo-controls">
+            <div id="pomo-mode-select" class="pomo-mode-select" role="tablist" aria-label="Focus Timer Mode">
+              <button id="pomo-mode-pomo" class="pomo-mode-pill is-active" type="button" role="tab" aria-selected="true" data-mode="pomodoro" title="Pomodoro: 25m Focus / 5m Break">25m</button>
+              <button id="pomo-mode-52" class="pomo-mode-pill" type="button" role="tab" aria-selected="false" data-mode="fiftytwo" title="52/17 Rule: 52m Focus / 17m Break">52/17</button>
+              <button id="pomo-mode-ultra" class="pomo-mode-pill" type="button" role="tab" aria-selected="false" data-mode="ultradian" title="Ultradian Rhythm: 90m Focus / 20m Rest">90m</button>
+              <button id="pomo-mode-flow" class="pomo-mode-pill" type="button" role="tab" aria-selected="false" data-mode="flowtime" title="Flowtime: Stopwatch count-up with dynamic break">Flow</button>
+            </div>
             <div class="pomo-actions">
               <button id="pomo-btn-toggle" class="pomo-btn pomo-btn-primary" type="button">Start</button>
               <button id="pomo-btn-reset" class="pomo-btn pomo-btn-secondary" type="button">Reset</button>
@@ -520,6 +529,23 @@
             <div class="media-text-wrap">
               <div id="media-title" class="media-title" title="No Media Playing">No Media Playing</div>
               <div id="media-artist" class="media-artist" title="Windows SMTC Idle">Windows SMTC Idle</div>
+            </div>
+          </div>
+          <div id="media-quick-launch" class="media-quick-launch" aria-label="Music Quick Launch">
+            <span class="quick-launch-label">Launch Music:</span>
+            <div class="quick-launch-badges">
+              <button id="quick-launch-spotify" class="quick-badge quick-badge-spotify" type="button" title="Launch Spotify (Desktop App / Web)" aria-label="Spotify">
+                <svg class="quick-badge-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.498 17.306c-.218.358-.684.472-1.042.254-2.856-1.745-6.452-2.14-10.686-1.172-.408.093-.815-.164-.908-.572-.093-.408.164-.815.572-.908 4.636-1.06 8.608-.614 11.81 1.356.358.218.472.684.254 1.042zm1.468-3.262c-.274.446-.86.588-1.306.314-3.27-2.01-8.254-2.593-12.122-1.418-.501.152-1.033-.133-1.185-.634-.152-.501.133-1.033.634-1.185 4.417-1.34 9.907-.687 13.665 1.619.446.274.588.86.314 1.306zm.126-3.41c-3.921-2.328-10.379-2.541-14.128-1.402-.601.183-1.242-.162-1.425-.763-.183-.601.162-1.242.763-1.425 4.312-1.31 11.439-1.063 15.946 1.612.541.321.718 1.023.397 1.564-.321.541-1.023.718-1.564.397z"/></svg>
+                <span>Spotify</span>
+              </button>
+              <button id="quick-launch-amazon" class="quick-badge quick-badge-amazon" type="button" title="Launch Amazon Music (Desktop App / Web)" aria-label="Amazon Music">
+                <svg class="quick-badge-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M14.07 13.79c-2.37.18-4.49.95-4.49 3.14 0 1.95 1.51 2.87 3.32 2.87 1.66 0 2.81-.88 3.49-1.95l.14.77h3.04V11.8c0-3.37-2.26-4.57-5.59-4.57-3.09 0-5.83 1.25-6.07 4.3h3.58c.24-1.15 1.25-1.54 2.47-1.54 1.2 0 2.21.51 2.21 2.12v.79c-.74-.04-1.39-.07-2.1-.07zm.8 3.51c-.39.73-1.07 1.15-1.84 1.15-.81 0-1.39-.49-1.39-1.37 0-1.34 1.13-1.77 2.74-1.89.28-.02.49-.03.49-.03v2.14zM22.25 19.98c-3.07 2.37-7.44 3.63-11.83 3.63-6.22 0-11.83-2.52-15.06-6.74-.25-.33-.03-.78.36-.61 4.54 2.05 9.77 3.28 15.15 3.28 3.86 0 7.74-.75 11.01-2.28.58-.27 1.05.37.37.72zm1.61-.92c-.39-.5-2.55-.38-3.53-.26-.3.04-.35-.22-.08-.41 1.77-1.25 4.67-.89 5.01-.46.34.42-.08 3.33-1.74 4.71-.25.21-.49.1-.38-.17.37-.87 1.11-2.91.72-3.41z"/></svg>
+                <span>Amazon</span>
+              </button>
+              <button id="quick-launch-jiosaavn" class="quick-badge quick-badge-jiosaavn" type="button" title="Launch JioSaavn (Desktop App / Web)" aria-label="JioSaavn">
+                <svg class="quick-badge-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5v-9l6 4.5-6 4.5z"/></svg>
+                <span>JioSaavn</span>
+              </button>
             </div>
           </div>
           <div class="media-visualizer-wrap">

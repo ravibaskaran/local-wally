@@ -1730,3 +1730,31 @@ Three independent tool families were built at the v0.8.16 baseline (they now run
 - In `ApiService.NewsAdapter.parseItems`, stories with missing, malformed, non-HTTPS, or `javascript:` links are omitted during ingestion.
 - In `js/app.js`, `hudNewsLink` and detail drawer rendering validate `/^https:\/\//i`. Insecure links have their `href` removed, are marked `aria-disabled="true"` with `pointer-events: none`, and are rendered as non-clickable `div` elements in the drawer.
 - Generic homepage substitution (`https://news.google.com`) is completely eliminated.
+
+## 54. Animated Meteocons, Multi-Mode Focus Timer, News Proxy Cascade & Music Quick Launch (v0.10.0)
+
+### 54.1 Local Animated Meteocons (Fill Style)
+- Embedded 14 animated SVG weather icons designed by Bas Milius (`assets/icons/weather/`: `clear-day.svg`, `clear-night.svg`, `partly-cloudy-day.svg`, `partly-cloudy-night.svg`, `overcast.svg`, `overcast-day.svg`, `overcast-night.svg`, `drizzle.svg`, `rain.svg`, `thunderstorms-rain.svg`, `snow.svg`, `sleet.svg`, `fog.svg`, `wind.svg`).
+- Architecture: Zero-dependency, offline-first vector icons with native SMIL declarative animations running directly on the GPU in Chromium WebView2 (<0.1% CPU).
+- `App.prototype.getMeteocon(category, isDay, wmoCode)` maps astronomical day/night states and WMO codes (including freezing drizzle/rain codes 56, 57, 66, 67 to `sleet.svg`).
+- Renders into `#hud-weather-icon` with `_currentWeatherIcon` memoization to eliminate DOM recreation and layout thrashing across ticks.
+
+### 54.2 GDELT Removal & 5-Proxy News Cascade
+- Fully purged GDELT from `ApiService`: removed `fetchGdeltNews` and deleted the `gdelt` adapter from `NewsAdapter` to prevent 429 IP rate limits and off-topic conflict papers.
+- Expanded CORS proxy cascade across 5 free endpoints (`api.allorigins.win/raw?url=`, `api.codetabs.com/v1/proxy?quest=`, `corsproxy.io/?url=`, `cors.x2u.in/`, `api.allorigins.win/get?url=`), with automatic JSON wrapper unwrapping when proxies return `{ contents: ... }`.
+- Added resilient cache fallback: in terminal network failure, `ApiService.fetchNews()` falls back to previously saved stories from `localStorage` (`LIVELY_HUD_NEWS_SNAPSHOT`) marked as stale, preventing blank card states.
+
+### 54.3 Productivity Focus Timer Suite (4 Methodologies)
+- Upgraded `PomodoroEngine` to support 4 distinct productivity methodologies:
+  - `pomodoro`: Classic 25m Focus, 5m Short Break, 15m Long Break (after 4 cycles).
+  - `fiftytwo`: 52/17 Rule (52m Focus, 17m Rest).
+  - `ultradian`: Ultradian 90/20 Rhythm (90m Peak Focus, 20m Renewal Break).
+  - `flowtime`: Flowtime Stopwatch (count-up elapsed flow time with dynamic break allocation: <25m $\to$ 5m, 25-50m $\to$ 8m, 50-90m $\to$ 15m, $\ge$90m $\to$ 20m).
+- Mode selector pills (`#pomo-mode-select`: `pomo-mode-pomo`, `pomo-mode-52`, `pomo-mode-ultra`, `pomo-mode-flow`) allow instant switching with smooth glass transitions.
+- Fully wired to Lively Wallpaper Customize dropdown (`focusTimerMode`) via `bindLively` and `SETTINGS_PROPNAMES` whitelist.
+
+### 54.4 Music Quick Launch Dock & Desktop Protocol Handlers
+- Enhanced `MediaVisualizerEngine`: when Windows SMTC playback is idle ("No Media Playing"), `#media-card` is tagged with `.is-idle` and displays the Quick Launch dock (`#media-quick-launch`) with glowing brand badges for **Spotify**, **Amazon Music**, and **JioSaavn**.
+- Launches desktop apps using custom URI schemes (`spotify:`, `amznmp:`, `jiosaavn:`) with automatic fallback to web players (`https://open.spotify.com`, `https://music.amazon.com`, `https://www.jiosaavn.com`) on desktop timeout.
+- When SMTC track data arrives, `#media-card` smoothly transitions to `.is-playing`, revealing the track artwork, metadata, and 60 FPS audio visualizer.
+

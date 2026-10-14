@@ -646,6 +646,43 @@ html, body {
   flex: 1;
 }
 
+.pomo-mode-select {
+  display: flex;
+  gap: 3px;
+  background: rgba(0, 0, 0, 0.22);
+  padding: 2px;
+  border-radius: 8px;
+  border: 1px solid var(--card-border);
+}
+
+.pomo-mode-pill {
+  flex: 1;
+  background: transparent;
+  border: none;
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 2px 0;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  font-family: inherit;
+  outline: none;
+  text-align: center;
+}
+
+.pomo-mode-pill:hover {
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.pomo-mode-pill.is-active {
+  background: var(--tag-bg);
+  color: var(--accent-cyan);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
 .pomo-actions {
   display: flex;
   gap: 6px;
@@ -812,6 +849,99 @@ html, body {
   width: 100%;
   height: 44px;
   display: block;
+}
+
+/* Quick Launch Dock when SMTC Media is Idle */
+.media-quick-launch {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.media-card.is-playing .media-quick-launch {
+  display: none !important;
+}
+
+.media-card.is-idle .media-visualizer-wrap {
+  display: none !important;
+}
+
+.quick-launch-label {
+  font-size: 0.58rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.quick-launch-badges {
+  display: flex;
+  gap: 5px;
+}
+
+.quick-badge {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 5px 3px;
+  border-radius: 7px;
+  border: 1px solid var(--card-border);
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--text-secondary);
+  font-size: 0.62rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1),
+              background 0.2s ease,
+              border-color 0.2s ease,
+              box-shadow 0.2s ease,
+              color 0.2s ease;
+}
+
+.quick-badge-icon {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.quick-badge:hover {
+  transform: translateY(-1.5px);
+}
+
+.quick-badge:hover .quick-badge-icon {
+  transform: scale(1.15);
+}
+
+.quick-badge-spotify:hover {
+  background: rgba(29, 185, 84, 0.16);
+  border-color: #1db954;
+  color: #1ed760;
+  box-shadow: 0 0 10px rgba(29, 185, 84, 0.38);
+}
+
+.quick-badge-amazon:hover {
+  background: rgba(0, 168, 225, 0.16);
+  border-color: #00a8e1;
+  color: #38bdf8;
+  box-shadow: 0 0 10px rgba(0, 168, 225, 0.38);
+}
+
+.quick-badge-jiosaavn:hover {
+  background: rgba(43, 197, 180, 0.16);
+  border-color: #2bc5b4;
+  color: #5eead4;
+  box-shadow: 0 0 10px rgba(43, 197, 180, 0.38);
+}
+
+#dock-media-focus.theme-light .quick-badge {
+  background: rgba(0, 0, 0, 0.04);
 }
 
 /* Light Theme overrides for #dock-media-focus */
@@ -1065,6 +1195,35 @@ html, body {
   gap: 16px;
   padding: 4px 0 8px;
   border-bottom: 1px solid var(--divider-color);
+}
+
+.hud-temp-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.hud-weather-icon {
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.meteocon-svg-anim {
+  width: 52px;
+  height: 52px;
+  display: block;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.28));
+  transition: transform 0.25s ease, filter 0.25s ease;
+}
+
+.hud-temp-block:hover .meteocon-svg-anim {
+  transform: scale(1.08) translateY(-1px);
+  filter: drop-shadow(0 4px 14px rgba(56, 189, 248, 0.4));
 }
 
 .hud-temp-main {

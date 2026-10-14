@@ -304,6 +304,27 @@ local-wally/
 
 ## 🛡️ Recent Updates & Quality Improvements
 
+### Version 0.10.0 — Animated Meteocons, Multi-Mode Focus Timer, News Proxy Cascade & Music Quick Launch
+- **Playful Animated Weather Meteocons (Fill Style)**:
+  - Bundled 14 local, animated Bas Milius SVG Meteocons (`assets/icons/weather/`: clear day/night, partly cloudy day/night, overcast, rain, drizzle, thunderstorms-rain, snow, sleet, fog, wind).
+  - High-performance, GPU-accelerated SMIL vector animations running entirely offline with zero CDN dependencies and <0.1% CPU.
+  - Context-aware WMO mapping: accurately resolves day/night astronomical state, atmospheric conditions, and sleet/freezing rain codes (56, 57, 66, 67), with state-cached DOM rendering to prevent layout thrashing.
+- **Google News Proxy Cascade & GDELT Purge**:
+  - Completely purged GDELT from the news pipeline to eliminate HTTP 429 rate-limiting and irrelevant academic conflict stories.
+  - Expanded the free CORS proxy ladder across 5 reliable gateways (`api.allorigins.win/raw`, `api.codetabs.com`, `corsproxy.io`, `cors.x2u.in`, and `api.allorigins.win/get` with automatic JSON wrapper decoding), sequentially cycling until a valid RSS feed is returned.
+  - Persistent fallback: when all proxies fail or network is offline, the card gracefully serves previously cached stories from `localStorage` marked as stale, ensuring the news card never stays blank.
+- **Productivity Focus Timer Suite (4 Customizable Methodologies)**:
+  - Added multi-mode productivity focus timer with interactive glass pill selector (`[25m] [52/17] [90m] [Flow]`):
+    - **Classic Pomodoro (25/5)**: 25m Focus / 5m Short Break / 15m Long Break.
+    - **52/17 Rule**: 52m Focus / 17m Rest.
+    - **Ultradian Rhythm (90/20)**: 90m Peak Focus / 20m Renewal Break.
+    - **Flowtime Stopwatch**: Count-up deep work timer with proportional dynamic break allocation (<25m → 5m, 25-50m → 8m, 50-90m → 15m, ≥90m → 20m).
+  - Full synchronization with Lively Wallpaper Customize dropdown (`focusTimerMode`) and settings export/import.
+- **Music Quick Launch Badges (Desktop App First)**:
+  - When Windows SMTC media is idle ("No Media Playing"), the media card displays a sleek Quick Launch dock with animated, glowing brand badges for **Spotify**, **Amazon Music**, and **JioSaavn**.
+  - Direct desktop application launch via custom URI protocols (`spotify:`, `amznmp:`, `jiosaavn:`) with automatic fallback to web players (`https://open.spotify.com`, `https://music.amazon.com`, `https://www.jiosaavn.com`) if desktop apps are not installed.
+  - Smooth CSS transitions toggling between `.is-idle` (Quick Launch badges) and `.is-playing` (track art, metadata, and 60 FPS audio visualizer).
+
 ### Version 0.9.1 — Astronomical Timezone Alignment, HiDPI Precision & News Safety
 - **Location Civil Calendar Date Moon Times**: Anchored `SunCalc.getMoonTimes` to the selected location's civil midnight instant via `getCivilMidnightAnchor(date, tz)` and updated `js/suncalc.js` to preserve the caller's explicit anchor when `inUTC` is omitted. Eliminates host-calendar drift between UTC and destination timezones (e.g. Asia/Tokyo).
 - **Honest Weather Forecast Data**: Missing precipitation probabilities and peak relative humidity are preserved as `null` and displayed honestly as `Unavailable` in popovers instead of fabricating certainty with `0%` or `Nominal`. Explicit measured zero values (`0% chance`, `0.0 mm`) remain fully preserved.

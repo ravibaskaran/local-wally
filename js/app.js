@@ -61,7 +61,11 @@
       title: options.title,
       artist: options.artist,
       badge: options.badge,
-      canvas: options.canvas
+      canvas: options.canvas,
+      quickLaunch: options.quickLaunch,
+      btnSpotify: options.btnSpotify,
+      btnAmazon: options.btnAmazon,
+      btnJiosaavn: options.btnJiosaavn
     };
 
     this.enabled = options.enabled !== false;
@@ -103,6 +107,8 @@
 
     this.defaultArt = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='44' height='44' viewBox='0 0 24 24' fill='none' stroke='%2338bdf8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='10'/><circle cx='12' cy='12' r='3'/></svg>";
     this.initGradient();
+    this.bindEvents();
+    if (this.dom.card) this.dom.card.classList.add('is-idle');
   }
 
   MediaVisualizerEngine.BAR_RADII = Object.freeze([2, 2, 0, 0]);
@@ -367,6 +373,58 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     }
   };
 
+  MediaVisualizerEngine.prototype.bindEvents = function() {
+    var self = this;
+    if (this.dom.btnSpotify && typeof this.dom.btnSpotify.addEventListener === 'function') {
+      this.dom.btnSpotify.addEventListener('click', function(e) {
+        e.stopPropagation();
+        self.launchApp('spotify:', 'https://open.spotify.com');
+      });
+    }
+    if (this.dom.btnAmazon && typeof this.dom.btnAmazon.addEventListener === 'function') {
+      this.dom.btnAmazon.addEventListener('click', function(e) {
+        e.stopPropagation();
+        self.launchApp('amznmp:', 'https://music.amazon.com');
+      });
+    }
+    if (this.dom.btnJiosaavn && typeof this.dom.btnJiosaavn.addEventListener === 'function') {
+      this.dom.btnJiosaavn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        self.launchApp('jiosaavn:', 'https://www.jiosaavn.com');
+      });
+    }
+  };
+
+  MediaVisualizerEngine.prototype.launchApp = function(protocolUri, webUrl) {
+    var hasBlurred = false;
+    function onBlur() {
+      hasBlurred = true;
+      window.removeEventListener('blur', onBlur);
+    }
+    window.addEventListener('blur', onBlur);
+
+    var iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    iframe.style.position = 'absolute';
+    iframe.style.width = '1px';
+    iframe.style.height = '1px';
+    document.body.appendChild(iframe);
+
+    try {
+      iframe.contentWindow.location.href = protocolUri;
+    } catch (e) {}
+
+    setTimeout(function() {
+      try {
+        if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+      } catch (e) {}
+      window.removeEventListener('blur', onBlur);
+      if (!hasBlurred && !document.hidden) {
+        window.open(webUrl, '_blank', 'noopener,noreferrer');
+      }
+    }, 1500);
+  };
+
   MediaVisualizerEngine.prototype.handleTrackUpdate = function(data) {
     if (this.demoMode > 0) return;
 
@@ -381,7 +439,11 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
       if (this.dom.art) this.dom.art.src = this.defaultArt;
       if (this.dom.badge) this.dom.badge.textContent = 'SMTC';
-      if (this.dom.card) this.dom.card.title = 'Windows Media Player & 60 FPS Visualizer: Idle (Click to inspect track)';
+      if (this.dom.card) {
+        this.dom.card.title = 'Windows Media Player & 60 FPS Visualizer: Idle (Click to inspect track)';
+        this.dom.card.classList.add('is-idle');
+        this.dom.card.classList.remove('is-playing');
+      }
       this.currentTrackData = null;
       return;
     }
@@ -424,6 +486,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (this.dom.badge) this.dom.badge.textContent = sourceBadge;
       if (this.dom.card) {
         this.dom.card.title = 'Now Playing: ' + title + (artist ? ' - ' + artist : '') + ' (' + sourceBadge + ') (Click to inspect track)';
+        this.dom.card.classList.remove('is-idle');
+        this.dom.card.classList.add('is-playing');
       }
 
       if (albumArt && typeof albumArt === 'string' && albumArt.length > 20) {
@@ -453,7 +517,11 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
       if (this.dom.art) this.dom.art.src = this.defaultArt;
       if (this.dom.badge) this.dom.badge.textContent = 'SMTC';
-      if (this.dom.card) this.dom.card.title = 'Windows Media Player & 60 FPS Visualizer: Idle (Click to inspect track)';
+      if (this.dom.card) {
+        this.dom.card.title = 'Windows Media Player & 60 FPS Visualizer: Idle (Click to inspect track)';
+        this.dom.card.classList.add('is-idle');
+        this.dom.card.classList.remove('is-playing');
+      }
     }
   };
 
@@ -473,12 +541,18 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       btnToggle: options.btnToggle,
       btnReset: options.btnReset,
       pillFocus: options.pillFocus,
-      pillBreak: options.pillBreak
+      pillBreak: options.pillBreak,
+      pomoModePomo: options.pomoModePomo,
+      pomoMode52: options.pomoMode52,
+      pomoModeUltra: options.pomoModeUltra,
+      pomoModeFlow: options.pomoModeFlow
     };
 
+    this.timerMode = options.timerMode || 'pomodoro'; // 'pomodoro' | 'fiftytwo' | 'ultradian' | 'flowtime'
     this.focusMinutes = options.focusMinutes || 25;
     this.breakMinutes = options.breakMinutes || 5;
     this.longBreakMinutes = options.longBreakMinutes || 15;
+    this.flowElapsedSeconds = 0;
 
     this.mode = 'focus';
     this.isRunning = false;
@@ -486,6 +560,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     this.remainingSeconds = this.totalSeconds;
     this.completedFocusSessions = 0;
     this.timerId = null;
+    this.targetEndTime = null;
+    this.targetStartTime = null;
     this.isLightTheme = false;
 
     this.ctx = this.dom.canvas ? this.dom.canvas.getContext('2d') : null;
@@ -494,7 +570,11 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     this.initGradients();
 
     this.bindEvents();
-    this.render();
+    if (this.timerMode !== 'pomodoro') {
+      this.setTimerMode(this.timerMode);
+    } else {
+      this.render();
+    }
   }
 
   PomodoroEngine.prototype.bindEvents = function() {
@@ -519,6 +599,85 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         self.setMode('break');
       });
     }
+    if (this.dom.pomoModePomo && typeof this.dom.pomoModePomo.addEventListener === 'function') {
+      this.dom.pomoModePomo.addEventListener('click', function(e) {
+        e.stopPropagation();
+        self.setTimerMode('pomodoro');
+      });
+    }
+    if (this.dom.pomoMode52 && typeof this.dom.pomoMode52.addEventListener === 'function') {
+      this.dom.pomoMode52.addEventListener('click', function(e) {
+        e.stopPropagation();
+        self.setTimerMode('fiftytwo');
+      });
+    }
+    if (this.dom.pomoModeUltra && typeof this.dom.pomoModeUltra.addEventListener === 'function') {
+      this.dom.pomoModeUltra.addEventListener('click', function(e) {
+        e.stopPropagation();
+        self.setTimerMode('ultradian');
+      });
+    }
+    if (this.dom.pomoModeFlow && typeof this.dom.pomoModeFlow.addEventListener === 'function') {
+      this.dom.pomoModeFlow.addEventListener('click', function(e) {
+        e.stopPropagation();
+        self.setTimerMode('flowtime');
+      });
+    }
+  };
+
+  PomodoroEngine.prototype.setTimerMode = function(newTimerMode) {
+    if (!newTimerMode) return;
+    var modeKey = String(newTimerMode).toLowerCase();
+    if (modeKey === 'fiftytwo' || modeKey.indexOf('52') !== -1 || modeKey.indexOf('fifty') !== -1) {
+      modeKey = 'fiftytwo';
+    } else if (modeKey === 'ultradian' || modeKey.indexOf('ultra') !== -1 || modeKey.indexOf('90') !== -1) {
+      modeKey = 'ultradian';
+    } else if (modeKey === 'flowtime' || modeKey.indexOf('flow') !== -1) {
+      modeKey = 'flowtime';
+    } else {
+      modeKey = 'pomodoro';
+    }
+
+    this.timerMode = modeKey;
+    this.pause();
+
+    var pills = [
+      { el: this.dom.pomoModePomo, key: 'pomodoro' },
+      { el: this.dom.pomoMode52, key: 'fiftytwo' },
+      { el: this.dom.pomoModeUltra, key: 'ultradian' },
+      { el: this.dom.pomoModeFlow, key: 'flowtime' }
+    ];
+    for (var i = 0; i < pills.length; i++) {
+      var p = pills[i];
+      if (p.el && p.el.classList) {
+        if (p.key === modeKey) {
+          p.el.classList.add('is-active');
+          p.el.setAttribute('aria-selected', 'true');
+        } else {
+          p.el.classList.remove('is-active');
+          p.el.setAttribute('aria-selected', 'false');
+        }
+      }
+    }
+
+    if (modeKey === 'pomodoro') {
+      this.focusMinutes = 25;
+      this.breakMinutes = 5;
+      this.longBreakMinutes = 15;
+    } else if (modeKey === 'fiftytwo') {
+      this.focusMinutes = 52;
+      this.breakMinutes = 17;
+      this.longBreakMinutes = 25;
+    } else if (modeKey === 'ultradian') {
+      this.focusMinutes = 90;
+      this.breakMinutes = 20;
+      this.longBreakMinutes = 30;
+    } else if (modeKey === 'flowtime') {
+      this.flowElapsedSeconds = 0;
+      this.breakMinutes = 5;
+    }
+
+    this.reset();
   };
 
   PomodoroEngine.prototype.setDurations = function(focusM, breakM, longBreakM) {
@@ -534,15 +693,30 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
   PomodoroEngine.prototype.setMode = function(newMode) {
     this.mode = newMode;
     if (newMode === 'focus') {
-      this.totalSeconds = this.focusMinutes * 60;
+      if (this.timerMode === 'flowtime') {
+        this.flowElapsedSeconds = 0;
+        this.totalSeconds = 0;
+        this.remainingSeconds = 0;
+      } else {
+        this.totalSeconds = this.focusMinutes * 60;
+        this.remainingSeconds = this.totalSeconds;
+      }
       if (this.dom.modeLabel) {
-        this.dom.modeLabel.textContent = 'Focus';
+        this.dom.modeLabel.textContent = (this.timerMode === 'flowtime') ? 'Flow' : 'Focus';
         if (this.dom.modeLabel.classList) this.dom.modeLabel.classList.remove('is-break');
       }
       if (this.dom.pillFocus && this.dom.pillFocus.classList) this.dom.pillFocus.classList.add('is-active');
       if (this.dom.pillBreak && this.dom.pillBreak.classList) this.dom.pillBreak.classList.remove('is-active');
     } else if (newMode === 'break') {
+      if (this.timerMode === 'flowtime') {
+        var focusM = Math.floor(this.flowElapsedSeconds / 60);
+        if (focusM >= 90) this.breakMinutes = 20;
+        else if (focusM >= 50) this.breakMinutes = 15;
+        else if (focusM >= 25) this.breakMinutes = 8;
+        else this.breakMinutes = 5;
+      }
       this.totalSeconds = this.breakMinutes * 60;
+      this.remainingSeconds = this.totalSeconds;
       if (this.dom.modeLabel) {
         this.dom.modeLabel.textContent = 'Short Break';
         if (this.dom.modeLabel.classList) this.dom.modeLabel.classList.add('is-break');
@@ -551,6 +725,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (this.dom.pillBreak && this.dom.pillBreak.classList) this.dom.pillBreak.classList.add('is-active');
     } else if (newMode === 'longBreak') {
       this.totalSeconds = this.longBreakMinutes * 60;
+      this.remainingSeconds = this.totalSeconds;
       if (this.dom.modeLabel) {
         this.dom.modeLabel.textContent = 'Long Break';
         if (this.dom.modeLabel.classList) this.dom.modeLabel.classList.add('is-break');
@@ -558,7 +733,6 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (this.dom.pillFocus && this.dom.pillFocus.classList) this.dom.pillFocus.classList.remove('is-active');
       if (this.dom.pillBreak && this.dom.pillBreak.classList) this.dom.pillBreak.classList.add('is-active');
     }
-    this.remainingSeconds = this.totalSeconds;
     this.pause();
     this.render();
   };
@@ -574,7 +748,11 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
   PomodoroEngine.prototype.start = function() {
     if (this.isRunning) return;
     this.isRunning = true;
-    this.targetEndTime = Date.now() + (this.remainingSeconds * 1000);
+    if (this.timerMode === 'flowtime' && this.mode === 'focus') {
+      this.targetStartTime = Date.now() - (this.flowElapsedSeconds * 1000);
+    } else {
+      this.targetEndTime = Date.now() + (this.remainingSeconds * 1000);
+    }
     if (this.dom.btnToggle) {
       this.dom.btnToggle.textContent = 'Pause';
       if (this.dom.btnToggle.classList) this.dom.btnToggle.classList.add('is-running');
@@ -588,11 +766,18 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
   };
 
   PomodoroEngine.prototype.pause = function() {
-    if (this.isRunning && this.targetEndTime) {
-      this.remainingSeconds = Math.max(0, Math.ceil((this.targetEndTime - Date.now()) / 1000));
+    if (this.isRunning) {
+      if (this.timerMode === 'flowtime' && this.mode === 'focus') {
+        if (this.targetStartTime) {
+          this.flowElapsedSeconds = Math.max(0, Math.floor((Date.now() - this.targetStartTime) / 1000));
+        }
+      } else if (this.targetEndTime) {
+        this.remainingSeconds = Math.max(0, Math.ceil((this.targetEndTime - Date.now()) / 1000));
+      }
     }
     this.isRunning = false;
     this.targetEndTime = null;
+    this.targetStartTime = null;
     if (this.timerId) {
       clearInterval(this.timerId);
       this.timerId = null;
@@ -611,7 +796,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
   };
 
   PomodoroEngine.prototype.resumeTicker = function() {
-    if (this.isRunning && this.targetEndTime) {
+    if (this.isRunning) {
       var self = this;
       if (this.timerId) clearInterval(this.timerId);
       this.timerId = setInterval(function() {
@@ -623,20 +808,37 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
   PomodoroEngine.prototype.reset = function() {
     this.pause();
-    if (this.mode === 'focus') {
-      this.totalSeconds = this.focusMinutes * 60;
-    } else if (this.mode === 'break') {
-      this.totalSeconds = this.breakMinutes * 60;
+    if (this.timerMode === 'flowtime' && this.mode === 'focus') {
+      this.flowElapsedSeconds = 0;
+      this.remainingSeconds = 0;
+      this.totalSeconds = 0;
+      if (this.dom.modeLabel) {
+        this.dom.modeLabel.textContent = 'Flow';
+        if (this.dom.modeLabel.classList) this.dom.modeLabel.classList.remove('is-break');
+      }
     } else {
-      this.totalSeconds = this.longBreakMinutes * 60;
+      if (this.mode === 'focus') {
+        this.totalSeconds = this.focusMinutes * 60;
+      } else if (this.mode === 'break') {
+        this.totalSeconds = this.breakMinutes * 60;
+      } else {
+        this.totalSeconds = this.longBreakMinutes * 60;
+      }
+      this.remainingSeconds = this.totalSeconds;
     }
-    this.remainingSeconds = this.totalSeconds;
     this.render();
   };
 
   PomodoroEngine.prototype.tick = function() {
-    if (!this.isRunning || !this.targetEndTime) return;
+    if (!this.isRunning) return;
     var now = Date.now();
+    if (this.timerMode === 'flowtime' && this.mode === 'focus') {
+      if (!this.targetStartTime) return;
+      this.flowElapsedSeconds = Math.max(0, Math.floor((now - this.targetStartTime) / 1000));
+      this.render();
+      return;
+    }
+    if (!this.targetEndTime) return;
     this.remainingSeconds = Math.max(0, Math.ceil((this.targetEndTime - now) / 1000));
     this.render();
 
@@ -706,8 +908,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
   };
 
   PomodoroEngine.prototype.render = function() {
-    var m = Math.floor(this.remainingSeconds / 60);
-    var s = this.remainingSeconds % 60;
+    var isFlowFocus = (this.timerMode === 'flowtime' && this.mode === 'focus');
+    var secToRender = isFlowFocus ? this.flowElapsedSeconds : this.remainingSeconds;
+    var m = Math.floor(secToRender / 60);
+    var s = secToRender % 60;
     var mStr = m < 10 ? '0' + m : '' + m;
     var sStr = s < 10 ? '0' + s : '' + s;
     var timeStr = mStr + ':' + sStr;
@@ -715,8 +919,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       this.dom.time.textContent = timeStr;
     }
     if (this.dom.card) {
-      var pModeLabel = this.mode === 'focus' ? 'Focus' : this.mode === 'break' ? 'Short Break' : 'Long Break';
-      var pTitle = 'Pomodoro: ' + pModeLabel + ' (' + timeStr + (this.isRunning ? ' - Running' : ' - Paused') + ') (Click to inspect focus controls)';
+      var pModeLabel = isFlowFocus ? 'Flowtime' : (this.mode === 'focus' ? 'Focus' : this.mode === 'break' ? 'Short Break' : 'Long Break');
+      var pTitle = 'Focus Timer: ' + pModeLabel + ' (' + timeStr + (this.isRunning ? ' - Running' : ' - Paused') + ') (Click to inspect focus controls)';
       if (this.dom.card.title !== pTitle) this.dom.card.title = pTitle;
     }
 
@@ -747,23 +951,27 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     ctx.strokeStyle = this.isLightTheme ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.08)';
     ctx.stroke();
 
-    if (this.totalSeconds > 0) {
-      var progress = this.remainingSeconds / this.totalSeconds;
-      if (progress > 0) {
-        ctx.beginPath();
-        var startAngle = -Math.PI / 2;
-        var endAngle = -Math.PI / 2 + (progress * 2 * Math.PI);
-        ctx.arc(cx, cy, r, startAngle, endAngle);
-        ctx.lineWidth = lineWidth;
-        ctx.lineCap = 'round';
+    var progress = 0;
+    if (isFlowFocus) {
+      // Progress towards 90m deep work peak
+      progress = Math.min(1.0, this.flowElapsedSeconds / (90 * 60));
+    } else if (this.totalSeconds > 0) {
+      progress = this.remainingSeconds / this.totalSeconds;
+    }
 
-        if (!this.focusGradient) {
-          this.initGradients();
-        }
-        var grad = this.mode === 'focus' ? this.focusGradient : this.breakGradient;
-        ctx.strokeStyle = grad || (this.mode === 'focus' ? '#10b981' : '#fbbf24');
-        ctx.stroke();
+    if (progress > 0) {
+      ctx.beginPath();
+      var startAngle = -Math.PI / 2;
+      var endAngle = -Math.PI / 2 + (progress * 2 * Math.PI);
+      ctx.arc(cx, cy, r, startAngle, endAngle);
+      ctx.lineWidth = lineWidth;
+      ctx.lineCap = 'round';
+
+      if (!this.focusGradient) {
+        this.initGradients();
       }
+      ctx.strokeStyle = (this.mode === 'focus' || isFlowFocus) ? this.focusGradient : this.breakGradient;
+      ctx.stroke();
     }
   };
 
@@ -1689,10 +1897,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     showBatteryInfo: true,
 
     /**
-     * Product version (v0.9.1). Rendered into #hud-version (bottom-right of
+     * Product version (v0.10.0). Rendered into #hud-version (bottom-right of
      * the card) so the running build is identifiable at a glance.
      */
-    VERSION: '0.9.1',
+    VERSION: '0.10.0',
     showCelestial: true,
     showAqi: true,
     showEnvironmentalMetrics: true,
@@ -1807,6 +2015,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         hudClock: document.getElementById('hud-clock'),
         hudDate: document.getElementById('hud-date'),
         hudLocationText: document.getElementById('hud-location-text'),
+        hudWeatherIcon: document.getElementById('hud-weather-icon'),
         hudTempVal: document.getElementById('hud-temp-val'),
         hudTempUnit: document.getElementById('hud-temp-unit'),
         hudCondition: document.getElementById('hud-condition'),
@@ -2109,6 +2318,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           artist: this.dom.mediaArtist,
           badge: this.dom.mediaSourceBadge,
           canvas: this.dom.audioVisualizerCanvas,
+          quickLaunch: document.getElementById('media-quick-launch'),
+          btnSpotify: document.getElementById('quick-launch-spotify'),
+          btnAmazon: document.getElementById('quick-launch-amazon'),
+          btnJiosaavn: document.getElementById('quick-launch-jiosaavn'),
           enabled: cfg.enableAudioVisualizer !== false
         });
       }
@@ -2123,6 +2336,11 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           btnReset: this.dom.pomoBtnReset,
           pillFocus: this.dom.pomoPillFocus,
           pillBreak: this.dom.pomoPillBreak,
+          pomoModePomo: document.getElementById('pomo-mode-pomo'),
+          pomoMode52: document.getElementById('pomo-mode-52'),
+          pomoModeUltra: document.getElementById('pomo-mode-ultra'),
+          pomoModeFlow: document.getElementById('pomo-mode-flow'),
+          timerMode: cfg.focusTimerMode || 'pomodoro',
           focusMinutes: cfg.pomodoroFocusMinutes || 25,
           breakMinutes: cfg.pomodoroBreakMinutes || 5,
           longBreakMinutes: cfg.pomodoroLongBreakMinutes || 15
@@ -2540,6 +2758,16 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             break;
           case 'pomodoroLongBreakMinutes':
             if (self.pomodoro) self.pomodoro.setDurations(null, null, typeof val === 'number' ? val : parseInt(val, 10));
+            break;
+          case 'focusTimerMode':
+            if (self.pomodoro) {
+              var pModeVal = val;
+              if (typeof val === 'number') {
+                var pModes = ['pomodoro', 'fiftytwo', 'ultradian', 'flowtime'];
+                pModeVal = pModes[val] || 'pomodoro';
+              }
+              self.pomodoro.setTimerMode(pModeVal);
+            }
             break;
           case 'enableAudioVisualizer':
             if (self.mediaVisualizer) self.mediaVisualizer.setEnabled(!!val);
@@ -3699,7 +3927,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       'showAqi', 'showEnvironmentalMetrics', 'weatherProvider',
       'openweathermapApiKey', 'aqiProvider', 'waqiApiKey', 'showForecastChart',
       'defaultForecastTab', 'showPomodoro', 'showMediaPlayer',
-      'pomodoroFocusMinutes', 'pomodoroBreakMinutes', 'pomodoroLongBreakMinutes',
+      'focusTimerMode', 'pomodoroFocusMinutes', 'pomodoroBreakMinutes', 'pomodoroLongBreakMinutes',
       'enableAudioVisualizer', 'enableDynamicSolarLighting'
     ],
     _SETTINGS_STORAGE_PREFIX: /^(LIVELY_HUD_|local_wally_)/,
@@ -6359,6 +6587,43 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       this.dom.hudLocationText.textContent = text;
     },
 
+    getMeteocon: function(category, isDay, wmoCode) {
+      var cat = (category || '').toUpperCase();
+      var day = (isDay !== false);
+      var code = Number(wmoCode);
+
+      // Specific WMO codes for sleet / freezing rain
+      if (code === 56 || code === 57 || code === 66 || code === 67) {
+        return 'sleet.svg';
+      }
+
+      switch (cat) {
+        case 'CLEAR':
+          return day ? 'clear-day.svg' : 'clear-night.svg';
+        case 'PARTLY_CLOUDY':
+          return day ? 'partly-cloudy-day.svg' : 'partly-cloudy-night.svg';
+        case 'OVERCAST':
+          return day ? 'overcast-day.svg' : 'overcast-night.svg';
+        case 'FOG':
+          return 'fog.svg';
+        case 'DRIZZLE':
+          return 'drizzle.svg';
+        case 'RAIN':
+          return 'rain.svg';
+        case 'SNOW':
+          return 'snow.svg';
+        case 'THUNDERSTORM':
+          return 'thunderstorms-rain.svg';
+        case 'WIND':
+          return 'wind.svg';
+        default:
+          if (cat.indexOf('RAIN') !== -1) return 'rain.svg';
+          if (cat.indexOf('SNOW') !== -1) return 'snow.svg';
+          if (cat.indexOf('CLOUD') !== -1) return day ? 'partly-cloudy-day.svg' : 'partly-cloudy-night.svg';
+          return day ? 'clear-day.svg' : 'clear-night.svg';
+      }
+    },
+
     renderWeather: function(w) {
       if (!w) return;
 
@@ -6386,6 +6651,20 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (this.dom.hudFeelsLike) this.dom.hudFeelsLike.textContent = (apparent !== '--') ? ('Feels like ' + apparent + '°') : 'Feels like --';
       if (this.dom.hudTempHigh) this.dom.hudTempHigh.textContent = (high !== '--') ? (high + '°') : '--';
       if (this.dom.hudTempLow) this.dom.hudTempLow.textContent = (low !== '--') ? (low + '°') : '--';
+
+      // Animated Meteocon Icon Rendering
+      var isDay = (w.isDay != null)
+        ? (typeof w.isDay === 'number' ? w.isDay === 1 : !!w.isDay)
+        : ((this.celestialData && this.celestialData.isDay != null) ? this.celestialData.isDay : true);
+      var iconFile = this.getMeteocon(w.category, isDay, w.wmoCode);
+      if (this.dom.hudWeatherIcon) {
+        if (this._currentWeatherIcon !== iconFile) {
+          this._currentWeatherIcon = iconFile;
+          var safeIcon = App.escapeHtml(iconFile);
+          var safeAlt = App.escapeHtml(w.conditionText || 'Weather');
+          this.dom.hudWeatherIcon.innerHTML = '<img class="meteocon-svg-anim" src="assets/icons/weather/' + safeIcon + '" alt="' + safeAlt + '" width="52" height="52" loading="eager" draggable="false" />';
+        }
+      }
 
       if (this.dom.metricHumidity) {
         this.dom.metricHumidity.textContent = Number.isFinite(w.humidity) ? (Math.round(w.humidity) + '%') : '--';
