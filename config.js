@@ -109,8 +109,8 @@
     // 11. FALLBACK CORS GATEWAY PROXY
     // --------------------------------------------------------------------------
     // Secondary fallback proxy endpoint utilized if the primary proxy experiences a timeout or error.
-    // Default: 'https://corsproxy.io/?url='
-    fallbackCorsProxy: 'https://corsproxy.io/?url=',
+    // Default: 'https://corsproxy.io/?'
+    fallbackCorsProxy: 'https://corsproxy.io/?',
 
     // --------------------------------------------------------------------------
     // 12. DEFAULT GEOGRAPHIC COORDINATES & LOCATION

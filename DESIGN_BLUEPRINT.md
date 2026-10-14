@@ -1758,3 +1758,49 @@ Three independent tool families were built at the v0.8.16 baseline (they now run
 - Launches desktop apps using custom URI schemes (`spotify:`, `amznmp:`, `jiosaavn:`) with automatic fallback to web players (`https://open.spotify.com`, `https://music.amazon.com`, `https://www.jiosaavn.com`) on desktop timeout.
 - When SMTC track data arrives, `#media-card` smoothly transitions to `.is-playing`, revealing the track artwork, metadata, and 60 FPS audio visualizer.
 
+## 55. Atmospheric Wind Streamlines & 3-Tier Cloud Layers (v0.11.0)
+
+### 55.1 Atmospheric Wind Streamlines Engine (`WindStreamlineEngine`)
+- **Fluid Dynamic Particle Streamlines**: Canvas particle system (`#hud-wind-canvas`) integrated behind the primary weather condition block.
+- **Meteorological Vector Orientation**: Streamlines orient along the physical wind direction vector `(windDirectionDeg + 180) % 360`, with particle velocity scaled by wind speed and visual surges during wind gusts.
+- **Zero-Allocation Architecture**: Uses a contiguous `Float32Array` ring buffer with stride-7 SoA layout (X, Y, age, life, speed, width, alpha) and pre-computed opacity lookup tables. Zero per-frame memory allocation.
+- **Hardware-Conscious Idle Suspension**: Rendering suspends automatically when wind speed is calm (<0.5 km/h) or when wallpaper playback is paused / occluded.
+- **HiDPI Sharpness**: Backing store scales dynamically with `window.devicePixelRatio` to prevent blur on high-DPI displays.
+
+### 55.2 3-Tier Cloud Layer Strata
+- **Three-Tier Cloud Coverage**: Environmental card displays atmospheric cloud coverage across Low (<2km, Stratus/Cumulus), Mid (2-6km, Altocumulus), and High (>6km, Cirrus) strata.
+- **Dominant Layer Callout**: Displays the highest percentage cloud strata in the card header (e.g., `High 99%`, `Mid 65%`, `Low 45%`, or `Clear 0%`).
+- **Vector Icon Parallax Drift**: Subtle keyframe drift between cloud tiers pausing cleanly when wallpaper playback is suspended.
+- **Telemetry Disclosure**: Hover popover and click drawer reveal complete breakdowns of High, Mid, Low cloud cover, wind direction, velocity, and peak gusts.
+
+## 56. Zero-Defect Master Audit Hardening (v0.12.0)
+
+### 56.1 Performance Hardening (GAMMA-01 to GAMMA-11)
+- **Idle Parking Guard**: `WindStreamlineEngine.hasActiveAnimation()` now respects wallpaper playback and parking states, guaranteeing 0.0% CPU when parked.
+- **Forced Layout Reflow Elimination**: Reordered DOM writes and reads in `showHoverPopover()`, guarded canvas resizes in `WindStreamlineEngine`, and replaced `.hud-aqi-fill` CSS `width` transition with `transform: scaleX(...)`.
+- **Memory Memoization**: Added `_newsImageMemoryCache` in `App` to eliminate synchronous `localStorage.getItem` and `JSON.parse` churn on 7-second headline rotations.
+- **Ephemeris Computation Optimization**: `renderCelestial` feels-like peak loop precalculates day boundary timestamps once, avoiding 168 repeated `Intl.DateTimeFormat` evaluations every 15s.
+- **Draw Call Batching**: Batched 24 individual canvas stroke paths into a single `beginPath()` and `stroke()` call in `WindStreamlineEngine`.
+- **Clock Loop Allocations**: Replaced repeated `formatToParts` array allocations with minute-boundary caching.
+- **Compositor Efficiency**: Replaced non-composited CSS `transition: background 3s` on `.bg-vignette` and `.solar-ambient-wash` with hardware-accelerated opacity transitions.
+
+### 56.2 Functional Correctness & Data Integrity (ALPHA-01 to ALPHA-10)
+- **Cache Poisoning Prevention**: Deep-cloning applied to `CacheManager.set()` and simulation mode transitions to prevent in-memory mutation of live cached envelopes.
+- **OpenWeatherMap OneCall 3.0 Compatibility**: Mapped flat `data.current.wind_deg` and `data.current.wind_gust` fields.
+- **Timezone-Aware Clock Dates**: Clock date cache key uses local civil midnight timestamps, preventing date stall on remote midnight rollovers.
+- **OpenWeatherMap 2.5 Timezone Mapping**: Mapped `data.city.timezone` seconds offset to format strings and timezone calculations.
+- **Stale News Eviction**: Empty news arrays now correctly clear previous city headlines and display honest empty states.
+- **Hardware Monitor Fallback**: Added fallback to `CurrentRam` (used RAM) when `CurrentRamAvail` is omitted by the host.
+- **Precipitation NaN Protection**: Validated `Number.isFinite(windSpeedKm)` in `ParticleEngine` to prevent NaN cascade in particle physics.
+- **Background Location Refresh**: Added `.catch()` handler to `_scheduleBackgroundLocationRefresh` promise chain to eliminate unhandled rejections.
+- **CORS Proxy Gateway Alignment**: Corrected `corsproxy.io` gateway URL construction by removing redundant `url=` parameter.
+- **AQI Sensor Error Code Filtering**: Required `val >= 0` in `interpretEuropeanAqi`, mapping negative sensor codes to `Unavailable`.
+
+### 56.3 Security, Accessibility & NFRs (BETA-01 to BETA-08)
+- **Diagnostic Panel Accessibility**: Hidden diagnostic panel marked with `visibility: hidden` and `aria-hidden="true"` to remove from keyboard tab order.
+- **Modal Focus Trap & Hotkey Isolation**: Global hotkeys disabled while modal is open, and keyboard navigation strictly trapped within dialog.
+- **API Key Exfiltration Protection**: Exported settings payloads mask sensitive API keys with `...` by default, ignoring masked placeholders on import.
+- **URI Encoding Enforcement**: Encoded all target URLs in CORS proxy pipelines with `encodeURIComponent`.
+- **Interactive Element Nesting Fix**: Changed outer `#hud-news-block` role to `role="region"`, resolving WCAG 4.1.2 violations.
+- **High-Contrast Focus Indicators**: Added high-contrast `:focus-visible` styling (`2px solid #38bdf8`) across all interactive badges and buttons.
+- **Custom Protocol Launch Throttle**: Added 1.5-second cooldown throttle to desktop music app launches to prevent iframe/listener accumulation.

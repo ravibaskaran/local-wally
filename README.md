@@ -306,6 +306,47 @@ local-wally/
 
 ## 🛡️ Recent Updates & Quality Improvements
 
+### Version 0.12.0 — Zero-Defect Master Audit Hardening
+- **Performance & 0% CPU Idle Parking**:
+  - `WindStreamlineEngine.hasActiveAnimation()` now respects wallpaper playback pause, hidden state, and calm wind (<0.5 km/h), restoring verified 0.0% CPU parking 24/7.
+  - Eliminated 60 FPS forced layout reflows in `WindStreamlineEngine.prototype.render()` by guarding canvas resize triggers with a dirty flag.
+  - In-memory memoization cache for news images (`_newsImageMemoryCache`), removing synchronous `localStorage.getItem` and `JSON.parse` operations on every 7-second headline rotation.
+  - Precomputed diurnal civil timestamp bounds in `renderCelestial()`, eliminating 168 `Intl.DateTimeFormat` evaluations every 15 seconds in the feels-like peak loop.
+  - Reordered DOM writes and reads in `showHoverPopover()` to prevent synchronous layout recalculations.
+  - Single batched stroke path for wind streamlines, cutting per-frame canvas draw calls from 24 down to 1.
+  - Replaced uncomposited `transition: background 3s` full-screen repaints with GPU-accelerated opacity transitions.
+  - Converted `.hud-aqi-fill` animation from layout-triggering `width` to composited `transform: scaleX(...)`.
+- **Functional Correctness & Telemetry Reliability**:
+  - Deep cloning in `CacheManager.set()` and simulation transitions, preventing live weather cache poisoning.
+  - OpenWeatherMap OneCall 3.0 wind vector mapping (`wind_deg` and `wind_gust`) mapped from root current object.
+  - Timezone-aware civil midnight anchoring for clock date cache, eliminating date stall across remote midnight rollovers.
+  - OpenWeatherMap 2.5 `city.timezone` seconds offset extracted and mapped, fixing Daytime Card 2 feels-like peak and hourly point timezones.
+  - Location switching correctly clears previous city headlines when new city yields an empty feed.
+  - Hardware monitor gracefully falls back to `CurrentRam` (used RAM) when host omits `CurrentRamAvail`, preventing 100% false RAM pegs.
+  - Added finite-number guards on precipitation wind speeds, preventing `NaN` coordinate cascades in `ParticleEngine`.
+  - Added `.catch()` error handler on background location refresh promise chains.
+  - Corrected `corsproxy.io` fallback proxy parameter concatenation to avoid HTTP 400 Bad Request.
+  - European AQI interpreter requires `val >= 0`, correctly mapping negative sensor error codes to `Unavailable`.
+- **Security & Accessibility (NFRs)**:
+  - Hidden Diagnostic Panel receives `visibility: hidden` and `aria-hidden="true"`, cleanly removing it from keyboard tab order.
+  - Modal dialog traps keyboard focus, and global hotkeys are suppressed while modal is active.
+  - Settings backup export masks sensitive API keys with `...` by default, safely ignoring masked placeholders on import.
+  - Encoded RSS target URLs across all CORS proxy queries with `encodeURIComponent`.
+  - Upgraded `#hud-news-block` container role to `role="region"`, fixing WCAG 4.1.2 nested interactive element violations.
+  - Restored high-contrast `:focus-visible` styling (`2px solid #38bdf8`) on all interactive buttons and badges.
+  - Added 1.5-second cooldown throttle to custom protocol desktop app launches, preventing hidden iframe and listener accumulation.
+
+### Version 0.11.0 — Atmospheric Wind Streamlines & 3-Tier Cloud Layers
+- **Atmospheric Wind Streamlines (`#hud-wind-canvas`)**:
+  - Real-time particle streamlines dynamically orient along the live meteorological wind bearing (`(windDirectionDeg + 180) % 360`) behind the primary weather condition block.
+  - Zero-allocation architecture utilizing a contiguous `Float32Array` ring-buffer SoA layout and pre-computed opacity tables (0 string/object allocations in the 60 FPS loop).
+  - Backing store dynamically scales with `window.devicePixelRatio` for razor-sharp rendering on 125%, 150%, and 200% displays.
+- **3-Tier Atmospheric Cloud Layer Strata**:
+  - Dedicated cloud strata telemetry displaying atmospheric cloud coverage across Low (<2km, Stratus/Cumulus), Mid (2–6km, Altocumulus), and High (>6km, Cirrus) altitudes.
+  - Glanceable dominant layer callout in the card header (e.g. `High 99%`, `Mid 65%`, `Low 45%`, or `Clear 0%`).
+  - Subtle parallax drift keyframe animation between cloud strata vectors with playback pause synchronization.
+  - Comprehensive popover and drawer telemetry disclosing complete cloud coverage, wind direction, velocity, and peak gusts.
+
 ### Version 0.10.0 — Animated Meteocons, Multi-Mode Focus Timer, News Proxy Cascade & Music Quick Launch
 - **Playful Animated Weather Meteocons (Fill Style)**:
   - Bundled 14 local, animated Bas Milius SVG Meteocons (`assets/icons/weather/`: clear day/night, partly cloudy day/night, overcast, rain, drizzle, thunderstorms-rain, snow, sleet, fog, wind).

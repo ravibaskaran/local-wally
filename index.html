@@ -425,7 +425,7 @@
         </section>
 
         <!-- News Block -->
-        <section id="hud-news-block" class="hud-news-block hud-card-interactive" aria-label="News headlines" tabindex="0" role="button" aria-haspopup="dialog" title="News: Headlines and local updates (Click to inspect stories)">
+        <section id="hud-news-block" class="hud-news-block hud-card-interactive" aria-label="News headlines" tabindex="0" role="region" title="News: Headlines and local updates (Click to inspect stories)">
           <div id="hud-news-bg" class="hud-news-bg" aria-hidden="true"></div>
           <div class="hud-news-header">
             <div class="hud-news-title-group">
@@ -457,7 +457,7 @@
             <div id="sync-dot" class="sync-pulse"></div>
             <span id="sync-status">Initializing...</span>
           </div>
-          <span id="hud-version" class="hud-version" title="Local Wally HUD version">v0.10.0</span>
+          <span id="hud-version" class="hud-version" title="Local Wally HUD version">v0.12.0</span>
         </footer>
       </div>
 
@@ -561,7 +561,7 @@
     </aside>
 
     <!-- Optional Diagnostics Panel (Press 'D' to toggle) -->
-    <div id="diagnostic-panel">
+    <div id="diagnostic-panel" aria-hidden="true">
       <div>GPU: <span id="diag-gpu">Detecting...</span></div>
       <div>Theme: <span id="diag-theme">Auto (Dark)</span></div>
       <div>FPS: <span id="diag-fps">60</span></div>
@@ -595,9 +595,9 @@
         <div class="diag-keys-help">Paste the key into the matching field in Lively's Customize panel (or use Export/Import there to copy all settings at once).</div>
       </div>
       <div class="diag-backup-section">
-        <div class="diag-backup-title">Backup &amp; Restore (includes API keys)</div>
+        <div class="diag-backup-title">Backup &amp; Restore (sanitized)</div>
         <div class="diag-backup-actions">
-          <button id="diag-export-settings" class="diag-btn" type="button" title="Download all settings (including API keys) as one portable JSON file">Export settings</button>
+          <button id="diag-export-settings" class="diag-btn" type="button" title="Download all settings (with API keys masked) as one portable JSON file">Export settings</button>
           <button id="diag-import-settings" class="diag-btn" type="button" title="Restore settings from an exported JSON file">Import settings</button>
           <input id="diag-import-file" type="file" accept=".json,application/json" hidden>
         </div>

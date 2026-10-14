@@ -235,9 +235,10 @@
     var oldCount = this.activePrecipCount;
 
     this.mode = category || 'CLEAR';
-    this.windSpeed = windSpeedKm != null ? windSpeedKm : 10;
+    this.windSpeed = (typeof windSpeedKm === 'number' && Number.isFinite(windSpeedKm)) ? windSpeedKm : 10;
     // Calculate normalized horizontal wind drift
     this.windFactor = (this.windSpeed / 50.0);
+    if (!Number.isFinite(this.windFactor) || this.windFactor < 0) this.windFactor = 0.2;
     if (this.windFactor > 1.8) this.windFactor = 1.8;
 
     // Active particle count based on weather severity and user multiplier

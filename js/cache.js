@@ -158,7 +158,7 @@
         timestamp: now,
         weatherProvider: wProv,
         aqiProvider: aProv,
-        data: data
+        data: data ? JSON.parse(JSON.stringify(data)) : null
       };
       // Publish memory state before touching storage
       this._cachedEnvelope = envelope;

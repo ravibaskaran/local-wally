@@ -396,6 +396,11 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
   };
 
   MediaVisualizerEngine.prototype.launchApp = function(protocolUri, webUrl) {
+    var now = Date.now();
+    if (this._lastLaunchTime && (now - this._lastLaunchTime) < 1500) {
+      return;
+    }
+    this._lastLaunchTime = now;
     var hasBlurred = false;
     function onBlur() {
       hasBlurred = true;
@@ -1312,10 +1317,13 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
     var curveD = parts.join('');
     var y0 = Math.round(this.yCoords[0] * 10) / 10;
-    var lineD = 'M 0,' + y0 + curveD;
-    var areaD = 'M 0,18 L 0,' + y0 + curveD + ' L 80,18 Z';
+    if (!this._pathResult) {
+      this._pathResult = { lineD: '', areaD: '' };
+    }
+    this._pathResult.lineD = 'M 0,' + y0 + curveD;
+    this._pathResult.areaD = 'M 0,18 L 0,' + y0 + curveD + ' L 80,18 Z';
 
-    return { lineD: lineD, areaD: areaD };
+    return this._pathResult;
   };
 
   SvgSparklineEngine.prototype.render = function(id, buffer, customMax) {
@@ -1826,6 +1834,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     this.enabled = true;
     this.isSleeping = false;
     this._initialized = false;
+    this._needsResize = true;
   }
 
   WindStreamlineEngine.prototype.initParticles = function() {
@@ -1867,13 +1876,27 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
   WindStreamlineEngine.prototype.hasActiveAnimation = function() {
     if (!this.enabled || this.isSleeping || !this.ctx || !this.canvas) return false;
+    if (this.count <= 0) return false;
+    if (global.App && (global.App.isPlaybackPaused || !global.App.isRunning)) return false;
+    if (this.canvas.style && this.canvas.style.display === 'none') return false;
     return (this.windSpeedKm > 0.5);
   };
 
+  WindStreamlineEngine.prototype.markNeedsResize = function() {
+    this._needsResize = true;
+  };
+
   WindStreamlineEngine.prototype.resize = function() {
+    this._needsResize = false;
     if (!this.canvas || !this.ctx) return;
-    var rect = this.canvas.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return;
+    var rect = (typeof this.canvas.getBoundingClientRect === 'function')
+      ? this.canvas.getBoundingClientRect()
+      : { width: this.canvas.width || 0, height: this.canvas.height || 0 };
+    if (!rect || rect.width <= 0 || rect.height <= 0) {
+      this.width = 0;
+      this.height = 0;
+      return;
+    }
     var dpr = window.devicePixelRatio || 1;
     if (Math.abs(this.width - rect.width) < 1 && Math.abs(this.height - rect.height) < 1 && this.dpr === dpr) {
       return;
@@ -1883,7 +1906,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     this.dpr = dpr;
     this.canvas.width = Math.round(rect.width * dpr);
     this.canvas.height = Math.round(rect.height * dpr);
-    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (typeof this.ctx.setTransform === 'function') {
+      this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
 
     if (!this._initialized) {
       this.initParticles();
@@ -1892,10 +1917,12 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
   WindStreamlineEngine.prototype.render = function(dt) {
     if (!this.enabled || this.isSleeping || !this.ctx || !this.canvas) return;
-    if (global.App && global.App.isParked) return;
+    if (global.App && (global.App.isPlaybackPaused || !global.App.isRunning)) return;
 
     if (this.width <= 0 || this.height <= 0) {
-      this.resize();
+      if (this._needsResize) {
+        this.resize();
+      }
       if (this.width <= 0 || this.height <= 0) return;
     }
 
@@ -1916,6 +1943,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
     ctx.lineWidth = 1.25;
     ctx.lineCap = 'round';
+    ctx.strokeStyle = WIND_STROKE_LUT[7];
+    ctx.beginPath();
 
     for (var i = 0; i < this.count; i++) {
       var offset = i * 7;
@@ -1963,13 +1992,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       var tailX = x - dx * len;
       var tailY = y - dy * len;
 
-      var styleIdx = Math.min(20, Math.max(0, Math.round(alpha * 20)));
-      ctx.strokeStyle = WIND_STROKE_LUT[styleIdx];
-      ctx.beginPath();
       ctx.moveTo(tailX, tailY);
       ctx.lineTo(x, y);
-      ctx.stroke();
     }
+    ctx.stroke();
   };
 
   global.WindStreamlineEngine = WindStreamlineEngine;
@@ -2078,10 +2104,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     showBatteryInfo: true,
 
     /**
-     * Product version (v0.10.0). Rendered into #hud-version (bottom-right of
+     * Product version (v0.12.0). Rendered into #hud-version (bottom-right of
      * the card) so the running build is identifiable at a glance.
      */
-    VERSION: '0.10.0',
+    VERSION: '0.12.0',
     showCelestial: true,
     showAqi: true,
     showEnvironmentalMetrics: true,
@@ -2639,9 +2665,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
       // Keyboard shortcuts
       window.addEventListener('keydown', function(e) {
-        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) return;
-
-        // Fix 12: Trap Tab focus inside open detail modal
+        // Fix 12: Trap Tab focus inside open detail modal (even if focus is currently in an input)
         if (e.key === 'Tab' && self.isDetailOpen && self.dom.hudCardDetail) {
           var focusable = self.dom.hudCardDetail.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
           if (focusable && focusable.length > 0) {
@@ -2659,7 +2683,25 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
               }
             }
           }
+          return;
         }
+
+        if (e.key === 'Escape' || e.key === 'Esc') {
+          if (self.isHoverPopoverOpen) {
+            if (e.preventDefault) e.preventDefault();
+            self.hideHoverPopover();
+          } else if (self.isDetailOpen) {
+            if (e.preventDefault) e.preventDefault();
+            self.closeCardDetail();
+          }
+          return;
+        }
+
+        // Ignore hotkeys when typing in text fields
+        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) return;
+
+        // Guard: Do not trigger background wallpaper hotkeys while modal is open (BETA-02)
+        if (self.isDetailOpen) return;
 
         if (e.key === 'd' || e.key === 'D') {
           self.toggleDiagnostics();
@@ -2671,14 +2713,6 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           if (self.mediaVisualizer) self.mediaVisualizer.cycleDemoTrack();
         } else if (e.key === 'p' || e.key === 'P') {
           if (self.pomodoro) self.pomodoro.toggle();
-        } else if (e.key === 'Escape' || e.key === 'Esc') {
-          if (self.isHoverPopoverOpen) {
-            if (e.preventDefault) e.preventDefault();
-            self.hideHoverPopover();
-          } else if (self.isDetailOpen) {
-            if (e.preventDefault) e.preventDefault();
-            self.closeCardDetail();
-          }
         }
       });
 
@@ -3752,8 +3786,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
       if (!this.state) {
         this.state = global.CacheManager.getMockData();
+      } else {
+        this.state = JSON.parse(JSON.stringify(this.state));
       }
-      this.state.weather = simWeather;
+      this.state.weather = JSON.parse(JSON.stringify(simWeather));
       if (global.ApiService && typeof global.ApiService.generateSyntheticForecast === 'function') {
         var simHourly = global.ApiService.generateSyntheticForecast(simWeather, this.state.aqi);
         this.state.hourlyForecast = simHourly;
@@ -3781,6 +3817,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (this.dom.diagPanel) {
         if (this.showDiagnostics) {
           this.dom.diagPanel.classList.add('is-active');
+          if (typeof this.dom.diagPanel.setAttribute === 'function') {
+            this.dom.diagPanel.setAttribute('aria-hidden', 'false');
+          }
           this.updateGpuDiagnostics();
           this.updateThemeDiagnostics();
           this.updateLocationDiagnostics();
@@ -3788,6 +3827,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           this.updateWallpaperDiagnostics();
         } else {
           this.dom.diagPanel.classList.remove('is-active');
+          if (typeof this.dom.diagPanel.setAttribute === 'function') {
+            this.dom.diagPanel.setAttribute('aria-hidden', 'true');
+          }
           this.hideLocationSuggestions();
         }
       }
@@ -4134,13 +4176,19 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     // Extensible: any reservation/lock state added by multi-instance work joins here.
     _OPERATIONAL_STORAGE_KEYS: ['LIVELY_HUD_NEWS_QUOTA', 'LIVELY_HUD_NEWS_TIER', 'LIVELY_HUD_NEWS_IMG_BUDGET'],
 
-    _buildSettingsPayload: function() {
+    _buildSettingsPayload: function(options) {
+      options = options || {};
+      var maskKeys = options.maskKeys !== false;
       var props = {};
       var tracked = (global.LivelyBridge && global.LivelyBridge.properties) || {};
       for (var i = 0; i < this.SETTINGS_PROPNAMES.length; i++) {
         var name = this.SETTINGS_PROPNAMES[i];
         if (Object.prototype.hasOwnProperty.call(tracked, name)) {
-          props[name] = tracked[name];
+          var val = tracked[name];
+          if (maskKeys && this._KEY_PROPS.indexOf(name) !== -1 && typeof val === 'string' && val.trim().length > 0) {
+            val = val.length > 8 ? (val.substring(0, 4) + '...' + val.substring(val.length - 4)) : '***';
+          }
+          props[name] = val;
         }
       }
       var storage = {};
@@ -4166,7 +4214,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           meta: {
             product: 'local-wally-hud',
             format: 1,
-            includesApiKeys: true,
+            includesApiKeys: !maskKeys,
+            maskedApiKeys: maskKeys,
             exportedAt: new Date().toISOString()
           },
           livelyProperties: props,
@@ -4373,6 +4422,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           // the import boundary; blank stays valid. Keys actually embedded in
           // request URLs (query params) must additionally stay URL-charset-safe.
           if (typeof val !== 'string') { skipped++; continue; }
+          if (val.indexOf('***') !== -1 || val.indexOf('...') !== -1) { skipped++; continue; }
           if (val.length > 190) { skipped++; continue; }
           if (this._URL_EMBEDDED_KEY_PROPS.indexOf(name) !== -1 &&
               val.trim() && /[^A-Za-z0-9._~-]/.test(val.trim())) { skipped++; continue; }
@@ -4487,6 +4537,13 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       var tz = (this.state && this.state.weather && this.state.weather.timezone) ||
                (this.state && this.state.location && (this.state.location.timeZone || this.state.location.timezone)) ||
                (defaultLoc.timeZone || defaultLoc.timezone) || null;
+      if (typeof tz === 'number' && Number.isFinite(tz)) {
+        var tzSign = tz >= 0 ? '+' : '-';
+        var absSec = Math.abs(tz);
+        var tzH = Math.floor(absSec / 3600);
+        var tzM = Math.floor((absSec % 3600) / 60);
+        return tzSign + (tzH < 10 ? '0' : '') + tzH + ':' + (tzM < 10 ? '0' : '') + tzM;
+      }
       return tz;
     },
 
@@ -4567,13 +4624,26 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
               day: 'numeric'
             });
           }
-          var clockParts = this._tzFormatters[tz + '_clock'].formatToParts(now);
-          for (var pi = 0; pi < clockParts.length; pi++) {
-            if (clockParts[pi].type === 'hour') hStr = clockParts[pi].value;
-            else if (clockParts[pi].type === 'minute') mStr = clockParts[pi].value;
-            else if (clockParts[pi].type === 'dayPeriod') periodStr = clockParts[pi].value.replace(/\s+/g, ' ').toUpperCase();
+          var currentMinute = Math.floor(now.getTime() / 60000);
+          if (this._cachedClockMinute === currentMinute && this._cachedClockTz === tz && this._cachedHStr) {
+            hStr = this._cachedHStr;
+            mStr = this._cachedMStr;
+            periodStr = this._cachedPeriodStr;
+          } else {
+            var clockParts = this._tzFormatters[tz + '_clock'].formatToParts(now);
+            for (var pi = 0; pi < clockParts.length; pi++) {
+              if (clockParts[pi].type === 'hour') hStr = clockParts[pi].value;
+              else if (clockParts[pi].type === 'minute') mStr = clockParts[pi].value;
+              else if (clockParts[pi].type === 'dayPeriod') periodStr = clockParts[pi].value.replace(/\s+/g, ' ').toUpperCase();
+            }
+            this._cachedClockMinute = currentMinute;
+            this._cachedClockTz = tz;
+            this._cachedHStr = hStr;
+            this._cachedMStr = mStr;
+            this._cachedPeriodStr = periodStr;
           }
-          var dateKey = tz + ':' + now.toDateString();
+          var midnightMs = this.getCivilMidnightAnchor(now, tz).getTime();
+          var dateKey = tz + ':' + midnightMs;
           if (this._cachedDateKey === dateKey && this._cachedDateStr) {
             dateStr = this._cachedDateStr;
           } else {
@@ -4587,13 +4657,25 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
 
       if (!tz) {
-        var hours = now.getHours();
-        var minutes = now.getMinutes();
-        periodStr = hours >= 12 ? 'PM' : 'AM';
-        hours = hours % 12;
-        if (hours === 0) hours = 12;
-        hStr = hours < 10 ? '0' + hours : '' + hours;
-        mStr = minutes < 10 ? '0' + minutes : '' + minutes;
+        var currentLocalMinute = Math.floor(now.getTime() / 60000);
+        if (this._cachedClockMinute === currentLocalMinute && this._cachedClockTz === 'local' && this._cachedHStr) {
+          hStr = this._cachedHStr;
+          mStr = this._cachedMStr;
+          periodStr = this._cachedPeriodStr;
+        } else {
+          var hours = now.getHours();
+          var minutes = now.getMinutes();
+          periodStr = hours >= 12 ? 'PM' : 'AM';
+          hours = hours % 12;
+          if (hours === 0) hours = 12;
+          hStr = hours < 10 ? '0' + hours : '' + hours;
+          mStr = minutes < 10 ? '0' + minutes : '' + minutes;
+          this._cachedClockMinute = currentLocalMinute;
+          this._cachedClockTz = 'local';
+          this._cachedHStr = hStr;
+          this._cachedMStr = mStr;
+          this._cachedPeriodStr = periodStr;
+        }
         var localDateKey = 'local:' + now.toDateString();
         if (this._cachedDateKey === localDateKey && this._cachedDateStr) {
           dateStr = this._cachedDateStr;
@@ -4955,28 +5037,21 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         // no whole-hour boundary search, no fixed 24h arithmetic, DST-exact on
         // 23h/25h days (LW02). Without a valid timezone the metric reports
         // unavailable instead of silently borrowing the host timezone.
-        var ymdFmt = null;
-        var todayKey = null;
+        var dayStartMs = null;
+        var dayEndMs = null;
         if (tz) {
           try {
-            if (!self._tzFormatters) self._tzFormatters = {};
-            if (!self._tzFormatters[tz + '_YMD']) {
-              self._tzFormatters[tz + '_YMD'] = new Intl.DateTimeFormat('en-CA', {
-                timeZone: tz,
-                year: 'numeric',
-                month: '2-digit',
-                day: '2-digit'
-              });
-            }
-            ymdFmt = self._tzFormatters[tz + '_YMD'];
-            todayKey = ymdFmt.format(now);
+            var midnightAnchor = this.getCivilMidnightAnchor(now, tz);
+            dayStartMs = midnightAnchor.getTime();
+            var tomorrowAnchor = this.getCivilMidnightAnchor(new Date(dayStartMs + 28 * 3600000), tz);
+            dayEndMs = tomorrowAnchor.getTime();
           } catch (e) {
-            ymdFmt = null;
-            todayKey = null;
+            dayStartMs = null;
+            dayEndMs = null;
           }
         }
 
-        if (!todayKey) {
+        if (!dayStartMs || !dayEndMs) {
           peakVal = 'Unavailable';
           peakSub = 'No forecast timezone';
         } else {
@@ -5000,7 +5075,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             // interval already ended is a past reading, never a remaining-day peak
             if (hPtMs + 3600000 <= nowMsPeak) continue;
             // Same LOCAL calendar date in the location tz — no tomorrow leak
-            if (ymdFmt.format(new Date(hPtMs)) !== todayKey) continue;
+            if (hPtMs < dayStartMs || hPtMs >= dayEndMs) continue;
 
             var appTemp = isF ? hPt.apparentF : hPt.apparentC;
             if (appTemp == null || isNaN(appTemp)) {
@@ -5504,7 +5579,13 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (!this.dom.hudHoverPopover || !anchorEl) return;
       if (this.isDetailOpen) return;
 
-      var content = this.getPopoverContent(popoverType, anchorEl);
+      var rect = (typeof anchorEl.getBoundingClientRect === 'function')
+        ? anchorEl.getBoundingClientRect()
+        : { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 };
+
+      var content = (popoverType && typeof popoverType === 'object' && popoverType.title)
+        ? popoverType
+        : this.getPopoverContent(popoverType, anchorEl);
       if (!content) return;
 
       var pop = this.dom.hudHoverPopover;
@@ -5516,14 +5597,13 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         this.currentPopoverAnchor.removeAttribute('aria-describedby');
       }
       this.currentPopoverAnchor = anchorEl;
-      this._currentPopoverType = popoverType;
+      this._currentPopoverType = (typeof popoverType === 'string') ? popoverType : 'popover';
       anchorEl.setAttribute('aria-describedby', 'hud-hover-popover');
 
       pop.classList.add('is-visible');
       pop.setAttribute('aria-hidden', 'false');
       this.isHoverPopoverOpen = true;
 
-      var rect = anchorEl.getBoundingClientRect();
       var popW = pop.offsetWidth || 230;
       var popH = pop.offsetHeight || 90;
       var pad = 8;
@@ -6754,7 +6834,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       this.renderLocation(snapshot.location);
       this.renderWeather(snapshot.weather);
       this.renderAqi(snapshot.aqi);
-      this.renderNews(snapshot.news);
+      if (Array.isArray(snapshot.news) && snapshot.news.length > 0) {
+        this.renderNews(snapshot.news);
+      }
       this.renderForecast(snapshot.hourlyForecast || (snapshot.weather && snapshot.weather.hourlyForecast));
       this.renderCelestial();
       this.updateBackground(snapshot.background);
@@ -6959,7 +7041,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (this.dom.hudAqiFill) {
         // European AQI 0 to 100 mapped to %
         var pct = isAvailable ? Math.min(100, Math.max(5, (aqiVal / 80) * 100)) : 0;
-        this.dom.hudAqiFill.style.width = pct + '%';
+        this.dom.hudAqiFill.style.width = '';
+        this.dom.hudAqiFill.style.transform = 'scaleX(' + (pct / 100).toFixed(4) + ')';
       }
       if (this.dom.hudPm25) {
         var pm25Val = aqi.pm2_5 != null ? aqi.pm2_5 : aqi.pm25;
@@ -7283,9 +7366,17 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
       // RAM usage
       var totalRamMb = (typeof data.TotalRam === 'number' && Number.isFinite(data.TotalRam) && data.TotalRam > 0) ? data.TotalRam : 0;
-      var freeRamMb = (typeof data.CurrentRamAvail === 'number' && Number.isFinite(data.CurrentRamAvail) && data.CurrentRamAvail >= 0) ? data.CurrentRamAvail : 0;
-      var usedRamMb = totalRamMb > freeRamMb ? (totalRamMb - freeRamMb) : 0;
-      var ramPct = totalRamMb > 0 ? Math.round((usedRamMb / totalRamMb) * 100) : 0;
+      var hasAvail = typeof data.CurrentRamAvail === 'number' && Number.isFinite(data.CurrentRamAvail) && data.CurrentRamAvail >= 0;
+      var hasUsed = typeof data.CurrentRam === 'number' && Number.isFinite(data.CurrentRam) && data.CurrentRam >= 0;
+      var freeRamMb = hasAvail ? data.CurrentRamAvail : 0;
+      var usedRamMb = 0;
+      if (hasAvail) {
+        usedRamMb = totalRamMb > freeRamMb ? (totalRamMb - freeRamMb) : 0;
+      } else if (hasUsed) {
+        usedRamMb = data.CurrentRam;
+        freeRamMb = totalRamMb > usedRamMb ? (totalRamMb - usedRamMb) : 0;
+      }
+      var ramPct = totalRamMb > 0 ? Math.round((usedRamMb / totalRamMb) * 100) : (hasUsed ? Math.round(data.CurrentRam) : 0);
       ramPct = Number.isFinite(ramPct) ? Math.max(0, Math.min(100, ramPct)) : 0;
       var usedGb = (usedRamMb / 1024).toFixed(1);
       var totalGb = (totalRamMb / 1024).toFixed(1);
@@ -7515,7 +7606,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
       // Real articles only — the empty/unavailable state renders explicitly
       // below; no synthetic fallback headlines (LW05)
-      if (Array.isArray(items) && items.length > 0) {
+      if (Array.isArray(items)) {
         this.newsItems = items;
       }
 
@@ -7640,16 +7731,24 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     },
 
     _readNewsImageCache: function(title) {
+      var key = String(title || '').trim().toLowerCase().slice(0, 80);
+      if (!key) return null;
+      if (this._newsImageMemoryCache && Object.prototype.hasOwnProperty.call(this._newsImageMemoryCache, key)) {
+        return this._newsImageMemoryCache[key];
+      }
       try {
         var raw = global.localStorage && global.localStorage.getItem('LIVELY_HUD_NEWS_IMG_CACHE');
         if (!raw) return null;
         var list = JSON.parse(raw);
         if (!Array.isArray(list)) return null;
-        var key = String(title || '').trim().toLowerCase().slice(0, 80);
-        for (var i = list.length - 1; i >= 0; i--) {
-          if (list[i] && list[i].k === key && typeof list[i].v === 'string' && /^https:\/\//i.test(list[i].v)) {
-            return list[i].v;
+        if (!this._newsImageMemoryCache) this._newsImageMemoryCache = {};
+        for (var i = 0; i < list.length; i++) {
+          if (list[i] && list[i].k && typeof list[i].v === 'string' && /^https:\/\//i.test(list[i].v)) {
+            this._newsImageMemoryCache[list[i].k] = list[i].v;
           }
+        }
+        if (Object.prototype.hasOwnProperty.call(this._newsImageMemoryCache, key)) {
+          return this._newsImageMemoryCache[key];
         }
       } catch (e) {}
       return null;
@@ -7668,6 +7767,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     ARTIFACT_TTL_MS: 48 * 60 * 60 * 1000,
 
     purgeStaleArtifacts: function() {
+      this._newsImageMemoryCache = null;
       var ttl = this.ARTIFACT_TTL_MS;
       var now = Date.now();
       try {
@@ -7700,9 +7800,11 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
     _writeNewsImageCache: function(title, url) {
       try {
-        if (!global.localStorage) return;
         var key = String(title || '').trim().toLowerCase().slice(0, 80);
         if (!key || !/^https:\/\//i.test(url)) return;
+        if (!this._newsImageMemoryCache) this._newsImageMemoryCache = {};
+        this._newsImageMemoryCache[key] = url;
+        if (!global.localStorage) return;
         var raw = global.localStorage.getItem('LIVELY_HUD_NEWS_IMG_CACHE');
         var list = [];
         if (raw) {
@@ -8262,6 +8364,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (this.newsFetchTimer) {
         clearInterval(this.newsFetchTimer);
         this.newsFetchTimer = null;
+      }
+      if (this._artifactPurgeTimer) {
+        clearInterval(this._artifactPurgeTimer);
+        this._artifactPurgeTimer = null;
       }
       if (this.pomodoro) {
         this.pomodoro.sleepTicker();

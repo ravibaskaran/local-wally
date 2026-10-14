@@ -362,7 +362,7 @@
       var done = function(loc) {
         self._locationBgRefreshInFlight = false;
         if (!loc) return;
-        var prev = persisted.location;
+        var prev = (persisted && persisted.location) || {};
         // Source-quality gate: only adopt candidates at least as trustworthy
         // as what the persisted record holds. Offline config-defaults and
         // un-enriched/degraded labels ('Local City'/'Local Area') never
@@ -370,7 +370,7 @@
         var qualified = (loc.source === 'ip' || loc.source === 'gps') &&
           !self._isPlaceholderCity(loc.city);
         var changed =
-          String(prev.city).toLowerCase() !== String(loc.city).toLowerCase() ||
+          String(prev.city || '').toLowerCase() !== String(loc.city || '').toLowerCase() ||
           String(prev.countryCode || '').toUpperCase() !== String(loc.countryCode || '').toUpperCase();
         if (qualified && changed) {
           self._writePersistedLocation(loc);
@@ -380,7 +380,8 @@
 
       Promise.resolve()
         .then(function() { return self._runLocationDetect(false); })
-        .then(done, function() { self._locationBgRefreshInFlight = false; });
+        .then(done)
+        .catch(function() { self._locationBgRefreshInFlight = false; });
     },
 
     _readPersistedLocation: function() {
@@ -837,7 +838,7 @@
      * Non-finite or missing AQI strictly returns unavailable state (never fabricated ratings).
      */
     interpretEuropeanAqi: function(val) {
-      if (typeof val !== 'number' || !Number.isFinite(val)) {
+      if (typeof val !== 'number' || !Number.isFinite(val) || val < 0) {
         return { value: null, category: 'Unavailable', color: '#94a3b8', available: false };
       }
       if (val <= 20) return { value: Math.round(val), category: 'Good', color: '#10b981', available: true };
@@ -1544,7 +1545,9 @@
 
         var tempC = (main.temp != null) ? main.temp : 20.0;
         var apparentC = (main.feels_like != null) ? main.feels_like : tempC;
-        var rawWind = (wind.speed != null) ? wind.speed : (wind.wind_speed != null ? wind.wind_speed : 2.8);
+        var rawWind = (wind.speed != null) ? wind.speed : ((wind.wind_speed != null) ? wind.wind_speed : ((cur.wind_speed != null) ? cur.wind_speed : 2.8));
+        var rawDeg = (wind.deg != null) ? wind.deg : ((cur.wind_deg != null) ? cur.wind_deg : null);
+        var rawGust = (wind.gust != null) ? wind.gust : ((cur.wind_gust != null) ? cur.wind_gust : null);
         var windSpeedKm = Math.round(rawWind * 3.6 * 10) / 10;
         var humidity = (main.humidity != null) ? main.humidity : 55;
         var precipMm = 0.0;
@@ -1569,6 +1572,18 @@
           }
         }
 
+        var rawTz = (data.timezone != null) ? data.timezone : ((data.city && data.city.timezone != null) ? data.city.timezone : null);
+        var normTz = null;
+        if (typeof rawTz === 'string' && rawTz.length > 0) {
+          normTz = rawTz;
+        } else if (typeof rawTz === 'number' && Number.isFinite(rawTz)) {
+          var tzSign = rawTz >= 0 ? '+' : '-';
+          var absSec = Math.abs(rawTz);
+          var tzH = Math.floor(absSec / 3600);
+          var tzM = Math.floor((absSec % 3600) / 60);
+          normTz = tzSign + (tzH < 10 ? '0' : '') + tzH + ':' + (tzM < 10 ? '0' : '') + tzM;
+        }
+
         var weather = {
           tempC: Math.round(tempC * 10) / 10,
           tempF: Math.round(((tempC * 9 / 5) + 32) * 10) / 10,
@@ -1586,17 +1601,17 @@
           humidity: Math.round(humidity),
           windSpeedKm: windSpeedKm,
           windSpeedMph: Math.round(windSpeedKm * 0.621371 * 10) / 10,
-          windDirectionDeg: (wind.deg != null && Number.isFinite(wind.deg)) ? Math.round(wind.deg) : 0,
-          windDirection: (wind.deg != null && Number.isFinite(wind.deg)) ? ApiService.degreesToCompass(wind.deg) : 'Variable',
-          windGustsKm: (wind.gust != null && Number.isFinite(wind.gust)) ? Math.round(wind.gust * 3.6 * 10) / 10 : null,
-          windGustsMph: (wind.gust != null && Number.isFinite(wind.gust)) ? Math.round((wind.gust * 3.6 * 0.621371) * 10) / 10 : null,
+          windDirectionDeg: (rawDeg != null && Number.isFinite(rawDeg)) ? Math.round(rawDeg) : 0,
+          windDirection: (rawDeg != null && Number.isFinite(rawDeg)) ? ApiService.degreesToCompass(rawDeg) : 'Variable',
+          windGustsKm: (rawGust != null && Number.isFinite(rawGust)) ? Math.round(rawGust * 3.6 * 10) / 10 : null,
+          windGustsMph: (rawGust != null && Number.isFinite(rawGust)) ? Math.round((rawGust * 3.6 * 0.621371) * 10) / 10 : null,
           cloudCover: (cur.clouds != null && Number.isFinite(cur.clouds)) ? Math.max(0, Math.min(100, Math.round(cur.clouds))) : ((cur.clouds && cur.clouds.all != null) ? Math.max(0, Math.min(100, Math.round(cur.clouds.all))) : 0),
           cloudLow: 0,
           cloudMid: 0,
           cloudHigh: (cur.clouds != null && Number.isFinite(cur.clouds)) ? Math.max(0, Math.min(100, Math.round(cur.clouds))) : ((cur.clouds && cur.clouds.all != null) ? Math.max(0, Math.min(100, Math.round(cur.clouds.all))) : 0),
           precipitationMm: Math.round(precipMm * 10) / 10,
           isDay: (weather0.icon && weather0.icon.indexOf('n') !== -1) ? 0 : 1,
-          timezone: data.timezone || null
+          timezone: normTz
         };
 
         var hourlyForecast = [];
@@ -2555,7 +2570,7 @@
         var proxies = [
           (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.primaryCorsProxy) || 'https://api.allorigins.win/raw?url=',
           (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.middleCorsProxy) || 'https://api.codetabs.com/v1/proxy?quest=',
-          (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.fallbackCorsProxy) || 'https://corsproxy.io/?url=',
+          (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.fallbackCorsProxy) || 'https://corsproxy.io/?',
           'https://cors.x2u.in/',
           'https://api.allorigins.win/get?url='
         ];
@@ -2564,7 +2579,7 @@
           var proxyBase = proxies[idx];
           var targetUrl = (proxyBase.indexOf('?') !== -1)
             ? (proxyBase + encodeURIComponent(rssUrl))
-            : (proxyBase + rssUrl);
+            : (proxyBase + encodeURIComponent(rssUrl));
 
           return ApiService.fetchWithTimeout(targetUrl, 5000)
             .then(function(res) {
@@ -3368,10 +3383,6 @@
             Array.isArray(cachedEnvelope.data) && cachedEnvelope.data.length > 0) {
           return Promise.resolve(markStale(cachedEnvelope.data));
         }
-        var anyStoredCooldown = self.getCachedNews();
-        if (anyStoredCooldown && Array.isArray(anyStoredCooldown.data) && anyStoredCooldown.data.length > 0) {
-          return Promise.resolve(markStale(anyStoredCooldown.data));
-        }
         // Explicit unavailable state within cooldown; intent already updated
         return Promise.resolve([]);
       }
@@ -3450,14 +3461,6 @@
           if (cachedEnvelope && Array.isArray(cachedEnvelope.data) && cachedEnvelope.data.length > 0 &&
               envelopeMatches(cachedEnvelope)) {
             return markStale(cachedEnvelope.data);
-          }
-          // As resilient fallback (v0.10.0), return any stored news from earlier run if available
-          if (cachedEnvelope && Array.isArray(cachedEnvelope.data) && cachedEnvelope.data.length > 0) {
-            return markStale(cachedEnvelope.data);
-          }
-          var anyStored = self.getCachedNews();
-          if (anyStored && Array.isArray(anyStored.data) && anyStored.data.length > 0) {
-            return markStale(anyStored.data);
           }
           return []; // explicit news-unavailable state
         })
@@ -3580,24 +3583,23 @@
               // snapshot WITHOUT extending atmosphere freshness (LW16) and
               // without letting a superseded request restore stale state (LW04).
               newsPromise.then(function(newsArticles) {
-                if (newsArticles && newsArticles.length) {
-                  payload.news = newsArticles;
-                  if (global.CacheManager && typeof global.CacheManager.update === 'function') {
-                    global.CacheManager.update(function(data) {
-                      if (data) data.news = newsArticles;
-                    });
-                  }
-                  var appInstance = global.App || global.app;
-                  if (appInstance) {
-                    if (appInstance.isPlaybackPaused) {
-                      if (appInstance.pendingSnapshot) {
-                        appInstance.pendingSnapshot.news = newsArticles;
-                      } else {
-                        appInstance.pendingNews = newsArticles;
-                      }
-                    } else if (typeof appInstance.renderNews === 'function') {
-                      appInstance.renderNews(newsArticles);
+                var articles = Array.isArray(newsArticles) ? newsArticles : [];
+                payload.news = articles;
+                if (global.CacheManager && typeof global.CacheManager.update === 'function') {
+                  global.CacheManager.update(function(data) {
+                    if (data) data.news = articles;
+                  });
+                }
+                var appInstance = global.App || global.app;
+                if (appInstance) {
+                  if (appInstance.isPlaybackPaused) {
+                    if (appInstance.pendingSnapshot) {
+                      appInstance.pendingSnapshot.news = articles;
+                    } else {
+                      appInstance.pendingNews = articles;
                     }
+                  } else if (typeof appInstance.renderNews === 'function') {
+                    appInstance.renderNews(articles);
                   }
                 }
               }).catch(function(e) {
