@@ -1702,3 +1702,31 @@ Three independent tool families were built at the v0.8.16 baseline (they now run
 - Attached outer rejection `.catch()` handler to `ApiService.fetchAtmosphere` outer promise chain, ensuring robust fallback to cached snapshot or mock data under geocoding or network failures.
 - Added listener deduplication and `offLocationChanged` unbinding to `ApiService.onLocationChanged`.
 - Aligned `LivelyProperties.json` and `config.js` settings.
+
+## 53. Astronomical Timezone Alignment, HiDPI Precision & News Safety (v0.9.1)
+
+### 53.1 Moon Times Location Civil Calendar Date Anchor (Issue 1)
+- In `js/suncalc.js`, updated `SunCalc.getMoonTimes(date, lat, lng, inUTC)` so when `inUTC` is omitted/undefined, the calculation honors the exact anchor timestamp provided by the caller without forcing UTC or host-local midnight (`setHours(0,0,0,0)`).
+- In `js/app.js`, implemented `getCivilMidnightAnchor(date, tz)` which derives the UTC timestamp corresponding to local civil midnight (`00:00:00`) in the location's designated IANA timezone using `Intl.DateTimeFormat(..., { timeZone: tz })`.
+- `renderCelestial` now passes this civil midnight anchor to `SunCalc.getMoonTimes`, guaranteeing identical moonrise/moonset events regardless of whether the host system runs in UTC, Asia/Tokyo, America/New_York, or any other timezone.
+
+### 53.2 Honest Weather Metrics & Explicit Zero Preservation (Issue 2)
+- In `js/app.js`, fixed the rain outlook aggregation loop: missing probability (`prob`) and precipitation accumulation (`mm`) are preserved as `null` rather than defaulted to `0`.
+- In `getPopoverContent` for `6-Hour Rain Outlook` and `Feels-Like Thermal Peak`: missing values render explicitly as `'Unavailable'` instead of fabricated `'0%'` or `'Nominal'`, while genuine zero measurements (`0% chance`, `0.0 mm`) remain accurately displayed.
+
+### 53.3 HiDPI Audio Visualizer DPR Coordinate Consistency (Issue 3)
+- In `MediaVisualizerEngine.prototype.render` and `sleep`, coordinate calculations, bar distribution geometry, and `ctx.clearRect` now explicitly use `logicalWidth` (200px) and `logicalHeight` (44px) rather than backing-store pixel dimensions (`canvas.width` / `canvas.height`).
+- This fixes double-scaling under `ctx.scale(dpr, dpr)` on displays with device pixel ratio > 1, ensuring all 32 spectrum bars remain perfectly aligned, unclipped, and within canvas bounds.
+
+### 53.4 Fixed News Provider Cache Isolation (Issue 4)
+- In `ApiService.fetchNews`, distinguished fixed provider modes (`isFixedMode = true`) from rotation/auto modes.
+- `envelopeMatches` strictly enforces `envelope.provider === primaryProvider` in fixed mode, ensuring that cached stories from a previously active provider are not served after switching providers, while maintaining eligible cache access in rotation mode.
+
+### 53.5 RSS Proxy Cascade Malformed Response Recovery (Issue 5)
+- In `ApiService.requestXml`, relocated `parseItems(xmlString)` inside `attemptProxy`.
+- When a CORS proxy returns an HTTP 200 containing invalid XML or HTML (e.g. Cloudflare captcha/challenge or truncated payload), `parseItems` throws, triggering the proxy `.catch()` and cleanly cascading to the next proxy in the configured chain (`allorigins` -> `codetabs` -> `corsproxy.io`).
+
+### 53.6 Strict Article Link Protocol Validation (Issue 6)
+- In `ApiService.NewsAdapter.parseItems`, stories with missing, malformed, non-HTTPS, or `javascript:` links are omitted during ingestion.
+- In `js/app.js`, `hudNewsLink` and detail drawer rendering validate `/^https:\/\//i`. Insecure links have their `href` removed, are marked `aria-disabled="true"` with `pointer-events: none`, and are rendered as non-clickable `div` elements in the drawer.
+- Generic homepage substitution (`https://news.google.com`) is completely eliminated.

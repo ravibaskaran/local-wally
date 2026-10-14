@@ -304,6 +304,14 @@ local-wally/
 
 ## 🛡️ Recent Updates & Quality Improvements
 
+### Version 0.9.1 — Astronomical Timezone Alignment, HiDPI Precision & News Safety
+- **Location Civil Calendar Date Moon Times**: Anchored `SunCalc.getMoonTimes` to the selected location's civil midnight instant via `getCivilMidnightAnchor(date, tz)` and updated `js/suncalc.js` to preserve the caller's explicit anchor when `inUTC` is omitted. Eliminates host-calendar drift between UTC and destination timezones (e.g. Asia/Tokyo).
+- **Honest Weather Forecast Data**: Missing precipitation probabilities and peak relative humidity are preserved as `null` and displayed honestly as `Unavailable` in popovers instead of fabricating certainty with `0%` or `Nominal`. Explicit measured zero values (`0% chance`, `0.0 mm`) remain fully preserved.
+- **HiDPI Audio Visualizer DPR Coordinate Accuracy**: Fixed double-scaling bug on displays with device pixel ratio > 1 (125%, 150%, 200%). Visualizer geometry, bar distribution, and clear regions now consistently use logical CSS coordinates under the DPR transform, eliminating clipped or mispositioned bars.
+- **Fixed News Provider Cache Isolation**: Switching news providers in fixed mode now strictly requires `envelope.provider === primaryProvider`, preventing cached stories from another provider from serving on mode changes, while retaining eligible multi-provider access in rotation mode.
+- **Resilient RSS Proxy Cascade**: RSS parsing is now validated inside each proxy attempt (`attemptProxy`), ensuring malformed or blocked HTTP 200 responses cleanly fall through to subsequent CORS proxies in the configured ladder.
+- **Strict News Article Link Protocol Validation**: Insecure, non-HTTPS, or `javascript:` links are omitted during feed parsing or rendered non-clickable (`is-non-clickable` with `aria-disabled="true"`), completely eliminating misleading fallbacks to the generic `https://news.google.com` homepage.
+
 ### Version 0.9 — Performance Hardening, Security Safeguards & Telemetry Accuracy
 - **Currents News Location Accuracy**: Fixed query language filtering (`&language=en`) and localized city aliases (e.g. `Bengaluru OR Bangalore`), eliminating international wire fallbacks (Tokyo headlines appearing for Indian cities).
 - **Continuous Battery Telemetry**: Host telemetry status never clears active browser `navigator.battery` state; battery row is always visible when enabled with honest battery, charging, AC, or unavailable modes.

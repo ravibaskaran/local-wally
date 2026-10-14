@@ -2593,31 +2593,6 @@
         ? 'https://news.google.com/rss?hl=en&gl=' + cleanCountry + '&ceid=' + cleanCountry + ':en'
         : 'https://news.google.com/rss?hl=en';
 
-      function requestXml(rssUrl) {
-        // Public CORS gateways, tried in order. Each leg is independently
-        // flaky (allorigins 429/timeouts, corsproxy.io now 401s unallowlisted
-        // origins), so a middle leg keeps the chain salvageable (v0.8.4).
-        var proxies = [
-          (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.primaryCorsProxy) || 'https://api.allorigins.win/raw?url=',
-          (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.middleCorsProxy) || 'https://api.codetabs.com/v1/proxy?quest=',
-          (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.fallbackCorsProxy) || 'https://corsproxy.io/?url='
-        ];
-
-        function attemptProxy(idx) {
-          return ApiService.fetchWithTimeout(proxies[idx] + encodeURIComponent(rssUrl), 5000)
-            .then(function(res) {
-              if (!res.ok) throw new Error('HTTP ' + res.status);
-              return res.text();
-            })
-            .catch(function(err) {
-              if (idx + 1 < proxies.length) return attemptProxy(idx + 1);
-              throw err;
-            });
-        }
-
-        return attemptProxy(0);
-      }
-
       function parseItems(xmlString) {
         if (!xmlString || typeof xmlString !== 'string') {
           throw new Error('Empty XML response');
@@ -2652,9 +2627,10 @@
           var rawPubDate = pubDateEl ? (pubDateEl.textContent || '') : '';
 
           // Validate protocol to prevent javascript: or malformed URLs (XSS defense)
-          var safeLink = (typeof rawLink === 'string' && /^https:\/\//i.test(rawLink.trim()))
-            ? rawLink.trim()
-            : 'https://news.google.com';
+          if (!rawLink || typeof rawLink !== 'string' || !/^https:\/\//i.test(rawLink.trim())) {
+            continue; // Skip stories without a safe HTTPS destination (Issue 6)
+          }
+          var safeLink = rawLink.trim();
 
           var cleanTitle = rawTitle.trim();
           var dashIndex = cleanTitle.lastIndexOf(' - ');
@@ -2686,6 +2662,34 @@
         return articles;
       }
 
+      function requestXml(rssUrl) {
+        // Public CORS gateways, tried in order. Each leg is independently
+        // flaky (allorigins 429/timeouts, corsproxy.io now 401s unallowlisted
+        // origins), so a middle leg keeps the chain salvageable (v0.8.4).
+        var proxies = [
+          (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.primaryCorsProxy) || 'https://api.allorigins.win/raw?url=',
+          (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.middleCorsProxy) || 'https://api.codetabs.com/v1/proxy?quest=',
+          (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.fallbackCorsProxy) || 'https://corsproxy.io/?url='
+        ];
+
+        function attemptProxy(idx) {
+          return ApiService.fetchWithTimeout(proxies[idx] + encodeURIComponent(rssUrl), 5000)
+            .then(function(res) {
+              if (!res.ok) throw new Error('HTTP ' + res.status);
+              return res.text();
+            })
+            .then(function(xmlString) {
+              return parseItems(xmlString);
+            })
+            .catch(function(err) {
+              if (idx + 1 < proxies.length) return attemptProxy(idx + 1);
+              throw err;
+            });
+        }
+
+        return attemptProxy(0);
+      }
+
       // 1. Try GDELT DOC 2.0 API first (keyless, proxy-free, direct JSON).
       //    Unusable locality names ('Local', 'Metropolitan', empty — Lively
       //    doesn't always expose a real city) skip GDELT and the meaningless
@@ -2699,10 +2703,10 @@
         // The geo section feed requires a country edition; country-less pins
         // go straight to the world feed (R03).
         var geoAttempt = (cityUsable && cleanCountry)
-          ? requestXml(geoUrl).then(parseItems)
+          ? requestXml(geoUrl)
           : Promise.reject(new Error('Geo RSS skipped: no usable locality/country'));
         return geoAttempt.catch(function() {
-          return requestXml(fallbackUrl).then(parseItems);
+          return requestXml(fallbackUrl);
         });
       });
       // Terminal fallback policy (LW05): errors propagate to fetchNews, which
@@ -3396,6 +3400,7 @@
       }
 
       var shouldRotate = (self.newsProvider === 'rotate');
+      var isFixedMode = (self.newsProvider && self.newsProvider !== 'rotate' && self.newsProvider !== 'auto');
       var primaryProvider = 'google-news';
 
       if (shouldRotate) {
@@ -3426,8 +3431,10 @@
 
       function envelopeMatches(envelope) {
         if (!envelope || envelope.query !== queryKey) return false;
-        // Preserve the documented fixed-mode provider-match permissiveness
-        return shouldRotate || (envelope.provider === primaryProvider) || (eligible.indexOf(envelope.provider) !== -1);
+        if (isFixedMode) {
+          return envelope.provider === primaryProvider;
+        }
+        return (envelope.provider === primaryProvider) || (eligible.indexOf(envelope.provider) !== -1);
       }
 
       function markStale(list) {

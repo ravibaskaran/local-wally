@@ -243,8 +243,8 @@
    */
   SunCalc.getMoonTimes = function(date, lat, lng, inUTC) {
     var t = new Date(date);
-    if (inUTC) t.setUTCHours(0, 0, 0, 0);
-    else t.setHours(0, 0, 0, 0);
+    if (inUTC === true) t.setUTCHours(0, 0, 0, 0);
+    else if (inUTC === false) t.setHours(0, 0, 0, 0);
 
     var hc = 0.133 * rad,
         h0 = SunCalc.getMoonPosition(t, lat, lng).altitude - hc,

@@ -246,13 +246,13 @@ MediaVisualizerEngine.prototype.render = function(dt) {
     this.silenceSince = 0;
   }
 
-  var w = this.dom.canvas.width;
-  var h = this.dom.canvas.height;
+  var w = this.logicalWidth || this.dom.canvas.width;
+  var h = this.logicalHeight || this.dom.canvas.height;
   this.ctx.clearRect(0, 0, w, h);
 
   this.ctx.fillStyle = this.gradient;
   this.ctx.beginPath();
-  var usableW = Math.max(200, w - 4);
+  var usableW = Math.max(60, w - 4);
   var step = usableW / 32;
   var gap = Math.max(1.5, step * 0.28);
   var barWidth = Math.max(2, step - gap);
@@ -288,7 +288,9 @@ MediaVisualizerEngine.prototype.sleep = function() {
     this.dampedSpectrum[i] = 0;
   }
   if (this.ctx && this.dom.canvas) {
-    this.ctx.clearRect(0, 0, this.dom.canvas.width, this.dom.canvas.height);
+    var clrW = this.logicalWidth || this.dom.canvas.width;
+    var clrH = this.logicalHeight || this.dom.canvas.height;
+    this.ctx.clearRect(0, 0, clrW, clrH);
   }
 };
 
@@ -1687,10 +1689,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     showBatteryInfo: true,
 
     /**
-     * Product version (v0.9). Rendered into #hud-version (bottom-right of
+     * Product version (v0.9.1). Rendered into #hud-version (bottom-right of
      * the card) so the running build is identifiable at a glance.
      */
-    VERSION: '0.9',
+    VERSION: '0.9.1',
     showCelestial: true,
     showAqi: true,
     showEnvironmentalMetrics: true,
@@ -4068,6 +4070,54 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       return tz;
     },
 
+    getCivilMidnightAnchor: function(date, tz) {
+      var d = (date instanceof Date) ? date : new Date(date);
+      if (!tz) {
+        var fallback = new Date(d);
+        fallback.setHours(0, 0, 0, 0);
+        return fallback;
+      }
+      try {
+        if (!this._tzFormatters) this._tzFormatters = {};
+        var fmtKey = tz + '_YMD_PARTS';
+        if (!this._tzFormatters[fmtKey]) {
+          this._tzFormatters[fmtKey] = new Intl.DateTimeFormat('en-US', {
+            timeZone: tz,
+            year: 'numeric',
+            month: 'numeric',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: 'numeric',
+            second: 'numeric',
+            hour12: false
+          });
+        }
+        var parts = {};
+        this._tzFormatters[fmtKey].formatToParts(d).forEach(function(p) { parts[p.type] = p.value; });
+        var year = parseInt(parts.year, 10);
+        var month = parseInt(parts.month, 10);
+        var day = parseInt(parts.day, 10);
+        var utcTarget = Date.UTC(year, month - 1, day, 0, 0, 0);
+
+        var probeParts = {};
+        this._tzFormatters[fmtKey].formatToParts(new Date(utcTarget)).forEach(function(p) { probeParts[p.type] = p.value; });
+        var pY = parseInt(probeParts.year, 10);
+        var pM = parseInt(probeParts.month, 10);
+        var pD = parseInt(probeParts.day, 10);
+        var pH = parseInt(probeParts.hour === '24' ? 0 : probeParts.hour, 10);
+        var pMin = parseInt(probeParts.minute, 10);
+        var pS = parseInt(probeParts.second, 10);
+        var probeLocalMs = Date.UTC(pY, pM - 1, pD, pH, pMin, pS);
+        var offsetMs = probeLocalMs - utcTarget;
+
+        return new Date(utcTarget - offsetMs);
+      } catch (e) {
+        var fb = new Date(d);
+        fb.setHours(0, 0, 0, 0);
+        return fb;
+      }
+    },
+
     updateClock: function() {
       if (this.isPlaybackPaused) return;
       var now = new Date();
@@ -4350,9 +4400,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           }
         }
 
-        // Offline Moonrise and Moonset calculation via SunCalc
+        // Offline Moonrise and Moonset calculation via SunCalc (anchored to location civil date)
         if (typeof global.SunCalc.getMoonTimes === 'function') {
-          moonTimes = global.SunCalc.getMoonTimes(now, lat, lng, false);
+          var moonAnchor = this.getCivilMidnightAnchor(now, tz);
+          moonTimes = global.SunCalc.getMoonTimes(moonAnchor, lat, lng);
           if (moonTimes) {
             if (moonTimes.rise) {
               moonriseStr = formatTime(moonTimes.rise) || 'Moonrise';
@@ -4442,12 +4493,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
           if (prob !== null || mm !== null) {
             validPointsCount++;
-            var safeProb = prob !== null ? prob : 0;
-            var safeMm = mm !== null ? mm : 0;
-            rainOutlookDetails.push({ time: ptTime, prob: safeProb, mm: safeMm });
+            rainOutlookDetails.push({ time: ptTime, prob: prob, mm: mm });
             if (prob !== null && (maxPrecipProb === null || prob > maxPrecipProb)) maxPrecipProb = prob;
-            if (safeMm > maxPrecipMm) maxPrecipMm = safeMm;
-            if (!nextRainTime && (safeProb >= 25 || safeMm >= 0.1)) {
+            if (mm !== null && (maxPrecipMm === null || mm > maxPrecipMm)) maxPrecipMm = mm;
+            if (!nextRainTime && ((prob !== null && prob >= 25) || (mm !== null && mm >= 0.1))) {
               nextRainTime = ptTime;
             }
           }
@@ -4725,7 +4774,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             skyCandidates.push({ time: tomorrowSunTimes.sunrise, label: 'Sunrise', sub: 'morning' });
           }
           if (typeof global.SunCalc.getMoonTimes === 'function') {
-            var tomorrowMoonTimes = global.SunCalc.getMoonTimes(tomorrow, lat, lng, false);
+            var tomorrowMoonAnchor = this.getCivilMidnightAnchor(tomorrow, tz);
+            var tomorrowMoonTimes = global.SunCalc.getMoonTimes(tomorrowMoonAnchor, lat, lng);
             if (tomorrowMoonTimes && tomorrowMoonTimes.set && tomorrowMoonTimes.set > now) {
               skyCandidates.push({ time: tomorrowMoonTimes.set, label: 'Moonset', sub: 'tonight' });
             }
@@ -5329,7 +5379,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           var sumTxt = (celestial.rainVal || 'No Rain') + ' (' + (celestial.rainSub || 'Clear') + ')';
           var rows = [['Outlook Summary', sumTxt]];
           for (var r = 0; r < Math.min(3, pts.length); r++) {
-            rows.push([pts[r].time, pts[r].prob + '% chance' + (pts[r].mm > 0 ? ' (' + pts[r].mm + 'mm)' : '')]);
+            var pt = pts[r];
+            var probStr = (pt.prob !== null && pt.prob !== undefined) ? (pt.prob + '% chance') : 'Unavailable';
+            var mmStr = (pt.mm !== null && pt.mm !== undefined && pt.mm > 0) ? (' (' + pt.mm + 'mm)') : '';
+            rows.push([pt.time, probStr + mmStr]);
           }
           return {
             title: '6-Hour Rain Outlook',
@@ -5337,7 +5390,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           };
 
         case 'peak-feels':
-          var pkHum = (celestial.peakDetails && celestial.peakDetails.peakHumidity != null) ? celestial.peakDetails.peakHumidity + '%' : 'Nominal';
+          var pkHum = (celestial.peakDetails && celestial.peakDetails.peakHumidity != null && !isNaN(celestial.peakDetails.peakHumidity)) ? celestial.peakDetails.peakHumidity + '%' : 'Unavailable';
           return {
             title: 'Feels-Like Thermal Peak',
             bodyHtml: makeRows([
@@ -5723,15 +5776,17 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             for (var ni = 0; ni < newsList.length; ni++) {
               var nItem = newsList[ni];
               var rawUrl = nItem.link || nItem.url || '';
-              var safeUrl = (typeof rawUrl === 'string' && /^https:\/\//i.test(rawUrl.trim())) ? rawUrl.trim() : '#';
+              var safeUrl = (typeof rawUrl === 'string' && /^https:\/\//i.test(rawUrl.trim())) ? rawUrl.trim() : '';
               var ageLabel = this.formatNewsAge(nItem) || 'Recent';
-              html += '<a class="hud-detail-news-item" data-news-index="' + ni + '" href="' + esc(safeUrl) + '" target="_blank" rel="noopener noreferrer">' +
+              var tag = safeUrl ? 'a' : 'div';
+              var hrefAttr = safeUrl ? (' href="' + esc(safeUrl) + '" target="_blank" rel="noopener noreferrer"') : ' aria-disabled="true"';
+              html += '<' + tag + ' class="hud-detail-news-item' + (safeUrl ? '' : ' is-non-clickable') + '" data-news-index="' + ni + '"' + hrefAttr + '>' +
                 '<p class="hud-detail-news-title">' + esc(nItem.title || 'Untitled Story') + '</p>' +
                 '<div class="hud-detail-news-meta">' +
                   '<span>' + esc(nItem.source || 'Publisher') + '</span>' +
                   '<span>' + esc(ageLabel) + '</span>' +
                 '</div>' +
-              '</a>';
+              '</' + tag + '>';
             }
             html += '</div>';
           } else {
@@ -7323,14 +7378,40 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         var rawLink = item.link || '';
         var safeLink = (typeof rawLink === 'string' && /^https:\/\//i.test(rawLink.trim()))
           ? rawLink.trim()
-          : 'https://news.google.com';
-        this.dom.hudNewsLink.href = safeLink;
-        this.dom.hudNewsLink.setAttribute('target', '_blank');
-        this.dom.hudNewsLink.setAttribute('rel', 'noopener noreferrer');
-        if (item.isWrapper) {
-          this.dom.hudNewsLink.title = 'Open via Google News';
+          : '';
+        if (safeLink) {
+          this.dom.hudNewsLink.href = safeLink;
+          if (typeof this.dom.hudNewsLink.setAttribute === 'function') {
+            this.dom.hudNewsLink.setAttribute('target', '_blank');
+            this.dom.hudNewsLink.setAttribute('rel', 'noopener noreferrer');
+          } else {
+            this.dom.hudNewsLink.target = '_blank';
+            this.dom.hudNewsLink.rel = 'noopener noreferrer';
+          }
+          if (typeof this.dom.hudNewsLink.removeAttribute === 'function') {
+            this.dom.hudNewsLink.removeAttribute('aria-disabled');
+          }
+          if (this.dom.hudNewsLink.style) this.dom.hudNewsLink.style.pointerEvents = '';
+          if (item.isWrapper) {
+            this.dom.hudNewsLink.title = 'Open via Google News';
+          } else {
+            this.dom.hudNewsLink.title = 'Open Article (' + (item.source || providerName) + ')';
+          }
         } else {
-          this.dom.hudNewsLink.title = 'Open Article (' + (item.source || providerName) + ')';
+          if (typeof this.dom.hudNewsLink.removeAttribute === 'function') {
+            this.dom.hudNewsLink.removeAttribute('href');
+            this.dom.hudNewsLink.removeAttribute('target');
+            this.dom.hudNewsLink.removeAttribute('rel');
+          } else {
+            delete this.dom.hudNewsLink.href;
+            delete this.dom.hudNewsLink.target;
+            delete this.dom.hudNewsLink.rel;
+          }
+          if (typeof this.dom.hudNewsLink.setAttribute === 'function') {
+            this.dom.hudNewsLink.setAttribute('aria-disabled', 'true');
+          }
+          if (this.dom.hudNewsLink.style) this.dom.hudNewsLink.style.pointerEvents = 'none';
+          this.dom.hudNewsLink.title = 'Article destination unavailable';
         }
       }
 
