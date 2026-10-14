@@ -306,6 +306,31 @@ local-wally/
 
 ## 🛡️ Recent Updates & Quality Improvements
 
+### Version 0.13.0 — Atmospheric Hero Ceiling, Weather-Adaptive Canvas, Animated SVGs & Audio Presence Detection
+- **Option B Hero Ceiling (`#hud-hero-ceiling`)**:
+  - Unified atmospheric zone spanning the Header (Clock, Date, Location), Main Weather Condition card, and 3-Tier Environmental Metrics grid.
+  - Backing canvas dynamically positioned with `z-index: 0` behind glass elements (`z-index: 1`), providing an immersive atmospheric background without increasing HUD card footprint.
+- **Animated SVG Moon Phases & UI Icons**:
+  - Bundled 8 local, animated SVG moon phases (`assets/icons/moon/*.svg`) rendering dynamic lunar illumination and subtle orbital glow across ephemeris cards and badges.
+  - Replaced legacy text/emoji glyphs in card detail drawers and popovers with clean, high-contrast SVG badges.
+  - Smooth vector animation keyframes added for metrics (humidity, clouds, precip), astro icons, and bento system indicators.
+- **Weather-Adaptive Hero Atmosphere Engine**:
+  - 5 distinct weather-adaptive modes dynamically responding to real-time WMO weather categories:
+    - **WIND / CLEAR / CLOUDY / FOG**: Flow streamlines along the true meteorological vector `((windDeg + 180) % 360)` with velocity scaling and gust surges.
+    - **RAIN / DRIZZLE**: Wind-tilted diagonal rain streaks with bottom micro-splash dynamics.
+    - **SNOW**: Softly fluttering snow crystals drifting on the meteorological wind vector.
+    - **SLEET**: High-velocity icy particle streaks with frost micro-particles.
+    - **THUNDERSTORM**: Driving stormy precipitation overlaid with subtle ambient lightning flashes.
+  - Zero-allocation contiguous `Float32Array` ring-buffer architecture maintaining 60 FPS fluidity with verified 0% CPU idle parking when calm or suspended.
+- **Intelligent Audio-Presence Detection & Silence Hysteresis**:
+  - Directly inspects live Lively audio spectrum energy (>0.005) when SMTC metadata is dropped or unsupported (such as web streaming via Amazon Music, YouTube, or Soundcloud).
+  - Automatically transitions media card to `.is-audio-active` ("System Audio Playing" / "Web Stream / Desktop Audio") and activates the 60 FPS audio visualizer.
+  - Implements a robust 1.5-second silence hysteresis before gracefully returning to idle and restoring the Quick Launch dock.
+- **Zero-Gap Flush Companion Dock Alignment**:
+  - Reduced vertical spacing between the primary HUD and companion dock (`#dock-media-focus`) to 0px, creating a seamless, monolithic bento interface.
+- **Dynamic Pomodoro & Focus Mode Labeling**:
+  - Dynamically updates active mode titles on switch: `Pomodoro` (25m), `52/17` (52/17), `90m` (90m), `Flow` (Flowtime), and `Break` / `Long Break` during rest cycles.
+
 ### Version 0.12.0 — Zero-Defect Master Audit Hardening
 - **Performance & 0% CPU Idle Parking**:
   - `WindStreamlineEngine.hasActiveAnimation()` now respects wallpaper playback pause, hidden state, and calm wind (<0.5 km/h), restoring verified 0.0% CPU parking 24/7.

@@ -1804,3 +1804,32 @@ Three independent tool families were built at the v0.8.16 baseline (they now run
 - **Interactive Element Nesting Fix**: Changed outer `#hud-news-block` role to `role="region"`, resolving WCAG 4.1.2 violations.
 - **High-Contrast Focus Indicators**: Added high-contrast `:focus-visible` styling (`2px solid #38bdf8`) across all interactive badges and buttons.
 - **Custom Protocol Launch Throttle**: Added 1.5-second cooldown throttle to desktop music app launches to prevent iframe/listener accumulation.
+
+## 57. Atmospheric Hero Ceiling, Weather-Adaptive Canvas, Animated SVGs & Audio Presence Detection (v0.13.0)
+
+### 57.1 Option B Hero Ceiling Atmospheric Architecture
+- **Structural Grouping**: Wrapped the Header (`#hud-clock`, `#hud-date`, `#hud-location`), Main Temperature Card (`#hud-weather-card`), and Environmental Metrics Grid (`#hud-metrics-row`) inside `#hud-hero-ceiling`.
+- **Z-Index Layering**: `#hud-wind-canvas` is positioned with `z-index: 0` behind glass elements (`z-index: 1`), spanning ~260px by ~230px to create a cohesive backdrop without increasing HUD dimensions.
+- **Dynamic Resize**: `WindStreamlineEngine.resize()` adapts bounding dimensions to `#hud-hero-ceiling` with DPR compensation.
+
+### 57.2 Weather-Adaptive Hero Canvas (5 Modes)
+- **Meteorological Drift Vector**: Standard meteorological wind reports origin angle; streamline bearing is converted to propagation vector via `((windDeg + 180) % 360)`.
+- **Mode Dispatch**:
+  - `WIND / CLEAR / CLOUDY / FOG`: Streamlines flow in the meteorological wind direction with speed scaled by `windSpeedKm` and gust surges.
+  - `RAIN / DRIZZLE`: Wind-tilted vertical rain streaks with micro-splash dynamics.
+  - `SNOW`: Fluttering snow crystals drifting along the wind vector with trigonometric oscillation.
+  - `SLEET`: High-speed icy particle streaks with frost micro-particles.
+  - `THUNDERSTORM`: Driving stormy precipitation with subtle acrylic lightning ambient flashes (`flashAlpha`).
+- **Memory & Invariants**: Pre-allocated `Float32Array` ring-buffer structure-of-arrays layout with 0 allocations in the 60 FPS loop and verified 0% CPU parking when calm or suspended.
+
+### 57.3 Animated SVGs & Moon Phases
+- **Vector Moon Phases**: Bundled 8 local animated SVGs in `assets/icons/moon/*.svg` displaying accurate lunar phase geometries with subtle orbit animations.
+- **Detail Badges**: Replaced unicode emojis in popovers and detail inspection drawers with crisp SVG badges (`getDetailIconSvg`).
+
+### 57.4 SMTC Audio-Presence Detection & Hysteresis
+- **Presence Detection**: When `livelyAudioListener` delivers audio energy (> 0.005) while no SMTC metadata is present (`!this.currentTrackData`), `#media-card` transitions to `.is-audio-active` ("System Audio Playing" / "Web Stream / Desktop Audio") and renders the visualizer canvas.
+- **Hysteresis**: Silence for > 1.5 seconds safely transitions `#media-card` back to `.is-idle`, restoring Quick Launch badges.
+
+### 57.5 Zero-Gap Flush Layout & Dynamic Pomodoro Badging
+- **Zero-Gap Layout**: `updateLayoutAutoResize` sets `offsetGap = 0` between `#hud` and `#dock-media-focus` for flush docking.
+- **Dynamic Mode Badges**: `PomodoroEngine.updateModeLabel()` synchronizes `#pomo-mode-label` across all modes: `Pomodoro` (25m), `52/17`, `90m`, `Flow`, and `Break` / `Long Break`.
