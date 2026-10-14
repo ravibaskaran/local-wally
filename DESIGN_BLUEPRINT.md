@@ -480,7 +480,7 @@ To accommodate widescreen 1080p, 1440p, and 1600p displays without requiring ver
 - **Column 1 (`.bento-col-primary`, flex: 1.15)**:
   1. *Header*: Digital clock (`time#hud-clock`), humanized date (`#hud-date`), and pill badge (`#hud-location`).
   2. *Temperature & Atmosphere*: Large typography display (`#hud-temp-val`), unit indicator (`#hud-temp-unit`), weather condition text (`#hud-condition`), apparent "feels like" reading (`#hud-feels-like`), and daily high/low markers.
-  3. *Environmental Metrics 3-Card Row*: Humidity (`#metric-humidity`), Wind velocity (`#metric-wind`), and Precipitation gauge (`#metric-precip`).
+  3. *Environmental Metrics 3-Card Row*: Humidity (`#metric-humidity`), 3-tier Cloud strata with dominant layer callout (`#metric-wind`), and Precipitation gauge (`#metric-precip`), backed by real-time atmospheric wind streamlines (`#hud-wind-canvas`).
   4. *Solar & Lunar Ephemeris*: Sunrise, Solar Noon, Sunset times, and real-time lunar phase card with moon glyph and percentage illumination.
   5. *European Air Quality Index (AQI)*: Chromatic AQI level badge, gradient fill progress track, and PM2.5 / PM10 density readouts.
 - **Column 2 (`.bento-col-secondary`, flex: 1)**:

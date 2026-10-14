@@ -1235,6 +1235,14 @@
       return isNaN(d.getTime()) ? null : d.getHours();
     },
 
+    degreesToCompass: function(deg) {
+      if (deg == null || !Number.isFinite(deg)) return 'Variable';
+      var normalized = ((deg % 360) + 360) % 360;
+      var val = Math.floor((normalized / 22.5) + 0.5) % 16;
+      var arr = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+      return arr[val] || 'N';
+    },
+
     WeatherAdapter: {
       normalizeOpenMeteo: function(data) {
         var current = data.current || {};
@@ -1265,6 +1273,14 @@
           humidity: current.relative_humidity_2m != null ? current.relative_humidity_2m : 55,
           windSpeedKm: current.wind_speed_10m != null ? Math.round(current.wind_speed_10m * 10) / 10 : 10.0,
           windSpeedMph: current.wind_speed_10m != null ? Math.round((current.wind_speed_10m * 0.621371) * 10) / 10 : 6.2,
+          windDirectionDeg: (current.wind_direction_10m != null && Number.isFinite(current.wind_direction_10m)) ? Math.round(current.wind_direction_10m) : 0,
+          windDirection: (current.wind_direction_10m != null && Number.isFinite(current.wind_direction_10m)) ? ApiService.degreesToCompass(current.wind_direction_10m) : 'Variable',
+          windGustsKm: (current.wind_gusts_10m != null && Number.isFinite(current.wind_gusts_10m)) ? Math.round(current.wind_gusts_10m * 10) / 10 : null,
+          windGustsMph: (current.wind_gusts_10m != null && Number.isFinite(current.wind_gusts_10m)) ? Math.round((current.wind_gusts_10m * 0.621371) * 10) / 10 : null,
+          cloudCover: (current.cloud_cover != null && Number.isFinite(current.cloud_cover)) ? Math.max(0, Math.min(100, Math.round(current.cloud_cover))) : 0,
+          cloudLow: (current.cloud_cover_low != null && Number.isFinite(current.cloud_cover_low)) ? Math.max(0, Math.min(100, Math.round(current.cloud_cover_low))) : 0,
+          cloudMid: (current.cloud_cover_mid != null && Number.isFinite(current.cloud_cover_mid)) ? Math.max(0, Math.min(100, Math.round(current.cloud_cover_mid))) : 0,
+          cloudHigh: (current.cloud_cover_high != null && Number.isFinite(current.cloud_cover_high)) ? Math.max(0, Math.min(100, Math.round(current.cloud_cover_high))) : 0,
           precipitationMm: current.precipitation != null ? current.precipitation : 0.0,
           isDay: current.is_day != null ? current.is_day : 1,
           timezone: data.timezone || null
@@ -1495,7 +1511,7 @@
         var url = 'https://api.open-meteo.com/v1/forecast?' +
           'latitude=' + encodeURIComponent(lat) +
           '&longitude=' + encodeURIComponent(lon) +
-          '&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,wind_speed_10m' +
+          '&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high' +
           '&hourly=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation_probability,precipitation,weather_code,wind_speed_10m' +
           '&daily=temperature_2m_max,temperature_2m_min' +
           '&forecast_hours=24' +
@@ -1570,6 +1586,14 @@
           humidity: Math.round(humidity),
           windSpeedKm: windSpeedKm,
           windSpeedMph: Math.round(windSpeedKm * 0.621371 * 10) / 10,
+          windDirectionDeg: (wind.deg != null && Number.isFinite(wind.deg)) ? Math.round(wind.deg) : 0,
+          windDirection: (wind.deg != null && Number.isFinite(wind.deg)) ? ApiService.degreesToCompass(wind.deg) : 'Variable',
+          windGustsKm: (wind.gust != null && Number.isFinite(wind.gust)) ? Math.round(wind.gust * 3.6 * 10) / 10 : null,
+          windGustsMph: (wind.gust != null && Number.isFinite(wind.gust)) ? Math.round((wind.gust * 3.6 * 0.621371) * 10) / 10 : null,
+          cloudCover: (cur.clouds != null && Number.isFinite(cur.clouds)) ? Math.max(0, Math.min(100, Math.round(cur.clouds))) : ((cur.clouds && cur.clouds.all != null) ? Math.max(0, Math.min(100, Math.round(cur.clouds.all))) : 0),
+          cloudLow: 0,
+          cloudMid: 0,
+          cloudHigh: (cur.clouds != null && Number.isFinite(cur.clouds)) ? Math.max(0, Math.min(100, Math.round(cur.clouds))) : ((cur.clouds && cur.clouds.all != null) ? Math.max(0, Math.min(100, Math.round(cur.clouds.all))) : 0),
           precipitationMm: Math.round(precipMm * 10) / 10,
           isDay: (weather0.icon && weather0.icon.indexOf('n') !== -1) ? 0 : 1,
           timezone: data.timezone || null

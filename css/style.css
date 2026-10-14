@@ -1189,15 +1189,31 @@ html, body {
 
 /* Main Temperature & Condition Summary */
 .hud-temp-block {
+  position: relative;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 4px 0 8px;
+  padding: 4px 8px 8px;
+  border-radius: 12px;
   border-bottom: 1px solid var(--divider-color);
 }
 
+.hud-wind-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.38;
+  border-radius: inherit;
+}
+
 .hud-temp-wrap {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1250,6 +1266,8 @@ html, body {
 }
 
 .hud-condition-meta {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -1325,6 +1343,47 @@ html, body {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   margin-top: 1px;
+}
+
+/* Atmospheric 3-Tier Cloud Layer Micro-Interactions */
+.cloud-tier-icon {
+  overflow: visible;
+}
+
+.cloud-tier-high {
+  opacity: 0.68;
+  animation: cloudDriftHigh 8s ease-in-out infinite alternate;
+}
+
+.cloud-tier-mid {
+  opacity: 0.88;
+  animation: cloudDriftMid 6s ease-in-out infinite alternate;
+}
+
+.cloud-tier-low {
+  opacity: 1;
+  animation: cloudDriftLow 4.5s ease-in-out infinite alternate;
+}
+
+@keyframes cloudDriftHigh {
+  0% { transform: translateX(-1.5px); }
+  100% { transform: translateX(1.5px); }
+}
+
+@keyframes cloudDriftMid {
+  0% { transform: translateX(1.2px); }
+  100% { transform: translateX(-1.2px); }
+}
+
+@keyframes cloudDriftLow {
+  0% { transform: translateX(-1px); }
+  100% { transform: translateX(1px); }
+}
+
+.is-paused .cloud-tier-high,
+.is-paused .cloud-tier-mid,
+.is-paused .cloud-tier-low {
+  animation-play-state: paused !important;
 }
 
 /* Solar & Lunar Ephemeris Block */

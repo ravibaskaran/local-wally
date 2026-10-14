@@ -1794,6 +1794,186 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
   global.SvgForecastChartEngine = SvgForecastChartEngine;
 
+  /**
+   * ==============================================================================
+   * 6. WindStreamlineEngine
+   * Windy-Style Atmospheric Wind Streamlines Particle Engine (Canvas 2D SoA)
+   * Pre-allocated Float32Array ring-buffer, 60 FPS zero-allocation animation loop.
+   * ==============================================================================
+   */
+  var WIND_STROKE_LUT = (function() {
+    var lut = [];
+    for (var a = 0; a <= 20; a++) {
+      lut.push('rgba(215, 238, 255, ' + (a / 20).toFixed(2) + ')');
+    }
+    return lut;
+  })();
+
+  function WindStreamlineEngine(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas && canvas.getContext ? canvas.getContext('2d') : null;
+    this.count = 24;
+    // Stride 7: [0:x, 1:y, 2:speed, 3:len, 4:life, 5:maxLife, 6:peakAlpha]
+    this.particles = new Float32Array(this.count * 7);
+    this.width = 0;
+    this.height = 0;
+    this.dpr = 1;
+    this.windDeg = 215;
+    this.windSpeedKm = 12;
+    this.windGustsKm = 18;
+    this.dirX = 0.58;
+    this.dirY = -0.81;
+    this.enabled = true;
+    this.isSleeping = false;
+    this._initialized = false;
+  }
+
+  WindStreamlineEngine.prototype.initParticles = function() {
+    var w = this.width || 260;
+    var h = this.height || 100;
+    var baseSpeed = Math.max(16, Math.min(85, (this.windSpeedKm || 12) * 1.8));
+    var gustBoost = (this.windGustsKm > this.windSpeedKm) ? Math.min(1.6, this.windGustsKm / Math.max(1, this.windSpeedKm)) : 1.0;
+
+    for (var i = 0; i < this.count; i++) {
+      var offset = i * 7;
+      this.particles[offset + 0] = Math.random() * w;
+      this.particles[offset + 1] = Math.random() * h;
+      var isSurge = (i % 4 === 0);
+      var spd = baseSpeed * (0.75 + Math.random() * 0.5) * (isSurge ? gustBoost : 1.0);
+      this.particles[offset + 2] = spd;
+      this.particles[offset + 3] = (isSurge ? 28 : 16) + Math.random() * 14;
+      this.particles[offset + 4] = Math.random() * 2.5;
+      this.particles[offset + 5] = 2.0 + Math.random() * 2.5;
+      this.particles[offset + 6] = (isSurge ? 0.42 : 0.28) + Math.random() * 0.14;
+    }
+    this._initialized = true;
+  };
+
+  WindStreamlineEngine.prototype.setWind = function(deg, speedKm, gustsKm) {
+    this.windDeg = Number.isFinite(deg) ? deg : 0;
+    this.windSpeedKm = Number.isFinite(speedKm) ? speedKm : 0;
+    this.windGustsKm = Number.isFinite(gustsKm) ? gustsKm : this.windSpeedKm;
+
+    var rad = (this.windDeg * Math.PI) / 180;
+    this.dirX = -Math.sin(rad);
+    this.dirY = Math.cos(rad);
+
+    if (this.windSpeedKm <= 0.5) {
+      this.isSleeping = true;
+    } else {
+      this.isSleeping = false;
+    }
+  };
+
+  WindStreamlineEngine.prototype.hasActiveAnimation = function() {
+    if (!this.enabled || this.isSleeping || !this.ctx || !this.canvas) return false;
+    return (this.windSpeedKm > 0.5);
+  };
+
+  WindStreamlineEngine.prototype.resize = function() {
+    if (!this.canvas || !this.ctx) return;
+    var rect = this.canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    var dpr = window.devicePixelRatio || 1;
+    if (Math.abs(this.width - rect.width) < 1 && Math.abs(this.height - rect.height) < 1 && this.dpr === dpr) {
+      return;
+    }
+    this.width = rect.width;
+    this.height = rect.height;
+    this.dpr = dpr;
+    this.canvas.width = Math.round(rect.width * dpr);
+    this.canvas.height = Math.round(rect.height * dpr);
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    if (!this._initialized) {
+      this.initParticles();
+    }
+  };
+
+  WindStreamlineEngine.prototype.render = function(dt) {
+    if (!this.enabled || this.isSleeping || !this.ctx || !this.canvas) return;
+    if (global.App && global.App.isParked) return;
+
+    if (this.width <= 0 || this.height <= 0) {
+      this.resize();
+      if (this.width <= 0 || this.height <= 0) return;
+    }
+
+    if (!this._initialized) {
+      this.initParticles();
+    }
+
+    var ctx = this.ctx;
+    var w = this.width;
+    var h = this.height;
+    var dx = this.dirX;
+    var dy = this.dirY;
+
+    ctx.clearRect(0, 0, w, h);
+
+    var baseSpeed = Math.max(16, Math.min(85, (this.windSpeedKm || 12) * 1.8));
+    var gustBoost = (this.windGustsKm > this.windSpeedKm) ? Math.min(1.6, this.windGustsKm / Math.max(1, this.windSpeedKm)) : 1.0;
+
+    ctx.lineWidth = 1.25;
+    ctx.lineCap = 'round';
+
+    for (var i = 0; i < this.count; i++) {
+      var offset = i * 7;
+      var x = this.particles[offset + 0];
+      var y = this.particles[offset + 1];
+      var spd = this.particles[offset + 2];
+      var len = this.particles[offset + 3];
+      var life = this.particles[offset + 4] + dt;
+      var maxLife = this.particles[offset + 5];
+      var peakAlpha = this.particles[offset + 6];
+
+      x += dx * spd * dt;
+      y += dy * spd * dt;
+
+      var outOfBounds = (x < -len || x > w + len || y < -len || y > h + len);
+      if (life >= maxLife || outOfBounds) {
+        life = 0;
+        maxLife = 2.0 + Math.random() * 2.5;
+        var isSurge = (i % 4 === 0);
+        spd = baseSpeed * (0.75 + Math.random() * 0.5) * (isSurge ? gustBoost : 1.0);
+        len = (isSurge ? 28 : 16) + Math.random() * 14;
+        peakAlpha = (isSurge ? 0.42 : 0.28) + Math.random() * 0.14;
+
+        if (Math.abs(dx) > Math.abs(dy)) {
+          x = (dx > 0) ? -len * 0.5 : (w + len * 0.5);
+          y = Math.random() * h;
+        } else {
+          x = Math.random() * w;
+          y = (dy > 0) ? -len * 0.5 : (h + len * 0.5);
+        }
+      }
+
+      this.particles[offset + 0] = x;
+      this.particles[offset + 1] = y;
+      this.particles[offset + 2] = spd;
+      this.particles[offset + 3] = len;
+      this.particles[offset + 4] = life;
+      this.particles[offset + 5] = maxLife;
+      this.particles[offset + 6] = peakAlpha;
+
+      var lifeRatio = life / maxLife;
+      var alpha = Math.sin(lifeRatio * Math.PI) * peakAlpha;
+      if (alpha <= 0.01) continue;
+
+      var tailX = x - dx * len;
+      var tailY = y - dy * len;
+
+      var styleIdx = Math.min(20, Math.max(0, Math.round(alpha * 20)));
+      ctx.strokeStyle = WIND_STROKE_LUT[styleIdx];
+      ctx.beginPath();
+      ctx.moveTo(tailX, tailY);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+    }
+  };
+
+  global.WindStreamlineEngine = WindStreamlineEngine;
+
   var App = {
     // Engine references
     particles: null,
@@ -1803,6 +1983,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     solarLighting: null,
     sparklineEngine: null,
     forecastChart: null,
+    windEngine: null,
 
     // State
     state: null,
@@ -2023,6 +2204,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         hudTempHigh: document.getElementById('hud-temp-high'),
         hudTempLow: document.getElementById('hud-temp-low'),
         hudWeatherCard: document.getElementById('hud-weather-card'),
+        hudWindCanvas: document.getElementById('hud-wind-canvas'),
         hudMetricsRow: document.getElementById('hud-metrics-row'),
         metricHumidity: document.getElementById('metric-humidity'),
         metricWind: document.getElementById('metric-wind'),
@@ -2350,6 +2532,11 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       this.solarLighting = new SolarLightingEngine({
         enabled: cfg.enableDynamicSolarLighting !== false
       });
+
+      if (this.dom.hudWindCanvas) {
+        this.windEngine = new WindStreamlineEngine(this.dom.hudWindCanvas);
+        this.windEngine.resize();
+      }
     },
 
     bindEvents: function() {
@@ -2365,6 +2552,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         resizeRaf = requestAnimationFrame(function() {
           resizeRaf = null;
           if (self.particles) self.particles.resize();
+          if (self.windEngine) self.windEngine.resize();
           self.updateSky();
           self.updateGpuDiagnostics();
           self.updateLayoutAutoResize();
@@ -3327,6 +3515,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           document.documentElement.style.setProperty('--dock-top', topOffset);
           document.documentElement.style.setProperty('--dock-bottom', bottomOffset);
         }
+      }
+
+      if (this.windEngine) {
+        this.windEngine.resize();
       }
     },
 
@@ -5108,7 +5300,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       var targets = [
         { el: this.dom.hudWeatherCard || (this.dom.hudTempVal && typeof this.dom.hudTempVal.closest === 'function' ? this.dom.hudTempVal.closest('#hud-weather-card') : null), type: 'weather' },
         { el: this.dom.hudMetricsRow, type: 'metrics' },
-        { el: this.dom.metricWind, type: 'wind' },
+        { el: document.getElementById('metric-card-clouds') || this.dom.metricWind, type: 'clouds' },
         { el: this.dom.metricHumidity, type: 'humidity' },
         { el: this.dom.metricPrecip, type: 'precip' },
         { el: this.dom.hudForecastCard, type: 'forecast' },
@@ -5563,20 +5755,28 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             title: 'Environmental Metrics',
             bodyHtml: makeRows([
               ['Relative Humidity', (weather.humidity != null ? weather.humidity + '%' : '--')],
-              ['Surface Wind', (weather.windSpeedKm != null ? weather.windSpeedKm + ' km/h' : 'Calm')],
+              ['Dominant Clouds', (weather.dominantCloudText || 'Clear 0%')],
+              ['Surface Wind', (weather.windSpeedKm != null ? weather.windSpeedKm + ' km/h' : 'Calm') + (weather.windDirection ? ' · ' + weather.windDirection : '')],
               ['Precipitation', (weather.precipitationMm != null ? weather.precipitationMm + ' mm' : '0.0 mm')]
             ])
           };
 
+        case 'clouds':
         case 'wind':
-          var gustEst = weather.windSpeedKm != null ? (weather.windSpeedKm * 1.35).toFixed(1) + ' km/h' : '--';
+          var gustVal = weather.windGustsKm != null ? (weather.windGustsKm + ' km/h') : (weather.windSpeedKm != null ? (weather.windSpeedKm * 1.35).toFixed(1) + ' km/h' : '--');
+          var dirText = weather.windDirectionDeg != null ? (weather.windDirectionDeg + '° (' + (weather.windDirection || 'Flow') + ')') : (weather.windDirection || 'Variable');
+          var dominantStr = weather.dominantCloudText || 'Clear (0%)';
           return {
-            title: 'Surface Wind Telemetry',
+            title: 'Atmospheric Cloud & Wind Telemetry',
             bodyHtml: makeRows([
-              ['Velocity', (weather.windSpeedKm != null ? weather.windSpeedKm + ' km/h (' + (weather.windSpeedMph || 0) + ' mph)' : 'Calm')],
-              ['Direction', (weather.windDirection || 'Variable air flow')],
-              ['Estimated Gusts', gustEst],
-              ['Scale', (weather.windSpeedKm < 6 ? 'Light Air' : (weather.windSpeedKm < 20 ? 'Gentle Breeze' : 'Moderate Breeze'))]
+              ['Dominant Layer', dominantStr],
+              ['Total Cloud Cover', (weather.cloudCover != null ? weather.cloudCover + '%' : '--')],
+              ['High Clouds (>6km)', (weather.cloudHigh != null ? weather.cloudHigh + '% (Cirrus)' : '--')],
+              ['Mid Clouds (2-6km)', (weather.cloudMid != null ? weather.cloudMid + '% (Altocumulus)' : '--')],
+              ['Low Clouds (<2km)', (weather.cloudLow != null ? weather.cloudLow + '% (Stratus)' : '--')],
+              ['Surface Wind', (weather.windSpeedKm != null ? weather.windSpeedKm + ' km/h (' + (weather.windSpeedMph || 0) + ' mph)' : 'Calm')],
+              ['Wind Direction', dirText],
+              ['Peak Gusts', gustVal]
             ])
           };
 
@@ -5915,9 +6115,14 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
               '<span class="hud-detail-item-sub">Dew point equilibrium</span>' +
             '</div>' +
             '<div class="hud-detail-item">' +
+              '<span class="hud-detail-item-label">Cloud Coverage</span>' +
+              '<span class="hud-detail-item-val">' + esc(weather.dominantCloudText || (weather.cloudCover != null ? weather.cloudCover + '%' : 'Clear')) + '</span>' +
+              '<span class="hud-detail-item-sub">Total: ' + esc(weather.cloudCover != null ? weather.cloudCover + '%' : '0%') + ' (High ' + esc(weather.cloudHigh || 0) + '% / Mid ' + esc(weather.cloudMid || 0) + '% / Low ' + esc(weather.cloudLow || 0) + '%)</span>' +
+            '</div>' +
+            '<div class="hud-detail-item">' +
               '<span class="hud-detail-item-label">Surface Wind</span>' +
               '<span class="hud-detail-item-val">' + esc(weather.windSpeedKm != null ? weather.windSpeedKm + ' km/h' : 'Calm') + '</span>' +
-              '<span class="hud-detail-item-sub">' + (weather.windDirection ? esc(weather.windDirection) : 'Variable direction') + '</span>' +
+              '<span class="hud-detail-item-sub">' + (weather.windDirection ? esc(weather.windDirection) : 'Variable direction') + (weather.windGustsKm != null ? ' · Gusts ' + esc(weather.windGustsKm) + ' km/h' : '') + '</span>' +
             '</div>' +
             '<div class="hud-detail-item">' +
               '<span class="hud-detail-item-label">Precipitation</span>' +
@@ -6666,32 +6871,71 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         }
       }
 
+      // Atmospheric Wind Streamlines Update
+      if (this.windEngine) {
+        var wDeg = Number.isFinite(w.windDirectionDeg) ? w.windDirectionDeg : 0;
+        var wSpd = Number.isFinite(w.windSpeedKm) ? w.windSpeedKm : 0;
+        var wGst = Number.isFinite(w.windGustsKm) ? w.windGustsKm : wSpd;
+        this.windEngine.setWind(wDeg, wSpd, wGst);
+        if (wSpd > 0.5) this.wakeAnimationLoop();
+      }
+
       if (this.dom.metricHumidity) {
         this.dom.metricHumidity.textContent = Number.isFinite(w.humidity) ? (Math.round(w.humidity) + '%') : '--';
       }
+
+      // Atmospheric Cloud Layers: Dominant Layer Callout (User requested format: e.g. "High 99%")
+      var cLow = (w.cloudLow != null && Number.isFinite(w.cloudLow)) ? Math.round(w.cloudLow) : 0;
+      var cMid = (w.cloudMid != null && Number.isFinite(w.cloudMid)) ? Math.round(w.cloudMid) : 0;
+      var cHigh = (w.cloudHigh != null && Number.isFinite(w.cloudHigh)) ? Math.round(w.cloudHigh) : 0;
+      var cTotal = (w.cloudCover != null && Number.isFinite(w.cloudCover)) ? Math.round(w.cloudCover) : Math.max(cLow, cMid, cHigh);
+
+      var dominantLayer = 'Clear';
+      var dominantPct = 0;
+      var maxLayer = Math.max(cLow, cMid, cHigh);
+
+      if (maxLayer < 5 && cTotal < 5) {
+        dominantLayer = 'Clear';
+        dominantPct = 0;
+      } else if (cHigh === maxLayer) {
+        dominantLayer = 'High';
+        dominantPct = cHigh;
+      } else if (cMid === maxLayer) {
+        dominantLayer = 'Mid';
+        dominantPct = cMid;
+      } else {
+        dominantLayer = 'Low';
+        dominantPct = cLow;
+      }
+
+      var dominantText = dominantLayer + ' ' + dominantPct + '%';
+      w.dominantCloudText = dominantText;
+
       if (this.dom.metricWind) {
-        if (isF) {
-          this.dom.metricWind.textContent = Number.isFinite(w.windSpeedMph) ? (w.windSpeedMph + ' mph') : '--';
-        } else {
-          this.dom.metricWind.textContent = Number.isFinite(w.windSpeedKm) ? (w.windSpeedKm + ' km/h') : '--';
-        }
+        this.dom.metricWind.textContent = dominantText;
       }
       if (this.dom.metricPrecip) {
         this.dom.metricPrecip.textContent = Number.isFinite(w.precipitationMm) ? ((w.precipitationMm || 0.0).toFixed(1) + ' mm') : '--';
       }
 
+      var windSummary = (w.windSpeedKm != null ? (w.windSpeedKm + ' km/h') : 'Calm') + (w.windDirection ? ' · ' + w.windDirection : '') + (w.windGustsKm != null ? ' (Gusts ' + w.windGustsKm + ' km/h)' : '');
+
       if (this.dom.hudWeatherCard) {
         var wUnit = isF ? '°F' : '°C';
         this.dom.hudWeatherCard.title = (w.conditionText || 'Weather') + ' • ' + temp + wUnit +
-          ' (Feels like ' + apparent + '°) • High ' + high + '° / Low ' + low + '° (Click to inspect atmosphere)';
+          ' (Feels like ' + apparent + '°) • High ' + high + '° / Low ' + low + '° • Wind: ' + windSummary + ' (Click to inspect atmosphere)';
       }
+
+      var cloudCard = document.getElementById('metric-card-clouds') || (this.dom.metricWind ? this.dom.metricWind.closest('.metric-card') : null);
+      if (cloudCard) {
+        cloudCard.title = 'Atmospheric Cloud Layers: Dominant ' + dominantText + ' (Total ' + cTotal + '% | High: ' + cHigh + '%, Mid: ' + cMid + '%, Low: ' + cLow + '%) (Click to inspect)';
+      }
+
       if (this.dom.hudMetricsRow) {
         var hStr = Number.isFinite(w.humidity) ? (Math.round(w.humidity) + '%') : '--';
-        var wStr = isF
-          ? (Number.isFinite(w.windSpeedMph) ? (w.windSpeedMph + ' mph') : '--')
-          : (Number.isFinite(w.windSpeedKm) ? (w.windSpeedKm + ' km/h') : '--');
+        var cStr = dominantText;
         var pStr = Number.isFinite(w.precipitationMm) ? ((w.precipitationMm || 0.0).toFixed(1) + ' mm') : '--';
-        this.dom.hudMetricsRow.title = 'Humidity: ' + hStr + ' | Wind: ' + wStr + ' | Precip: ' + pStr + ' (Click to inspect metrics)';
+        this.dom.hudMetricsRow.title = 'Humidity: ' + hStr + ' | Clouds: ' + cStr + ' | Precip: ' + pStr + ' (Click to inspect metrics)';
       }
     },
 
@@ -7885,6 +8129,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (this.mediaVisualizer && typeof this.mediaVisualizer.hasActiveAnimation === 'function' && this.mediaVisualizer.hasActiveAnimation()) {
         return true;
       }
+      if (this.windEngine && typeof this.windEngine.hasActiveAnimation === 'function' && this.windEngine.hasActiveAnimation()) {
+        return true;
+      }
       return false;
     },
 
@@ -8076,6 +8323,11 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       // 1.5. Render 60 FPS Audio Visualizer
       if (this.mediaVisualizer) {
         this.mediaVisualizer.render(dt);
+      }
+
+      // 1.8. Render Wind Streamlines (Windy-style atmospheric streamlines)
+      if (this.windEngine) {
+        this.windEngine.render(dt);
       }
 
       // 2. FPS & Performance Diagnostics
