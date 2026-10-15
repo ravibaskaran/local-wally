@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Setup & Controls Walkthrough — Local Wally HUD</title>
+  <meta name="description" content="In-depth setup, provider customization, telemetry drawer, and troubleshooting walkthrough for Local Wally HUD on Windows 11.">
+  <style>
+    :root {
+      --bg-primary: #0d1117;
+      --bg-secondary: #161b22;
+      --bg-tertiary: #21262d;
+      --border-color: #30363d;
+      --text-main: #c9d1d9;
+      --text-bright: #f0f6fc;
+      --text-muted: #8b949e;
+      --accent: #38bdf8;
+      --accent-hover: #0ea5e9;
+      --warning: #d29922;
+      --max-width: 980px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg-primary);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      line-height: 1.65;
+      font-size: 16px;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    header.site-header {
+      background: rgba(22, 27, 34, 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-color);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header-inner {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 0.85rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .brand {
+      font-weight: 700;
+      font-size: 1.15rem;
+      color: var(--text-bright);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    nav.header-nav { display: flex; gap: 1.25rem; align-items: center; font-size: 0.92rem; }
+    nav.header-nav a { color: var(--text-muted); font-weight: 500; }
+    nav.header-nav a:hover { color: var(--text-bright); text-decoration: none; }
+    .btn-nav {
+      background: var(--bg-tertiary);
+      color: var(--text-bright) !important;
+      padding: 0.4rem 0.85rem;
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+    }
+    main.container {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 2.5rem 1.5rem 4rem;
+    }
+    h1 {
+      font-size: 2.3rem;
+      color: var(--text-bright);
+      font-weight: 800;
+      margin-bottom: 1rem;
+      letter-spacing: -0.025em;
+    }
+    h2 {
+      font-size: 1.6rem;
+      color: var(--text-bright);
+      margin: 2.5rem 0 1rem;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 0.4rem;
+    }
+    h3 {
+      font-size: 1.2rem;
+      color: var(--text-bright);
+      margin: 1.5rem 0 0.6rem;
+    }
+    p { margin-bottom: 1rem; }
+    hr {
+      border: 0;
+      border-top: 1px solid var(--border-color);
+      margin: 2rem 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1.5rem 0;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th, td {
+      padding: 0.7rem 0.9rem;
+      border-bottom: 1px solid var(--border-color);
+      text-align: left;
+      font-size: 0.92rem;
+    }
+    th {
+      background: var(--bg-tertiary);
+      color: var(--text-bright);
+      font-weight: 600;
+    }
+    tr:last-child td { border-bottom: none; }
+    kbd {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-bottom-color: #1f242c;
+      border-radius: 4px;
+      box-shadow: 0 1px 1px rgba(0, 0, 0, 0.4);
+      color: var(--text-bright);
+      display: inline-block;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.85em;
+      padding: 0.15em 0.45em;
+    }
+    code {
+      background: var(--bg-tertiary);
+      padding: 0.2em 0.4em;
+      border-radius: 4px;
+      font-size: 0.9em;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    }
+    pre {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 1.25rem;
+      overflow-x: auto;
+      margin: 1.25rem 0;
+    }
+    pre code { background: transparent; padding: 0; }
+    ol, ul { padding-left: 1.5rem; margin-bottom: 1.25rem; }
+    li { margin-bottom: 0.4rem; }
+    .callout {
+      background: rgba(56, 189, 248, 0.08);
+      border-left: 4px solid var(--accent);
+      padding: 1rem 1.25rem;
+      border-radius: 0 6px 6px 0;
+      margin: 1.5rem 0;
+    }
+    .callout.warning {
+      background: rgba(210, 153, 34, 0.1);
+      border-left-color: var(--warning);
+    }
+    img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      margin: 1rem 0;
+    }
+    footer.site-footer {
+      border-top: 1px solid var(--border-color);
+      padding: 2.5rem 1.5rem;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="brand">
+        <a href="index.html" style="color: inherit; text-decoration: none; display: flex; align-items: center; gap: 0.5rem;">
+          <span>🌤️</span>
+          <span>Local Wally HUD</span>
+        </a>
+      </div>
+      <nav class="header-nav">
+        <a href="index.html">Documentation Home</a>
+        <a href="https://github.com/ravibaskaran/local-wally/blob/main/CHANGELOG.md">Changelog</a>
+        <a href="https://github.com/ravibaskaran/local-wally" class="btn-nav">GitHub Repo</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <h1>Local Wally HUD - Setup, Controls, and Configuration Walkthrough</h1>
+<p>This guide provides a comprehensive walkthrough for configuring, customizing, and troubleshooting <strong>Local Wally HUD</strong> on Windows 11 with <a href="https://rocksdanister.github.io/lively/">Lively Wallpaper</a>.</p>
+<hr />
+<h2 id="table-of-contents">Table of Contents</h2>
+<ol>
+<li><a href="#1-first-launch-and-location-cascade">First Launch and Location Cascade</a></li>
+<li><a href="#2-customizing-weather-air-quality-news-and-wallpaper-providers">Customizing Weather, Air Quality, News, and Wallpaper Providers</a></li>
+<li><a href="#3-interactive-24-hour-forecast-chart">Interactive 24-Hour Forecast Chart</a></li>
+<li><a href="#4-regional-news-ingestion-and-interactive-story-navigation">Regional News Ingestion and Interactive Story Navigation</a></li>
+<li><a href="#5-progressive-disclosure-hover-popovers-and-telemetry-drawer">Progressive Disclosure: Hover Popovers and Telemetry Drawer</a></li>
+<li><a href="#6-media-player-60-fps-sound-visualizer-and-focus-dock">Media Player, 60 FPS Sound Visualizer, and Focus Dock</a></li>
+<li><a href="#7-upgrading-local-wally-while-preserving-settings">Upgrading Local Wally While Preserving Settings</a></li>
+<li><a href="#8-lively-properties-reference-table">Lively Properties Reference Table</a></li>
+<li><a href="#9-advanced-configuration-configjs">Advanced Configuration (config.js)</a></li>
+<li><a href="#10-troubleshooting-and-symptom-to-action-guide">Troubleshooting and Symptom-to-Action Guide</a></li>
+</ol>
+<hr />
+<h2 id="1-first-launch-and-location-cascade">1. First Launch and Location Cascade</h2>
+<p>When Local Wally initializes, it determines your geographic coordinates through a non-blocking cascade designed to boot instantly without modal permission dialogs:</p>
+<ol>
+<li><strong>Manual Location Override</strong>: If you entered a custom city or coordinate pair in the Diagnostics panel (press <kbd>D</kbd> on your desktop) or via Lively Properties, that location is geocoded once and cached permanently. It takes precedence over automatic detection.</li>
+<li><strong>Persisted Automatic Location</strong>: If an automatic location was previously resolved, Local Wally paints that cached location immediately upon boot so you never see blank or placeholder screens. A silent background check detects if your laptop moved to another city and adopts changes smoothly.</li>
+<li><strong>Silent Auto-Detection</strong>:</li>
+<p>   - Local Wally checks <code>navigator.permissions.query({ name: 'geolocation' })</code> with a strict 1500 ms safety timeout race. In WebView2 desktop environments where host permission prompts may hang, the query safely times out and falls back to IP geolocation.</p>
+<p>   - If HTML5 Geolocation permission was already granted in your environment, precise coordinates are used.</p>
+<p>   - If not already granted, Local Wally immediately uses secure, keyless IP-based geolocation (<code>ipapi.co</code>).</p>
+<p>   - If the network is entirely offline, it falls back to the default coordinates specified in <code>config.js</code> (Tokyo, Japan).</p>
+</ol>
+<h3>Setting a Manual Location</h3>
+<ul>
+<li>Press <kbd>D</kbd> over the desktop to open the Diagnostics & Location Management overlay.</li>
+<li>Type any city name (e.g. <code>London</code>, <code>Seattle</code>, <code>Bangalore</code>) or coordinate pair (<code>lat, lon</code>).</li>
+<li>Select a suggested match or press <kbd>Enter</kbd>.</li>
+<li>To return to automatic GPS/IP detection at any time, click <strong>Use automatic</strong>.</li>
+</ul>
+<hr />
+<h2 id="2-customizing-weather-air-quality-news-and-wallpaper-providers">2. Customizing Weather, Air Quality, News, and Wallpaper Providers</h2>
+<p>Right-click Local Wally in your Lively Wallpaper library and choose <strong>Customise Wallpaper</strong> to adjust provider preferences:</p>
+<p align="center">
+  <img src="screenshots/05-lively-settings.png" alt="Lively Wallpaper Customise Settings modal showing provider selectors and masked API key fields" width="85%" />
+</p>
+<h3>Weather Telemetry Providers</h3>
+<ul>
+<li><strong>Open-Meteo (Keyless Default)</strong>: High-resolution global forecast models with zero configuration and no API keys required.</li>
+<li><strong>WeatherAPI.com (Free Key)</strong>: Provides live conditions, 72-hour hourly forecasts, and US EPA air quality data in a single network roundtrip. Requires a free API key from <a href="https://www.weatherapi.com/">weatherapi.com</a>. Enter your key in the <strong>WeatherAPI.com API Key</strong> field. If no key is entered or if the API call fails, Local Wally falls back cleanly to Open-Meteo.</li>
+<li><strong>OpenWeatherMap (Key Optional)</strong>: Supports OpenWeatherMap One Call 3.0 or 2.5 API keys. Enter your key in the <strong>OpenWeatherMap API Key</strong> field. Falls back to Open-Meteo if the key is empty or returns an error.</li>
+<li><em>Note on MET Norway</em>: The MET Norway / Yr.no service requires custom user-agent headers that standard browser and WebView2 environments cannot send directly; client-side requests configure cleanly through Open-Meteo.</li>
+</ul>
+<h3>Air Quality Providers</h3>
+<ul>
+<li><strong>Open-Meteo AQI (Keyless Default)</strong>: Live European Air Quality Index (AQI) with PM2.5 and PM10 particulate tracking. No key required.</li>
+<li><strong>WAQI / AQICN (Token Optional)</strong>: Telemetry from the World Air Quality Index project. Requires an optional personal API token entered in <strong>WAQI API Token</strong>.</li>
+</ul>
+<h3>Wallpaper Photography Providers</h3>
+<ul>
+<li><strong>Unsplash (Keyless Default)</strong>: Curated high-resolution landscape photography matched to your screen resolution and current weather lighting. Requires no API key.</li>
+<li><strong>Wallhaven, Pexels, Pixabay</strong>: Optional photography providers. If you select one of these providers, you must provide a valid API key in its corresponding field.</li>
+<li><strong>Rotate configured sources</strong>: Cycles through enabled wallpaper sources automatically on each data refresh cycle.</li>
+</ul>
+<h3>Regional News Providers</h3>
+<ul>
+<li><strong>Auto (API keys first)</strong>: Checks for configured keys (Currents, NewsAPI) and uses them first. If no keys are provided, it automatically uses Google News.</li>
+<li><strong>Google News</strong>: Keyless regional RSS headlines fetched via a lightweight CORS gateway proxy. It automatically selects local headlines based on your detected city and country code.</li>
+<li><strong>NewsAPI & Currents News</strong>: Commercial news aggregators that require personal API keys entered in their respective fields.</li>
+<li><strong>15-Minute News Quota Firewall</strong>: All news adapters enforce an independent 15-minute rate-limit window per provider. This protects your API quota and prevents background polling thrashing.</li>
+</ul>
+<div class="callout">
+<p>All credential fields in Lively Wallpaper are masked. Local Wally works out of the box with zero API keys. API keys are only required if you choose to activate a keyed provider.</p></div>
+<hr />
+<h2 id="3-interactive-24-hour-forecast-chart">3. Interactive 24-Hour Forecast Chart</h2>
+<p>The weather card includes an inline SVG forecast chart rendered with Catmull-Rom cubic Bezier curves:</p>
+<p align="center">
+  <img src="screenshots/02-forecast-chart.png" alt="Local Wally 24-hour forecast chart displaying temperature curve and metric tabs" width="60%" />
+</p>
+<h3>Metric Tabs</h3>
+<p>Click any tab or use the <kbd>←</kbd> and <kbd>→</kbd> arrow keys to switch metrics:</p>
+<ul>
+<li><strong>Temp</strong>: Hourly temperature in Celsius or Fahrenheit.</li>
+<li><strong>Feels</strong>: Apparent temperature accounting for humidity and wind chill.</li>
+<li><strong>Precip</strong>: Rain and precipitation probability from 0% to 100%.</li>
+<li><strong>Wind</strong>: Surface wind speed trajectory in km/h or mph.</li>
+<li><strong>Humidity</strong>: Relative atmospheric humidity levels.</li>
+<li><strong>AQI</strong>: Color-coded European Air Quality Index forecast trajectory.</li>
+</ul>
+<hr />
+<h2 id="4-regional-news-ingestion-and-interactive-story-navigation">4. Regional News Ingestion and Interactive Story Navigation</h2>
+<p>The regional news dispatch keeps you informed with local and global headlines:</p>
+<p align="center">
+  <img src="screenshots/04-local-news-interactions.png" alt="Regional news card displaying selected story and active navigation dot indicator" width="60%" />
+</p>
+<ul>
+<li><strong>Story Indicators</strong>: The bottom-right corner displays pagination dots. The elongated cyan pill highlights the active headline.</li>
+<li><strong>Interactive Navigation</strong>: Click any dot or press <kbd>Enter</kbd> / <kbd>Space</kbd> when focused to switch directly to that story. Manually selecting a story pauses the automatic rotation timer so you can read without disruption.</li>
+<li><strong>Publisher Tooltips</strong>: Hover over any indicator dot to see the publisher name and relative publication time.</li>
+<li><strong>Reading Full Articles</strong>: Click the headline to open the original article in your default web browser. All external links use secure <code>https:</code> destinations.</li>
+</ul>
+<hr />
+<h2 id="5-progressive-disclosure-hover-popovers-and-telemetry-drawer">5. Progressive Disclosure: Hover Popovers and Telemetry Drawer</h2>
+<p>Local Wally implements a two-tier progressive disclosure system so you can see quick summaries at a glance or inspect complete telemetry on demand:</p>
+<p align="center">
+  <img src="screenshots/03-air-quality-details.png" alt="Air quality card with progressive disclosure floating hover popover" width="60%" />
+</p>
+<h3>Tier 1: Floating Hover Popovers</h3>
+<ul>
+<li>Hover your mouse over (or <kbd>Tab</kbd>-focus) any of the 22 interactive HUD elements.</li>
+<li>A floating acrylic popover appears with secondary metrics, health advisories, moon altitude, or particulate breakdowns.</li>
+<li>Popovers automatically adjust position within screen boundaries so they never clip against desktop edges.</li>
+<li>Dismiss instantly by moving the mouse away or pressing <kbd>Esc</kbd>.</li>
+</ul>
+<h3>Tier 2: Contextual Telemetry Drawer</h3>
+<ul>
+<li>Click any card or press <kbd>Enter</kbd> to slide open a full-height acrylic drawer.</li>
+<li>Shows complete meteorological parameters, barometric pressure, wind gusts, particulate measurements, and astronomical ephemeris.</li>
+<li>Press <kbd>Esc</kbd> or click outside the drawer to close it.</li>
+</ul>
+<hr />
+<h2 id="6-media-player-60-fps-sound-visualizer-and-focus-dock">6. Media Player, 60 FPS Sound Visualizer, and Focus Dock</h2>
+<p>The companion dock sits below the main HUD:</p>
+<p align="center">
+  <img src="screenshots/06-media-and-focus.png" alt="Media player with 32-bar audio visualizer and Pomodoro focus timer dock" width="85%" />
+</p>
+<h3>Pomodoro & Focus Timer</h3>
+<ul>
+<li>Four supported timing techniques:</li>
+<p>  - <strong>Pomodoro (25/5)</strong>: 25 minutes of work followed by a 5-minute break.</p>
+<p>  - <strong>52/17 Rule</strong>: 52 minutes of sprint focus followed by a 17-minute rest.</p>
+<p>  - <strong>Ultradian (90/20)</strong>: 90 minutes of deep focus followed by a 20-minute rest.</p>
+<p>  - <strong>Flowtime</strong>: Stopwatch count-up mode for open-ended focus sessions.</p>
+<li>Press <kbd>P</kbd> to start or pause the timer.</li>
+<li>Real wall-clock timestamp calculations ensure the timer never drifts or loses time when your PC is under heavy load.</li>
+</ul>
+<h3>Universal Media Player & Audio Visualizer</h3>
+<ul>
+<li>Connects to Windows System Media Transport Controls (SMTC) to display track titles, artists, and album artwork from Spotify, Apple Music, YouTube Music, Tidal, or web browsers.</li>
+<li>Features a 32-bar audio visualizer driven by Lively's audio spectrum bridge running at 60 FPS.</li>
+<li><strong>Silence Hysteresis</strong>: When music stops or is paused for more than 1.5 seconds, the visualizer automatically goes to sleep and clears the canvas to keep idle CPU usage at roughly 0.0%.</li>
+<li>In browser preview mode, press <kbd>M</kbd> to cycle through built-in demo tracks (Synthwave, Lo-Fi, Ambient).</li>
+</ul>
+<hr />
+<h2 id="7-upgrading-local-wally-while-preserving-settings">7. Upgrading Local Wally While Preserving Settings</h2>
+<p>Lively Wallpaper maintains customized properties per wallpaper ID. Importing a release zip directly always mints a new wallpaper ID, which starts with default values. To upgrade without losing your customized settings, choose one of these three methods:</p>
+<h3>Method 1: One-Click Updater Script (Recommended)</h3>
+<ol>
+<li>Download <code>upgrade-local-wally.bat</code> from the <a href="https://github.com/ravibaskaran/local-wally/releases/latest">Latest GitHub Release</a> or from this repository's <code>tools/updater/</code> folder.</li>
+<li>Double-click <code>upgrade-local-wally.bat</code>.</li>
+<li>The script locates your installed Local Wally folders (supporting both desktop installer and Microsoft Store versions of Lively) and overlays the updated files in place.</li>
+<li>Restart Lively Wallpaper or re-select Local Wally. All customized settings remain intact.</li>
+</ol>
+<h3>Method 2: Manual ZIP Overlay</h3>
+<ol>
+<li>In Lively Wallpaper, temporarily switch to another wallpaper to release file locks.</li>
+<li>Download <code>local-wally.zip</code> from the <a href="https://github.com/ravibaskaran/local-wally/releases/latest">Latest GitHub Release</a>.</li>
+<li>Extract the contents directly into your existing Local Wally installation folder, choosing <strong>Replace all files</strong>:</li>
+<p>   <code>%LocalAppData%\Lively Wallpaper\Library\wallpapers\<installed-folder></code></p>
+<li>Switch back to Local Wally in Lively. All settings are preserved because the wallpaper storage ID was not changed.</li>
+</ol>
+<h3>Method 3: Settings Export and Import</h3>
+<ol>
+<li>On your existing Local Wally wallpaper, open Lively settings (<strong>Customise Wallpaper</strong>) and click <strong>Export Settings</strong>.</li>
+<li>Save the resulting JSON backup file to your computer.</li>
+<li>Import the new <code>local-wally.zip</code> into Lively Wallpaper.</li>
+<li>On the newly added wallpaper, click <strong>Customise Wallpaper</strong>, click <strong>Import Settings</strong>, and select your saved JSON file.</li>
+</ol>
+<div class="callout warning">
+<p><strong>Privacy Notice</strong>: Settings backup files contain your configured API keys and custom location settings. Always keep your backup JSON file private. Never post or share an unredacted settings export in public GitHub issues or forums.</p></div>
+<hr />
+<h2 id="8-lively-properties-reference-table">8. Lively Properties Reference Table</h2>
+<p>The following table lists every property defined in <code>LivelyProperties.json</code>:</p>
+<table><thead><tr><th>Setting Identifier</th><th>UI Label</th><th>Type</th><th>Default</th><th>Options / Range</th></tr></thead><tbody>
+<tr><td><code>customLocation</code></td><td>Custom Location (blank = Automatic)</td><td>textbox</td><td><code>""</code></td><td>City name or <code>lat, lon</code> coordinates</td></tr>
+<tr><td><code>hudPosition</code></td><td>HUD Position</td><td>dropdown</td><td><code>Top Right</code></td><td>Top Right, Top Left, Bottom Right, Bottom Left, Middle Right, Middle Left, Middle Top, Middle Bottom, Center</td></tr>
+<tr><td><code>glassBlur</code></td><td>Glass Blur (px)</td><td>slider</td><td><code>14</code></td><td>0 to 40 px (step 2)</td></tr>
+<tr><td><code>particleDensity</code></td><td>Particle Density Multiplier</td><td>slider</td><td><code>1.0</code></td><td>0.2 to 2.0 (step 0.1)</td></tr>
+<tr><td><code>tempUnit</code></td><td>Temperature Unit</td><td>dropdown</td><td><code>Celsius (°C)</code></td><td>Celsius (°C), Fahrenheit (°F)</td></tr>
+<tr><td><code>refreshInterval</code></td><td>Data & Wallpaper Refresh Interval</td><td>slider</td><td><code>15</code></td><td>5 to 30 minutes (step 1)</td></tr>
+<tr><td><code>wallpaperProvider</code></td><td>Wallpaper Provider</td><td>dropdown</td><td><code>Unsplash</code></td><td>Unsplash, Wallhaven, Pexels, Pixabay, Rotate configured sources</td></tr>
+<tr><td><code>unsplashApiKey</code></td><td>Unsplash Access Key (Optional)</td><td>textbox</td><td><code>""</code></td><td>Personal Unsplash API key</td></tr>
+<tr><td><code>wallhavenApiKey</code></td><td>Wallhaven API Key (Optional)</td><td>textbox</td><td><code>""</code></td><td>Personal Wallhaven key</td></tr>
+<tr><td><code>pexelsApiKey</code></td><td>Pexels API Key (Optional)</td><td>textbox</td><td><code>""</code></td><td>Personal Pexels key</td></tr>
+<tr><td><code>pixabayApiKey</code></td><td>Pixabay API Key (Optional)</td><td>textbox</td><td><code>""</code></td><td>Personal Pixabay key</td></tr>
+<tr><td><code>weatherSimulation</code></td><td>Simulate Weather (Debug)</td><td>dropdown</td><td><code>Live Weather (Auto)</code></td><td>Live Weather (Auto), Clear Day, Rain & Storm, Snow, Starry Night</td></tr>
+<tr><td><code>contrastMode</code></td><td>Glass Contrast Theme</td><td>dropdown</td><td><code>Auto (Wallpaper-Adaptive)</code></td><td>Auto (Wallpaper-Adaptive), Dark Glass (White Text), Light Glass (Dark Text)</td></tr>
+<tr><td><code>showMediaFocusDock</code></td><td>Show Media & Focus Dock</td><td>checkbox</td><td><code>true</code></td><td>Show or hide bottom companion dock</td></tr>
+<tr><td><code>focusTimerMode</code></td><td>Focus Timer Mode</td><td>dropdown</td><td><code>Pomodoro (25/5)</code></td><td>Pomodoro (25/5), 52/17 Rule, Ultradian (90/20), Flowtime (Stopwatch)</td></tr>
+<tr><td><code>pomodoroFocusMinutes</code></td><td>Pomodoro Focus Duration (Minutes)</td><td>slider</td><td><code>25</code></td><td>5 to 60 minutes</td></tr>
+<tr><td><code>pomodoroBreakMinutes</code></td><td>Pomodoro Break Duration (Minutes)</td><td>slider</td><td><code>5</code></td><td>1 to 15 minutes</td></tr>
+<tr><td><code>pomodoroLongBreakMinutes</code></td><td>Pomodoro Long Break Duration (Minutes)</td><td>slider</td><td><code>15</code></td><td>5 to 30 minutes</td></tr>
+<tr><td><code>enableAudioVisualizer</code></td><td>Enable Audio Visualizer (60 FPS)</td><td>checkbox</td><td><code>true</code></td><td>Toggle 32-bar visualizer animation</td></tr>
+<tr><td><code>enableDynamicSolarLighting</code></td><td>Dynamic Solar Lighting & Shadows</td><td>checkbox</td><td><code>true</code></td><td>Toggle sun-angle lighting and card drop shadows</td></tr>
+<tr><td><code>showNewsFeed</code></td><td>Show Regional News Feed</td><td>checkbox</td><td><code>true</code></td><td>Show or hide news card</td></tr>
+<tr><td><code>newsProvider</code></td><td>News Provider</td><td>dropdown</td><td><code>Auto (API keys first)</code></td><td>Auto (API keys first), Google News, NewsAPI, Currents News, Rotate configured sources</td></tr>
+<tr><td><code>newsApiKey</code></td><td>NewsAPI Key (Optional)</td><td>textbox</td><td><code>""</code></td><td>Personal NewsAPI key</td></tr>
+<tr><td><code>currentsApiKey</code></td><td>Currents API Key (Optional)</td><td>textbox</td><td><code>""</code></td><td>Personal Currents API key</td></tr>
+<tr><td><code>showHardwareMonitor</code></td><td>Show Hardware Monitor</td><td>checkbox</td><td><code>true</code></td><td>Show or hide CPU/GPU/RAM/Disk gauges</td></tr>
+<tr><td><code>showCelestial</code></td><td>Show Solar & Lunar Ephemeris</td><td>checkbox</td><td><code>true</code></td><td>Show or hide dynamic day/night cards</td></tr>
+<tr><td><code>showAqi</code></td><td>Show Air Quality Index (AQI)</td><td>checkbox</td><td><code>true</code></td><td>Show or hide AQI gauge and pollutants</td></tr>
+<tr><td><code>showEnvironmentalMetrics</code></td><td>Show Environmental Metrics</td><td>checkbox</td><td><code>true</code></td><td>Show or hide Humidity, Clouds, and Precip row</td></tr>
+<tr><td><code>showPomodoro</code></td><td>Show Pomodoro Focus Timer</td><td>checkbox</td><td><code>true</code></td><td>Show or hide Pomodoro timer in companion dock</td></tr>
+<tr><td><code>showMediaPlayer</code></td><td>Show Media Player & Visualizer</td><td>checkbox</td><td><code>true</code></td><td>Show or hide media card in companion dock</td></tr>
+<tr><td><code>showNetworkUsage</code></td><td>Show Network Bandwidth</td><td>checkbox</td><td><code>true</code></td><td>Show or hide Download / Upload speed meters</td></tr>
+<tr><td><code>showBatteryInfo</code></td><td>Show Laptop Battery Telemetry</td><td>checkbox</td><td><code>true</code></td><td>Automatically hidden on desktop PCs without batteries</td></tr>
+<tr><td><code>weatherProvider</code></td><td>Weather Telemetry Provider</td><td>dropdown</td><td><code>Open-Meteo (Keyless)</code></td><td>Open-Meteo (Keyless), WeatherAPI.com (Free Key), OpenWeatherMap (Key Optional)</td></tr>
+<tr><td><code>weatherapiKey</code></td><td>WeatherAPI.com API Key (Optional)</td><td>textbox</td><td><code>""</code></td><td>Free tier WeatherAPI.com key</td></tr>
+<tr><td><code>openweathermapApiKey</code></td><td>OpenWeatherMap API Key (Optional)</td><td>textbox</td><td><code>""</code></td><td>Personal OpenWeatherMap key</td></tr>
+<tr><td><code>aqiProvider</code></td><td>Air Quality Provider</td><td>dropdown</td><td><code>Open-Meteo AQI (Keyless)</code></td><td>Open-Meteo AQI (Keyless), WAQI / AQICN (Token Optional)</td></tr>
+<tr><td><code>waqiApiKey</code></td><td>WAQI API Token (Optional)</td><td>textbox</td><td><code>""</code></td><td>Personal WAQI token</td></tr>
+<tr><td><code>showForecastChart</code></td><td>Show Forecast Chart</td><td>checkbox</td><td><code>true</code></td><td>Show or hide 24-hour SVG forecast chart</td></tr>
+<tr><td><code>defaultForecastTab</code></td><td>Default Forecast Tab</td><td>dropdown</td><td><code>Temperature</code></td><td>Temperature, Feels Like, Precipitation, Wind, Humidity, AQI</td></tr>
+<tr><td><code>settingsExport</code></td><td>Export Settings (incl. API keys)</td><td>button</td><td>-</td><td>Exports all settings to JSON file</td></tr>
+<tr><td><code>settingsImport</code></td><td>Import Settings</td><td>button</td><td>-</td><td>Restores settings from JSON file</td></tr>
+</tbody></table>
+<hr />
+<h2 id="9-advanced-configuration-config-js">9. Advanced Configuration (config.js)</h2>
+<p>When running Local Wally outside of Lively Wallpaper (such as in a local browser preview via <code>node serve.js</code>), settings can be modified in <code>config.js</code>. The schema mirrors the properties in Lively Wallpaper:</p>
+<pre><code>
+<p>window.LOCAL_WALLY_CONFIG = {</p>
+<p>  refreshIntervalMinutes: 15,</p>
+<p>  hudPosition: 'top-right',</p>
+<p>  glassBlurPx: 14,</p>
+<p>  glassSaturationPct: 190,</p>
+<p>  tempUnit: 'C',</p>
+<p>  newsRotateIntervalSeconds: 7,</p>
+<p>  hwUpdateIntervalSeconds: 10,</p>
+<p>  wallpaperProvider: 'unsplash',</p>
+<p>  weatherProvider: 'open-meteo',</p>
+<p>  weatherapiKey: '',</p>
+<p>  openweathermapApiKey: '',</p>
+<p>  aqiProvider: 'open-meteo',</p>
+<p>  waqiApiKey: '',</p>
+<p>  newsProvider: 'auto',</p>
+<p>  newsApiKey: '',</p>
+<p>  currentsApiKey: '',</p>
+<p>  defaultLocation: {</p>
+<p>    city: 'Tokyo',</p>
+<p>    country: 'Japan',</p>
+<p>    latitude: 35.6762,</p>
+<p>    longitude: 139.6503</p>
+<p>  }</p>
+<p>};</p>
+</code></pre>
+<hr />
+<h2 id="10-troubleshooting-and-symptom-to-action-guide">10. Troubleshooting and Symptom-to-Action Guide</h2>
+<p>The following symptom-to-action table is based on verified application logic:</p>
+<table><thead><tr><th>Symptom</th><th>Verified Cause</th><th>Action to Take</th></tr></thead><tbody>
+<tr><td><strong>Location displays "Locating..." indefinitely</strong></td><td>WebView2 host geolocation permission query hung without responding</td><td>Upgrade to v0.13.1+ where a 1500 ms safety race automatically falls back to IP geolocation. Alternatively, press <kbd>D</kbd> and specify a manual city name.</td></tr>
+<tr><td><strong>Location detected as wrong city</strong></td><td>IP geolocation provider resolved nearest ISP gateway rather than physical location</td><td>Press <kbd>D</kbd> on your desktop to open the Diagnostics panel, enter your desired city name or coordinates, and press <kbd>Enter</kbd>.</td></tr>
+<tr><td><strong>Weather or AQI displays "--" or "Unavailable"</strong></td><td>Network connectivity issue or upstream provider returned incomplete payload</td><td>Check your internet connection. Local Wally never fabricates missing metrics. It will retry automatically on the next scheduled refresh interval (default 15 minutes).</td></tr>
+<tr><td><strong>WeatherAPI.com or OpenWeatherMap fails</strong></td><td>Missing, invalid, or expired API key</td><td>Ensure your key is typed correctly in Lively Wallpaper settings. If the keyed call fails, Local Wally automatically falls back to Open-Meteo.</td></tr>
+<tr><td><strong>Regional news headlines are not updating</strong></td><td>15-minute news quota firewall is active, or CORS proxy is temporarily unreachable</td><td>News enforces an independent 15-minute rate limit window per provider to protect API quotas. Wait for the window to expire. If using Google News, verify your internet connection.</td></tr>
+<tr><td><strong>Wallpaper or data does not update immediately</strong></td><td>Local Wally adheres to its configured refresh cadence (default 15 minutes)</td><td>Data refreshes automatically according to your <strong>Data Refresh Interval</strong> slider (5 to 30 minutes). Changing a provider setting in Lively immediately triggers a fresh sync.</td></tr>
+<tr><td><strong>HUD clock or hardware meters frozen after sleep</strong></td><td>System entered S0 Modern Standby or deep sleep</td><td>Upgrade to v0.13.1+. On resume from sleep or when the network comes back online, the clock synchronizes immediately and triggers a background refresh if elapsed time exceeds 15 minutes.</td></tr>
+<tr><td><strong>Visualizer or animation runs when a game is open</strong></td><td>Lively Wallpaper window pause event was not forwarded by host</td><td>Ensure Lively Wallpaper settings are set to <strong>Pause</strong> when applications are fullscreen or focused. In <code>LivelyInfo.json</code>, verify that <code>--pause-event true</code> is present in the arguments.</td></tr>
+</tbody></table>
+<hr />
+<p><em>Need further help? Visit <a href="https://github.com/ravibaskaran/local-wally/issues">GitHub Issues</a> to ask questions or submit bug reports.</em></p>
+  </main>
+
+  <footer class="site-footer">
+    <p>Local Wally HUD is open-source software licensed under the <a href="https://github.com/ravibaskaran/local-wally/blob/main/LICENSE">MIT License</a>.</p>
+    <p style="margin-top: 0.5rem;"><a href="index.html">&larr; Return to Documentation Home</a></p>
+  </footer>
+
+</body>
+</html>
