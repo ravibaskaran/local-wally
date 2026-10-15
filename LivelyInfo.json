@@ -9,5 +9,5 @@
   "Contact": "https://github.com/ravibaskaran/local-wally",
   "Type": 1,
   "FileName": "index.html",
-  "Arguments": "--system-information"
+  "Arguments": "--system-information --system-nowplaying --audio --pause-event true"
 }

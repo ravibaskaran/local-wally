@@ -237,10 +237,32 @@
         // 1. HTML5 Geolocation — silently only when already granted (v0.8.7):
         //    navigator.permissions.query performs no prompt; any other state
         //    ('prompt', 'denied', unsupported API) skips GPS without asking.
+        //    In WebView2, when PermissionRequested is unhandled by the host,
+        //    permissions.query hangs indefinitely; race against a 1500ms timeout
+        //    so gpsProbe safely resolves to null and falls back to IP geolocation.
         var gpsProbe = Promise.resolve(null);
         if (typeof navigator !== 'undefined' && navigator.geolocation && navigator.permissions &&
             typeof navigator.permissions.query === 'function') {
-          gpsProbe = navigator.permissions.query({ name: 'geolocation' });
+          try {
+            var permTimeoutMs = (typeof self._geoPermTimeoutMs === 'number') ? self._geoPermTimeoutMs : 1500;
+            var permPromise = Promise.resolve().then(function() {
+              return navigator.permissions.query({ name: 'geolocation' });
+            }).catch(function() {
+              return null;
+            });
+            var permTimer = null;
+            var permTimeout = new Promise(function(resolve) {
+              permTimer = setTimeout(function() {
+                resolve(null);
+              }, permTimeoutMs);
+            });
+            gpsProbe = Promise.race([permPromise, permTimeout]).then(function(res) {
+              if (permTimer) clearTimeout(permTimer);
+              return res;
+            });
+          } catch (e) {
+            gpsProbe = Promise.resolve(null);
+          }
         }
 
         gpsProbe.then(function(status) {

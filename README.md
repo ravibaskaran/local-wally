@@ -306,6 +306,15 @@ local-wally/
 
 ## 🛡️ Recent Updates & Quality Improvements
 
+### Version 0.13.1 — Sleep/Wake Resiliency, Host-Authoritative Playback IPC & WebView2 Deadlock Elimination
+- **WebView2 Geolocation Permission Race Guard**: Wrapped `navigator.permissions.query({ name: 'geolocation' })` in a 1500ms `Promise.race` safety timeout. Prevents indefinite promise deadlocks in embedded WebView2 hosts lacking `PermissionRequested` handlers, safely falling back to IP geolocation.
+- **Host-Authoritative Playback IPC (`LivelyBridge`)**: Once Lively Wallpaper establishes host playback control via `livelyWallpaperPlaybackChanged`, the host's pause state is authoritative. Prevents desktop window occlusion flags (`document.hidden`) from vetoing host unpause commands.
+- **Complete Lively IPC Capabilities Alignment**: Updated `Arguments` in `LivelyInfo.json` to declare all supported capabilities (`--system-information --system-nowplaying --audio --pause-event true`), restoring host lifecycle event forwarding, SMTC track telemetry, and 128-bin audio FFT data streams.
+- **S0 Modern Standby & Sleep Recovery**:
+  - `updateClock()` snaps HUD clock to actual system time immediately inside `startLoop()` and the `onPlaybackChange` unpause handler without waiting for the next 1-second interval tick.
+  - Added a global `window.addEventListener('online')` handler to immediately trigger `checkAndSync(true)` upon Wi-Fi / Ethernet reconnect following S0 sleep.
+  - Enhanced `checkAndSync()` to measure elapsed time across sleep cycles, immediately refreshing atmosphere data when sleep duration exceeds the 15-minute cache TTL.
+
 ### Version 0.13.0 — Atmospheric Hero Ceiling, Weather-Adaptive Canvas, Animated SVGs & Audio Presence Detection
 - **Option B Hero Ceiling (`#hud-hero-ceiling`)**:
   - Unified atmospheric zone spanning the Header (Clock, Date, Location), Main Weather Condition card, and 3-Tier Environmental Metrics grid.

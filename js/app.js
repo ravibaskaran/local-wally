@@ -2285,6 +2285,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     // Timers
     clockInterval: null,
     syncInterval: null,
+    lastSyncTime: 0,
+    isOffline: false,
+    hasSyncError: false,
 
     // Feature Customization Component Toggles
     showNewsFeed: true,
@@ -2293,10 +2296,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     showBatteryInfo: true,
 
     /**
-     * Product version (v0.13.0). Rendered into #hud-version (bottom-right of
+     * Product version (v0.13.1). Rendered into #hud-version (bottom-right of
      * the card) so the running build is identifiable at a glance.
      */
-    VERSION: '0.13.0',
+    VERSION: '0.13.1',
     showCelestial: true,
     showAqi: true,
     showEnvironmentalMetrics: true,
@@ -2968,6 +2971,14 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           }
         }
       });
+
+      // Standby / Modern Standby network recovery: re-establish fresh data on reconnect
+      if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+        window.addEventListener('online', function() {
+          console.log('[App] Network connection restored (online event). Checking synchronization state...');
+          self.checkAndSync(true);
+        });
+      }
     },
 
     bindLively: function() {
@@ -2987,6 +2998,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           if (self.mediaVisualizer) self.mediaVisualizer.sleep();
         } else {
           self.startLoop();
+          self.updateClock();
+          self.checkAndSync();
           if (self.pendingSnapshot) {
             var snap = self.pendingSnapshot;
             self.pendingSnapshot = null;
@@ -6876,10 +6889,28 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
     },
 
-    checkAndSync: function() {
+    checkAndSync: function(forceIfStale) {
       if (this.isPlaybackPaused || this.simulationMode > 0) return;
-      if (global.CacheManager && global.CacheManager.isExpired()) {
-        console.log('[App] Cache expired (' + global.CacheManager.getTtlMinutes() + 'm). Executing synchronized sync...');
+
+      var ttlMs = (global.CacheManager && typeof global.CacheManager.TTL_MS === 'number')
+        ? global.CacheManager.TTL_MS
+        : (15 * 60 * 1000);
+      var cacheExpired = global.CacheManager ? global.CacheManager.isExpired() : false;
+      var elapsedSinceSync = this.lastSyncTime ? (Date.now() - this.lastSyncTime) : Infinity;
+      var isStale = cacheExpired || (elapsedSinceSync >= ttlMs);
+      var isErrorOrOffline = !this.state || !!this.isOffline || !!this.hasSyncError ||
+        (this.dom && this.dom.syncStatus && this.dom.syncStatus.textContent === 'Offline Fallback');
+
+      if (forceIfStale) {
+        if (isStale || isErrorOrOffline) {
+          console.log('[App] Online recovery: state is stale or offline (' + (isFinite(elapsedSinceSync) ? Math.round(elapsedSinceSync / 1000) + 's' : 'initial') + '). Forcing atmosphere refresh...');
+          this.loadAtmosphere(true);
+        }
+        return;
+      }
+
+      if (isStale) {
+        console.log('[App] Cache expired or elapsed sync time (' + (isFinite(elapsedSinceSync) ? Math.round(elapsedSinceSync / 1000) + 's >= ' + Math.round(ttlMs / 1000) + 's' : 'initial') + '). Executing synchronized sync...');
         this.loadAtmosphere(false);
       }
     },
@@ -6963,6 +6994,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       global.ApiService.fetchAtmosphere(forceRefresh)
         .then(function(snapshot) {
           self.state = snapshot;
+          self.lastSyncTime = Date.now();
+          self.isOffline = false;
+          self.hasSyncError = false;
           if (self.isPlaybackPaused) {
             self.pendingSnapshot = snapshot;
           } else {
@@ -6973,6 +7007,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         })
         .catch(function(err) {
           console.error('[App] Failed to load atmosphere:', err);
+          self.isOffline = true;
+          self.hasSyncError = true;
           if (self.dom.syncDot) self.dom.syncDot.style.background = '#f43f5e'; // Red on error
           if (self.dom.syncStatus) self.dom.syncStatus.textContent = 'Offline Fallback';
           // Fallback to mock data if no state exists
@@ -8492,9 +8528,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       this.fpsTimer = performance.now();
       this.frameCount = 0;
 
-      // Cleanly restart background timers if parked
+      // Cleanly restart background timers if parked & snap clock immediately on wake/resume
+      this.updateClock();
       if (!this.clockInterval) {
-        this.updateClock();
         this.clockInterval = setInterval(this.updateClock.bind(this), 1000);
       }
       if (!this.hwFallbackTimer && this.showHardwareMonitor) {

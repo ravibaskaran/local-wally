@@ -87,11 +87,12 @@
       }
     },
 
+    hasHostControl: false,
     hostPaused: false,
     documentHidden: (typeof document !== 'undefined' && document.hidden) ? true : false,
 
     updatePlaybackState: function() {
-      var shouldPause = this.hostPaused || this.documentHidden;
+      var shouldPause = this.hasHostControl ? this.hostPaused : (this.hostPaused || this.documentHidden);
       if (this.isPaused === shouldPause) return;
       this.isPaused = shouldPause;
       console.log('[LivelyBridge] Playback state changed: isPaused =', shouldPause);
@@ -106,6 +107,7 @@
     },
 
     setPaused: function(paused) {
+      this.hasHostControl = true;
       this.hostPaused = !!paused;
       this.updatePlaybackState();
     },
@@ -168,6 +170,7 @@
       try {
         var info = typeof data === 'string' ? JSON.parse(data) : data;
         if (info && typeof info.IsPaused !== 'undefined') {
+          this.hasHostControl = true;
           this.hostPaused = !!info.IsPaused;
           this.updatePlaybackState();
         }

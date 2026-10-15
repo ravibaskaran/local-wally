@@ -1833,3 +1833,24 @@ Three independent tool families were built at the v0.8.16 baseline (they now run
 ### 57.5 Zero-Gap Flush Layout & Dynamic Pomodoro Badging
 - **Zero-Gap Layout**: `updateLayoutAutoResize` sets `offsetGap = 0` between `#hud` and `#dock-media-focus` for flush docking.
 - **Dynamic Mode Badges**: `PomodoroEngine.updateModeLabel()` synchronizes `#pomo-mode-label` across all modes: `Pomodoro` (25m), `52/17`, `90m`, `Flow`, and `Break` / `Long Break`.
+
+## 58. Sleep/Wake Resiliency, Host-Authoritative Playback IPC & WebView2 Deadlock Elimination (v0.13.1)
+
+### 58.1 WebView2 Geolocation Permission Race Guard
+- **Deadlock Context**: In Microsoft WebView2 without a native host `PermissionRequested` implementation, `navigator.permissions.query({ name: 'geolocation' })` returns an unresolving Promise that stalls the execution pipeline indefinitely.
+- **Strict Race Fallback**: Wrapped `gpsProbe` in a 1500ms `Promise.race` timeout with proper timer cleanup. If the host fails to resolve the permission query, the probe safely resolves to `null` and falls back immediately to IP geolocation rather than locking the HUD in an unrecoverable `Locating...` / `Loading...` state.
+
+### 58.2 Host-Authoritative Playback IPC (`LivelyBridge`)
+- **Authority Tracking**: Added `hasHostControl` state to `LivelyBridge`. Once Lively Wallpaper connects and delivers playback state via `livelyWallpaperPlaybackChanged` or `setPaused`, the host's pause command (`hostPaused`) is authoritative.
+- **Desktop Occlusion Veto Removed**: In desktop wallpaper mode (where WebView2 is parented to `WorkerW` behind desktop icons without user focus), Chromium frequently reports `document.hidden = true`. The bridge now prevents `document.hidden` from vetoing host unpause commands, eliminating permanent wallpaper parking and frozen clocks upon initial load or window focus shifts.
+
+### 58.3 Complete Lively IPC Capabilities Alignment (`LivelyInfo.json`)
+- **IPC Argument Expansion**: Updated `Arguments` in `LivelyInfo.json` to declare all supported interop capabilities:
+  `"--system-information --system-nowplaying --audio --pause-event true"`
+- **Host Event Dispatch Enabled**: Enables `Lively.Player.WebView2.exe` to forward `livelyWallpaperPlaybackChanged` lifecycle events, Windows SMTC `livelyCurrentTrack` payloads, and 128-bin `livelyAudioListener` FFT visualizer feeds.
+
+### 58.4 S0 Modern Standby & Sleep Recovery Hooks
+- **Immediate Clock Snapping**: `updateClock()` is invoked synchronously inside `startLoop()` and the `onPlaybackChange` unpause handler, snapping the HUD clock to true system time immediately upon waking without waiting up to 1 second for the interval ticker.
+- **Online Reconnect Recovery**: Added a global `window.addEventListener('online')` handler to immediately trigger `checkAndSync(true)` upon Wi-Fi / Ethernet reconnect following S0 Modern Standby Network Disconnected sleep.
+- **Elapsed-Time Sleep Synchronization**: `checkAndSync()` now computes actual elapsed time since the previous sync; if the machine slept across the 15-minute cache TTL, an atmosphere synchronization is triggered immediately on wake.
+
