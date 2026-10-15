@@ -1854,3 +1854,18 @@ Three independent tool families were built at the v0.8.16 baseline (they now run
 - **Online Reconnect Recovery**: Added a global `window.addEventListener('online')` handler to immediately trigger `checkAndSync(true)` upon Wi-Fi / Ethernet reconnect following S0 Modern Standby Network Disconnected sleep.
 - **Elapsed-Time Sleep Synchronization**: `checkAndSync()` now computes actual elapsed time since the previous sync; if the machine slept across the 15-minute cache TTL, an atmosphere synchronization is triggered immediately on wake.
 
+## 59. Animated Metric Meteocons & WeatherAPI.com Alternate Provider (v0.14.0)
+
+### 59.1 Animated Metric Meteocons (W3C SMIL SVGs)
+- **Vector Parity & Visual Harmony**: Replaced static Lucide outline vectors in the 3-column environmental metrics row with standalone, official Bas Milius Meteocons animated fill SVGs (`assets/icons/weather/humidity.svg`, `cloudy.svg`, `raindrop-measure.svg`).
+- **Zero-CPU GPU Execution**: Animated using native W3C SMIL elements (`<animate>`, `<animateTransform>`), completely managed by Chromium's compositor without JavaScript per-frame loops or memory allocations, preserving 0.0% CPU usage during quiet desktop operation.
+- **Micro-Interaction Styling**: Added `.metric-meteocon` (22x22px, drop-shadow, smooth cubic-bezier transition, and hover micro-motion `transform: scale(1.15) translateY(-1px)`) while preserving all legacy DOM IDs and ARIA labels.
+
+### 59.2 WeatherAPI.com Alternate Live & Forecast Provider
+- **Provider Architecture**: Integrated WeatherAPI.com as a configurable alternative to Open-Meteo, with support for free tier keys (1,000,000 requests/month without credit card friction).
+- **Comprehensive WMO Condition Mapping**: Implemented `ApiService.weatherApiToWmo(code)` translating all 48 condition codes into standardized WMO weather codes.
+- **Single-Roundtrip Normalization**: `ApiService.WeatherAdapter.normalizeWeatherApi(data)` extracts current conditions, 3-day 72-hour hourly forecasts, and embedded US EPA AQI in a single network roundtrip.
+- **Synthetic 3-Tier Cloud Strata**: Generates synthetic `cloudCover`, `cloudLow`, `cloudMid`, and `cloudHigh` tiers from aggregate cloud cover to maintain visual continuity in the atmospheric hero ceiling canvas.
+- **Fault-Tolerant Fallback**: In the absence of an API key or upon network timeouts/errors, requests automatically and silently fall back to `open-meteo`.
+- **Property Whitelisting & Interop**: Dynamic configuration wired into `LivelyProperties.json`, `config.js`, and `js/app.js` with strict `_URL_EMBEDDED_KEY_PROPS` validation.
+

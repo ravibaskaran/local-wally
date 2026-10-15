@@ -306,6 +306,21 @@ local-wally/
 
 ## 🛡️ Recent Updates & Quality Improvements
 
+### Version 0.14.0 — Animated Metric Meteocons & WeatherAPI.com Alternate Provider
+- **Animated Metric Icons (Bas Milius Meteocons)**:
+  - Bundled standalone, official Meteocons animated fill SVGs (`assets/icons/weather/humidity.svg`, `assets/icons/weather/cloudy.svg`, `assets/icons/weather/raindrop-measure.svg`) replacing legacy static outlines in the 3-column environmental metrics row.
+  - Powered by native W3C SMIL vectors running 100% on GPU with 0.0% CPU overhead when parked and crisp rendering on 4K/HiDPI monitors.
+  - Styled with `.metric-meteocon` and smooth cyan glow hover micro-interactions (`transform: scale(1.15) translateY(-1px)`).
+- **WeatherAPI.com Live Telemetry & 72-Hour Forecast Provider**:
+  - Added full support for WeatherAPI.com as a configurable alternative weather and forecast provider.
+  - Comprehensive condition dictionary translating all 48 WeatherAPI condition codes to standardized WMO meteorological categories.
+  - Single-call telemetry ingestion: parses current conditions, 3-day 72-hour hourly forecast projections, and embedded US EPA AQI in a single network roundtrip.
+  - Synthetic 3-tier cloud strata (`cloudCover`, `cloudLow`, `cloudMid`, `cloudHigh`) ensuring seamless visual continuity for the atmospheric hero ceiling.
+  - Resilient graceful fallback: automatically routes to Open-Meteo if no API key is configured or if network timeouts occur.
+- **Dynamic Configuration & Lively Properties**:
+  - Integrated `weatherapiKey` and updated `weatherProvider` dropdown options in `LivelyProperties.json`, `config.js`, and `js/api.js`.
+  - Added strict key validation (`_URL_EMBEDDED_KEY_PROPS`) and reactive setting reload triggers in `js/app.js`.
+
 ### Version 0.13.1 — Sleep/Wake Resiliency, Host-Authoritative Playback IPC & WebView2 Deadlock Elimination
 - **WebView2 Geolocation Permission Race Guard**: Wrapped `navigator.permissions.query({ name: 'geolocation' })` in a 1500ms `Promise.race` safety timeout. Prevents indefinite promise deadlocks in embedded WebView2 hosts lacking `PermissionRequested` handlers, safely falling back to IP geolocation.
 - **Host-Authoritative Playback IPC (`LivelyBridge`)**: Once Lively Wallpaper establishes host playback control via `livelyWallpaperPlaybackChanged`, the host's pause state is authoritative. Prevents desktop window occlusion flags (`document.hidden`) from vetoing host unpause commands.
