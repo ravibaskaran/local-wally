@@ -3130,17 +3130,24 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             self.setShowEnvironmentalMetrics(val === true || val === 1 || val === 'true');
             break;
           case 'weatherProvider':
-            var wProviders = ['open-meteo', 'openweathermap'];
+            var wProviders = ['open-meteo', 'weatherapi', 'openweathermap'];
             var wpVal = 'open-meteo';
             if (typeof val === 'number') {
               wpVal = wProviders[val] || 'open-meteo';
             } else if (typeof val === 'string') {
-              if (/openweather/i.test(val)) wpVal = 'openweathermap';
+              if (/weatherapi/i.test(val)) wpVal = 'weatherapi';
+              else if (/openweather/i.test(val)) wpVal = 'openweathermap';
               else if (/norway|met-norway/i.test(val)) wpVal = 'met-norway';
               else wpVal = 'open-meteo';
             }
             if (global.ApiService) global.ApiService.weatherProvider = wpVal;
             self.loadAtmosphere(true);
+            break;
+          case 'weatherapiKey':
+            if (global.ApiService) global.ApiService.weatherapiKey = val;
+            if (global.ApiService && global.ApiService.weatherProvider === 'weatherapi') {
+              self.loadAtmosphere(true);
+            }
             break;
           case 'openweathermapApiKey':
             if (global.ApiService) global.ApiService.openweathermapApiKey = val;
@@ -4361,19 +4368,19 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       'showNewsFeed', 'newsProvider', 'newsApiKey', 'currentsApiKey',
       'showHardwareMonitor', 'showNetworkUsage', 'showBatteryInfo', 'showCelestial',
       'showAqi', 'showEnvironmentalMetrics', 'weatherProvider',
-      'openweathermapApiKey', 'aqiProvider', 'waqiApiKey', 'showForecastChart',
+      'weatherapiKey', 'openweathermapApiKey', 'aqiProvider', 'waqiApiKey', 'showForecastChart',
       'defaultForecastTab', 'showPomodoro', 'showMediaPlayer',
       'focusTimerMode', 'pomodoroFocusMinutes', 'pomodoroBreakMinutes', 'pomodoroLongBreakMinutes',
       'enableAudioVisualizer', 'enableDynamicSolarLighting'
     ],
     _SETTINGS_STORAGE_PREFIX: /^(LIVELY_HUD_|local_wally_)/,
-    _URL_EMBEDDED_KEY_PROPS: ['openweathermapApiKey', 'waqiApiKey', 'pixabayApiKey'],
+    _URL_EMBEDDED_KEY_PROPS: ['weatherapiKey', 'openweathermapApiKey', 'waqiApiKey', 'pixabayApiKey'],
     // Every API-key property gets boundary validation on import (v0.8.11 R11):
     // non-string values and oversized strings are rejected; blank stays valid.
     // URL_EMBEDDED additionally restricts charset (query-parameter safety for
     // the documented provider key formats: hex/alphanumeric tokens).
     _KEY_PROPS: ['unsplashApiKey', 'wallhavenApiKey', 'pexelsApiKey', 'pixabayApiKey',
-      'openweathermapApiKey', 'waqiApiKey', 'newsApiKey', 'currentsApiKey'],
+      'weatherapiKey', 'openweathermapApiKey', 'waqiApiKey', 'newsApiKey', 'currentsApiKey'],
     // Operational (non-user) storage state that must never ride backups (R09).
     // Extensible: any reservation/lock state added by multi-instance work joins here.
     _OPERATIONAL_STORAGE_KEYS: ['LIVELY_HUD_NEWS_QUOTA', 'LIVELY_HUD_NEWS_TIER', 'LIVELY_HUD_NEWS_IMG_BUDGET'],

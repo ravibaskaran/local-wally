@@ -289,7 +289,7 @@
     // 29. WEATHER TELEMETRY PROVIDER
     // --------------------------------------------------------------------------
     // Provider used for atmospheric weather readings and hourly forecasts.
-    // Default: 'open-meteo' | Options: 'open-meteo', 'met-norway', 'openweathermap'
+    // Default: 'open-meteo' | Options: 'open-meteo', 'weatherapi', 'openweathermap'
     weatherProvider: 'open-meteo',
 
     // --------------------------------------------------------------------------
@@ -298,6 +298,13 @@
     // Custom OpenWeatherMap 2.5/3.0 API key for when 'openweathermap' provider is selected.
     // Default: '' (Falls back gracefully to Open-Meteo when empty or invalid)
     openweathermapApiKey: '',
+
+    // --------------------------------------------------------------------------
+    // 30b. WEATHERAPI.COM API KEY (OPTIONAL)
+    // --------------------------------------------------------------------------
+    // Free tier API key from weatherapi.com for when 'weatherapi' provider is selected.
+    // Default: '' (Falls back gracefully to Open-Meteo when empty or invalid)
+    weatherapiKey: '',
 
     // --------------------------------------------------------------------------
     // 31. AIR QUALITY INDEX (AQI) PROVIDER

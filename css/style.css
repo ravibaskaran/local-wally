@@ -1373,6 +1373,22 @@ html, body {
   filter: drop-shadow(0 4px 14px rgba(56, 189, 248, 0.4));
 }
 
+.metric-meteocon {
+  width: 22px;
+  height: 22px;
+  display: block;
+  filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.25));
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), filter 0.25s ease;
+  flex-shrink: 0;
+  animation: none;
+}
+
+.metric-card:hover .metric-meteocon {
+  animation: none;
+  transform: scale(1.15) translateY(-1px);
+  filter: drop-shadow(0 2px 8px rgba(56, 189, 248, 0.5));
+}
+
 .hud-temp-main {
   display: flex;
   align-items: flex-start;

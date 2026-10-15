@@ -215,7 +215,12 @@
     "type": "dropdown",
     "value": 0,
     "text": "Weather Telemetry Provider",
-    "items": ["Open-Meteo (Keyless)", "OpenWeatherMap (Key Optional)"]
+    "items": ["Open-Meteo (Keyless)", "WeatherAPI.com (Free Key)", "OpenWeatherMap (Key Optional)"]
+  },
+  "weatherapiKey": {
+    "type": "textbox",
+    "value": "",
+    "text": "WeatherAPI.com API Key (Optional)"
   },
   "openweathermapApiKey": {
     "type": "textbox",

@@ -73,6 +73,7 @@
 
   var ApiService = {
     weatherProvider: (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.weatherProvider) || 'open-meteo',
+    weatherapiKey: (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.weatherapiKey) || '',
     openweathermapApiKey: (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.openweathermapApiKey) || '',
     aqiProvider: (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.aqiProvider) || 'open-meteo',
     waqiApiKey: (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.waqiApiKey) || '',
@@ -1025,6 +1026,64 @@
     },
 
     /**
+     * Map WeatherAPI condition code to WMO Code
+     */
+    weatherApiToWmo: function(code) {
+      code = (typeof code === 'number' && Number.isFinite(code)) ? code : parseInt(code, 10);
+      switch (code) {
+        case 1000: return 0;
+        case 1003: return 2;
+        case 1006:
+        case 1009: return 3;
+        case 1030:
+        case 1135: return 45;
+        case 1147: return 48;
+        case 1072:
+        case 1150:
+        case 1153: return 51;
+        case 1168:
+        case 1171: return 56;
+        case 1063:
+        case 1180:
+        case 1183: return 61;
+        case 1186:
+        case 1189: return 63;
+        case 1192:
+        case 1195: return 65;
+        case 1069:
+        case 1198:
+        case 1201:
+        case 1204:
+        case 1207: return 66;
+        case 1066:
+        case 1210:
+        case 1213: return 71;
+        case 1114:
+        case 1216:
+        case 1219: return 73;
+        case 1117:
+        case 1222:
+        case 1225: return 75;
+        case 1237:
+        case 1261:
+        case 1264: return 77;
+        case 1240:
+        case 1243:
+        case 1246: return 80;
+        case 1249:
+        case 1252:
+        case 1255:
+        case 1258: return 85;
+        case 1087:
+        case 1273:
+        case 1276:
+        case 1279:
+        case 1282: return 95;
+        default: return 2;
+      }
+    },
+
+    /**
      * Map Yr.no / MET Norway symbol_code to WMO Code
      */
     metSymbolToWmo: function(sym) {
@@ -1754,6 +1813,221 @@
           })
           .catch(function(err) {
             console.warn('[ApiService] OpenWeatherMap fetch failed, falling back to open-meteo:', err.message);
+            return ApiService.WeatherAdapter['open-meteo'](lat, lon, options);
+          });
+      },
+
+      normalizeWeatherApi: function(data) {
+        var cur = (data && data.current) || {};
+        var loc = (data && data.location) || {};
+        var forecastDays = (data && data.forecast && Array.isArray(data.forecast.forecastday)) ? data.forecast.forecastday : [];
+        var day0 = (forecastDays[0] && forecastDays[0].day) || {};
+
+        var cond = cur.condition || {};
+        var wmo = ApiService.weatherApiToWmo(cond.code != null ? cond.code : 1000);
+        var wmoMeta = ApiService.interpretWmoCode(wmo);
+
+        var tempC = (cur.temp_c != null && Number.isFinite(cur.temp_c)) ? cur.temp_c : 20.0;
+        var tempF = (cur.temp_f != null && Number.isFinite(cur.temp_f)) ? cur.temp_f : Math.round(((tempC * 9 / 5) + 32) * 10) / 10;
+        var apparentC = (cur.feelslike_c != null && Number.isFinite(cur.feelslike_c)) ? cur.feelslike_c : tempC;
+        var apparentF = (cur.feelslike_f != null && Number.isFinite(cur.feelslike_f)) ? cur.feelslike_f : Math.round(((apparentC * 9 / 5) + 32) * 10) / 10;
+
+        var tempMaxC = (day0.maxtemp_c != null && Number.isFinite(day0.maxtemp_c)) ? day0.maxtemp_c : (tempC + 3);
+        var tempMinC = (day0.mintemp_c != null && Number.isFinite(day0.mintemp_c)) ? day0.mintemp_c : (tempC - 4);
+        var tempMaxF = (day0.maxtemp_f != null && Number.isFinite(day0.maxtemp_f)) ? day0.maxtemp_f : Math.round(((tempMaxC * 9 / 5) + 32) * 10) / 10;
+        var tempMinF = (day0.mintemp_f != null && Number.isFinite(day0.mintemp_f)) ? day0.mintemp_f : Math.round(((tempMinC * 9 / 5) + 32) * 10) / 10;
+
+        var windSpeedKm = (cur.wind_kph != null && Number.isFinite(cur.wind_kph)) ? Math.round(cur.wind_kph * 10) / 10 : 10.0;
+        var windSpeedMph = (cur.wind_mph != null && Number.isFinite(cur.wind_mph)) ? Math.round(cur.wind_mph * 10) / 10 : Math.round((windSpeedKm * 0.621371) * 10) / 10;
+        var windDirDeg = (cur.wind_degree != null && Number.isFinite(cur.wind_degree)) ? Math.round(cur.wind_degree) : 0;
+        var windDir = cur.wind_dir || ((cur.wind_degree != null && Number.isFinite(cur.wind_degree)) ? ApiService.degreesToCompass(cur.wind_degree) : 'Variable');
+        var windGustsKm = (cur.gust_kph != null && Number.isFinite(cur.gust_kph)) ? Math.round(cur.gust_kph * 10) / 10 : null;
+        var windGustsMph = (cur.gust_mph != null && Number.isFinite(cur.gust_mph)) ? Math.round(cur.gust_mph * 10) / 10 : null;
+
+        var cloudCover = (cur.cloud != null && Number.isFinite(cur.cloud)) ? Math.max(0, Math.min(100, Math.round(cur.cloud))) : 0;
+        var cloudLow = Math.round(cloudCover * 0.7);
+        var cloudMid = Math.round(cloudCover * 0.85);
+        var cloudHigh = cloudCover;
+
+        var precipMm = (cur.precip_mm != null && Number.isFinite(cur.precip_mm)) ? Math.round(cur.precip_mm * 10) / 10 : 0.0;
+        var isDay = cur.is_day === 1 ? 1 : (cur.is_day === 0 ? 0 : 1);
+        var timezone = loc.tz_id || null;
+
+        var weather = {
+          tempC: Math.round(tempC * 10) / 10,
+          tempF: Math.round(tempF * 10) / 10,
+          apparentC: Math.round(apparentC * 10) / 10,
+          apparentF: Math.round(apparentF * 10) / 10,
+          tempMaxC: Math.round(tempMaxC * 10) / 10,
+          tempMinC: Math.round(tempMinC * 10) / 10,
+          tempMaxF: Math.round(tempMaxF * 10) / 10,
+          tempMinF: Math.round(tempMinF * 10) / 10,
+          wmoCode: wmo,
+          conditionText: cond.text || wmoMeta.text,
+          category: wmoMeta.category,
+          icon: wmoMeta.icon,
+          keyword: wmoMeta.keyword,
+          humidity: (cur.humidity != null && Number.isFinite(cur.humidity)) ? Math.max(0, Math.min(100, Math.round(cur.humidity))) : 55,
+          windSpeedKm: windSpeedKm,
+          windSpeedMph: windSpeedMph,
+          windDirectionDeg: windDirDeg,
+          windDirection: windDir,
+          windGustsKm: windGustsKm,
+          windGustsMph: windGustsMph,
+          cloudCover: cloudCover,
+          cloudLow: cloudLow,
+          cloudMid: cloudMid,
+          cloudHigh: cloudHigh,
+          precipitationMm: precipMm,
+          precipMm: precipMm,
+          isDay: isDay,
+          timezone: timezone
+        };
+
+        var allHours = [];
+        for (var d = 0; d < forecastDays.length; d++) {
+          if (forecastDays[d] && Array.isArray(forecastDays[d].hour)) {
+            allHours = allHours.concat(forecastDays[d].hour);
+          }
+        }
+        var totalHours = allHours.length;
+
+        function buildWapiPoint(hItem, isFirst) {
+          var hCond = hItem.condition || {};
+          var hWmo = ApiService.weatherApiToWmo(hCond.code != null ? hCond.code : 1000);
+          var hMeta = ApiService.interpretWmoCode(hWmo);
+
+          var ts = null;
+          if (typeof hItem.time_epoch === 'number' && Number.isFinite(hItem.time_epoch)) {
+            ts = hItem.time_epoch * 1000;
+          } else if (hItem.time) {
+            ts = new Date(String(hItem.time).replace(' ', 'T')).getTime();
+            if (!Number.isFinite(ts)) ts = null;
+          }
+
+          var h = null;
+          if (hItem.time) {
+            var m = /(\d{1,2}):(\d{2})$/.exec(String(hItem.time));
+            if (m) h = parseInt(m[1], 10);
+          }
+          if (h == null && ts != null) {
+            h = new Date(ts).getHours();
+          }
+          if (h == null) h = 0;
+
+          var lbl = isFirst ? 'Now' : ((h % 12 || 12) + (h >= 12 ? ' PM' : ' AM'));
+          var ptTempC = (hItem.temp_c != null && Number.isFinite(hItem.temp_c)) ? Math.round(hItem.temp_c * 10) / 10 : null;
+          var ptTempF = (hItem.temp_f != null && Number.isFinite(hItem.temp_f)) ? Math.round(hItem.temp_f * 10) / 10 : (ptTempC != null ? Math.round(((ptTempC * 9 / 5) + 32) * 10) / 10 : null);
+          var ptAppC = (hItem.feelslike_c != null && Number.isFinite(hItem.feelslike_c)) ? Math.round(hItem.feelslike_c * 10) / 10 : ptTempC;
+          var ptAppF = (hItem.feelslike_f != null && Number.isFinite(hItem.feelslike_f)) ? Math.round(hItem.feelslike_f * 10) / 10 : (ptAppC != null ? Math.round(((ptAppC * 9 / 5) + 32) * 10) / 10 : null);
+
+          var precipProb = null;
+          if (hItem.chance_of_rain != null && Number.isFinite(Number(hItem.chance_of_rain))) {
+            precipProb = Math.max(0, Math.min(100, Math.round(Number(hItem.chance_of_rain))));
+          } else if (hItem.chance_of_snow != null && Number.isFinite(Number(hItem.chance_of_snow))) {
+            precipProb = Math.max(0, Math.min(100, Math.round(Number(hItem.chance_of_snow))));
+          }
+
+          var ptPrecipMm = (hItem.precip_mm != null && Number.isFinite(hItem.precip_mm)) ? Math.round(hItem.precip_mm * 10) / 10 : 0;
+          var ptWindKm = (hItem.wind_kph != null && Number.isFinite(hItem.wind_kph)) ? Math.round(hItem.wind_kph * 10) / 10 : null;
+          var ptWindMph = (hItem.wind_mph != null && Number.isFinite(hItem.wind_mph)) ? Math.round(hItem.wind_mph * 10) / 10 : (ptWindKm != null ? Math.round((ptWindKm * 0.621371) * 10) / 10 : null);
+          var ptHum = (hItem.humidity != null && Number.isFinite(hItem.humidity)) ? Math.max(0, Math.min(100, Math.round(hItem.humidity))) : null;
+
+          var aqiVal = (hItem.air_quality && hItem.air_quality['us-epa-index'] != null && Number.isFinite(hItem.air_quality['us-epa-index']))
+            ? hItem.air_quality['us-epa-index']
+            : null;
+          var aqiColor = '#94a3b8';
+          var aqiCategory = 'Unavailable';
+          if (aqiVal === 1) { aqiColor = '#10b981'; aqiCategory = 'Good'; }
+          else if (aqiVal === 2) { aqiColor = '#f59e0b'; aqiCategory = 'Moderate'; }
+          else if (aqiVal === 3) { aqiColor = '#f97316'; aqiCategory = 'Unhealthy for Sensitive Groups'; }
+          else if (aqiVal === 4) { aqiColor = '#ef4444'; aqiCategory = 'Unhealthy'; }
+          else if (aqiVal != null && aqiVal >= 5) { aqiColor = '#8b5cf6'; aqiCategory = 'Very Poor'; }
+
+          return {
+            time: (h < 10 ? '0' : '') + h + ':00',
+            isoTime: (ts != null) ? new Date(ts).toISOString() : (hItem.time ? String(hItem.time).replace(' ', 'T') + ':00Z' : null),
+            timestamp: ts,
+            label: lbl,
+            hour: h,
+            tempC: ptTempC,
+            tempF: ptTempF,
+            apparentC: ptAppC,
+            apparentF: ptAppF,
+            precipProb: precipProb,
+            precipMm: ptPrecipMm,
+            windSpeedKm: ptWindKm,
+            windSpeedMph: ptWindMph,
+            humidity: ptHum,
+            aqi: aqiVal,
+            aqiColor: aqiColor,
+            aqiCategory: aqiCategory,
+            conditionText: hCond.text || hMeta.text
+          };
+        }
+
+        var hourlyAnalytics = [];
+        for (var a = 0; a < totalHours; a++) {
+          if (allHours[a]) {
+            hourlyAnalytics.push(buildWapiPoint(allHours[a], false));
+          }
+        }
+
+        var hourlyForecast = [];
+        var nowMs = Date.now();
+        var startIdx = 0;
+        for (var s = 0; s < totalHours; s++) {
+          var sItem = allHours[s];
+          var sTs = (sItem && typeof sItem.time_epoch === 'number') ? sItem.time_epoch * 1000 : null;
+          if (sTs != null && sTs + 3600000 > nowMs) {
+            startIdx = s;
+            break;
+          }
+        }
+
+        var availableFromNow = totalHours - startIdx;
+        var windowSize = Math.min(availableFromNow, 24);
+        var step = (windowSize >= 8) ? Math.floor(windowSize / 8) : 1;
+        for (var i = 0; i < 8; i++) {
+          var idx = startIdx + i * step;
+          if (idx > totalHours - 1) break;
+          var hPoint = allHours[idx];
+          if (hPoint) {
+            hourlyForecast.push(buildWapiPoint(hPoint, i === 0));
+          }
+        }
+
+        return Object.assign({}, weather, {
+          weather: weather,
+          hourlyForecast: hourlyForecast,
+          hourlyAnalytics: hourlyAnalytics,
+          hourly: hourlyForecast
+        });
+      },
+
+      'weatherapi': function(lat, lon, options) {
+        var key = (options && options.key) || ApiService.weatherapiKey || (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.weatherapiKey) || '';
+        key = String(key || '').trim();
+        if (!key) {
+          console.warn('[ApiService] No WeatherAPI key provided, falling back to open-meteo');
+          return ApiService.WeatherAdapter['open-meteo'](lat, lon, options);
+        }
+
+        var url = 'https://api.weatherapi.com/v1/forecast.json?key=' +
+          encodeURIComponent(key) +
+          '&q=' + encodeURIComponent(lat + ',' + lon) +
+          '&days=3&aqi=yes&alerts=no';
+
+        return ApiService.fetchWithTimeout(url, 5000)
+          .then(function(res) {
+            if (!res.ok) throw new Error('WeatherAPI HTTP ' + res.status);
+            return res.json();
+          })
+          .then(function(data) {
+            return ApiService.WeatherAdapter.normalizeWeatherApi(data);
+          })
+          .catch(function(err) {
+            console.warn('[ApiService] WeatherAPI fetch failed, falling back to open-meteo:', err.message);
             return ApiService.WeatherAdapter['open-meteo'](lat, lon, options);
           });
       }
