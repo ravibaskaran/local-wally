@@ -68,7 +68,7 @@ Right-click Local Wally in your Lively Wallpaper library and choose **Customise 
 - **15-Minute News Quota Firewall**: All news adapters enforce an independent 15-minute rate-limit window per provider. This protects your API quota and prevents background polling thrashing.
 
 > [!NOTE]
-> All credential fields in Lively Wallpaper are masked. Local Wally works out of the box with zero API keys. API keys are only required if you choose to activate a keyed provider.
+> All credential fields in Lively Wallpaper are masked. Local Wally works out of the box with zero API keys. If an optional keyed provider encounters an invalid key or network error, Local Wally falls back cleanly to its default keyless provider for that category (weather and air quality fall back to Open-Meteo, wallpapers fall back to Unsplash, and news falls back to Google News).
 
 ---
 
@@ -230,6 +230,7 @@ The following table lists every property defined in `LivelyProperties.json`:
 
 ---
 
+<a id="9-advanced-configuration-config-js"></a>
 ## 9. Advanced Configuration (config.js)
 
 When running Local Wally outside of Lively Wallpaper (such as in a local browser preview via `node serve.js`), settings can be modified in `config.js`. The schema mirrors the properties in Lively Wallpaper:
@@ -269,13 +270,13 @@ The following symptom-to-action table is based on verified application logic:
 
 | Symptom | Verified Cause | Action to Take |
 |---|---|---|
-| **Location displays "Locating..." indefinitely** | WebView2 host geolocation permission query hung without responding | Upgrade to v0.13.1+ where a 1500 ms safety race automatically falls back to IP geolocation. Alternatively, press <kbd>D</kbd> and specify a manual city name. |
+| **Location displays "Locating..." indefinitely** | WebView2 host geolocation permission query hung without responding | Update to the latest release (which incorporates an automatic 1500 ms IP fallback race) or press <kbd>D</kbd> and specify a manual city name. |
 | **Location detected as wrong city** | IP geolocation provider resolved nearest ISP gateway rather than physical location | Press <kbd>D</kbd> on your desktop to open the Diagnostics panel, enter your desired city name or coordinates, and press <kbd>Enter</kbd>. |
 | **Weather or AQI displays "--" or "Unavailable"** | Network connectivity issue or upstream provider returned incomplete payload | Check your internet connection. Local Wally never fabricates missing metrics. It will retry automatically on the next scheduled refresh interval (default 15 minutes). |
 | **WeatherAPI.com or OpenWeatherMap fails** | Missing, invalid, or expired API key | Ensure your key is typed correctly in Lively Wallpaper settings. If the keyed call fails, Local Wally automatically falls back to Open-Meteo. |
 | **Regional news headlines are not updating** | 15-minute news quota firewall is active, or CORS proxy is temporarily unreachable | News enforces an independent 15-minute rate limit window per provider to protect API quotas. Wait for the window to expire. If using Google News, verify your internet connection. |
 | **Wallpaper or data does not update immediately** | Local Wally adheres to its configured refresh cadence (default 15 minutes) | Data refreshes automatically according to your **Data Refresh Interval** slider (5 to 30 minutes). Changing a provider setting in Lively immediately triggers a fresh sync. |
-| **HUD clock or hardware meters frozen after sleep** | System entered S0 Modern Standby or deep sleep | Upgrade to v0.13.1+. On resume from sleep or when the network comes back online, the clock synchronizes immediately and triggers a background refresh if elapsed time exceeds 15 minutes. |
+| **HUD clock or hardware meters frozen after sleep** | System entered S0 Modern Standby or deep sleep | Update to the latest release. On resume from sleep or when the network comes back online, the clock synchronizes immediately and triggers a background refresh if elapsed time exceeds 15 minutes. |
 | **Visualizer or animation runs when a game is open** | Lively Wallpaper window pause event was not forwarded by host | Ensure Lively Wallpaper settings are set to **Pause** when applications are fullscreen or focused. In `LivelyInfo.json`, verify that `--pause-event true` is present in the arguments. |
 
 ---

@@ -3,8 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Local Wally HUD — Hardware-Optimized Weather Wallpaper for Windows 11</title>
+  <title>Local Wally HUD - Hardware-Optimized Weather Wallpaper for Windows 11</title>
   <meta name="description" content="Hardware-optimized ambient weather wallpaper and desktop dashboard for Windows 11 and Lively Wallpaper. Zero API keys required out of the box.">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="alternate icon" type="image/x-icon" href="favicon.ico">
+  <link rel="apple-touch-icon" href="favicon.png">
   <style>
     :root {
       --bg-primary: #0d1117;
@@ -22,7 +25,9 @@
       --max-width: 1040px;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
+    html, body {
+      overflow-x: hidden;
+      max-width: 100vw;
       background-color: var(--bg-primary);
       color: var(--text-main);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
@@ -40,14 +45,16 @@
       position: sticky;
       top: 0;
       z-index: 100;
+      width: 100%;
     }
     .header-inner {
       max-width: var(--max-width);
       margin: 0 auto;
-      padding: 0.85rem 1.5rem;
+      padding: 0.85rem 1.25rem;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 1rem;
     }
     .brand {
       font-weight: 700;
@@ -56,37 +63,55 @@
       display: flex;
       align-items: center;
       gap: 0.5rem;
+      white-space: nowrap;
     }
-    nav.header-nav { display: flex; gap: 1.25rem; align-items: center; font-size: 0.92rem; }
-    nav.header-nav a { color: var(--text-muted); font-weight: 500; transition: color 0.15s ease; }
+    .brand img {
+      width: 24px;
+      height: 24px;
+      display: block;
+    }
+    nav.header-nav {
+      display: flex;
+      gap: 1.1rem;
+      align-items: center;
+      font-size: 0.92rem;
+    }
+    nav.header-nav a {
+      color: var(--text-muted);
+      font-weight: 500;
+      transition: color 0.15s ease;
+      white-space: nowrap;
+    }
     nav.header-nav a:hover { color: var(--text-bright); text-decoration: none; }
     .btn-download {
       background: var(--accent);
       color: #0b1120 !important;
       font-weight: 600 !important;
-      padding: 0.45rem 0.9rem;
+      padding: 0.45rem 0.85rem;
       border-radius: 6px;
       transition: background 0.15s ease, transform 0.15s ease;
+      white-space: nowrap;
     }
     .btn-download:hover { background: var(--accent-hover); text-decoration: none !important; transform: translateY(-1px); }
     main.container {
       max-width: var(--max-width);
       margin: 0 auto;
-      padding: 2.5rem 1.5rem 4rem;
+      padding: 2.5rem 1.25rem 4rem;
+      width: 100%;
     }
     .hero {
       text-align: center;
-      padding: 2rem 0 3rem;
+      padding: 1.5rem 0 2.5rem;
     }
     .hero h1 {
-      font-size: 2.6rem;
+      font-size: 2.5rem;
       color: var(--text-bright);
       font-weight: 800;
       margin-bottom: 0.75rem;
       letter-spacing: -0.025em;
     }
     .hero p.tagline {
-      font-size: 1.2rem;
+      font-size: 1.15rem;
       color: var(--text-muted);
       max-width: 720px;
       margin: 0 auto 1.5rem;
@@ -102,7 +127,7 @@
     .hero-actions {
       display: flex;
       justify-content: center;
-      gap: 1rem;
+      gap: 0.85rem;
       flex-wrap: wrap;
       margin-bottom: 2.5rem;
     }
@@ -110,7 +135,7 @@
       background: #238636;
       color: #fff !important;
       font-weight: 600;
-      padding: 0.7rem 1.4rem;
+      padding: 0.65rem 1.3rem;
       border-radius: 6px;
       display: inline-flex;
       align-items: center;
@@ -122,7 +147,7 @@
       background: var(--bg-tertiary);
       color: var(--text-bright) !important;
       font-weight: 600;
-      padding: 0.7rem 1.4rem;
+      padding: 0.65rem 1.3rem;
       border-radius: 6px;
       border: 1px solid var(--border-color);
       display: inline-flex;
@@ -147,20 +172,20 @@
       margin-bottom: 3.5rem;
     }
     section.content-section h2 {
-      font-size: 1.75rem;
+      font-size: 1.7rem;
       color: var(--text-bright);
       margin-bottom: 1.25rem;
       border-bottom: 1px solid var(--border-color);
       padding-bottom: 0.5rem;
     }
     section.content-section h3 {
-      font-size: 1.25rem;
+      font-size: 1.2rem;
       color: var(--text-bright);
       margin: 1.5rem 0 0.75rem;
     }
     .grid-2 {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
       gap: 1.25rem;
       margin: 1.5rem 0;
     }
@@ -168,17 +193,23 @@
       background: var(--bg-secondary);
       border: 1px solid var(--border-color);
       border-radius: 8px;
-      padding: 1.4rem;
+      padding: 1.35rem;
     }
     .card h3 { margin-top: 0; color: var(--accent); font-size: 1.15rem; }
-    table {
+    .table-wrap {
       width: 100%;
-      border-collapse: collapse;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
       margin: 1.5rem 0;
-      background: var(--bg-secondary);
       border: 1px solid var(--border-color);
       border-radius: 8px;
-      overflow: hidden;
+      background: var(--bg-secondary);
+    }
+    table {
+      width: 100%;
+      min-width: 540px;
+      border-collapse: collapse;
+      margin: 0;
     }
     th, td {
       padding: 0.75rem 1rem;
@@ -220,7 +251,7 @@
     li { margin-bottom: 0.5rem; }
     footer.site-footer {
       border-top: 1px solid var(--border-color);
-      padding: 2.5rem 1.5rem;
+      padding: 2.5rem 1.25rem;
       text-align: center;
       color: var(--text-muted);
       font-size: 0.9rem;
@@ -228,9 +259,33 @@
     footer.site-footer a { color: var(--text-main); }
     footer.site-footer a:hover { color: var(--accent); }
     @media (max-width: 768px) {
-      .hero h1 { font-size: 2rem; }
-      nav.header-nav { display: none; }
-      .grid-2 { grid-template-columns: 1fr; }
+      .header-inner {
+        flex-wrap: wrap;
+        padding: 0.75rem 1rem;
+      }
+      nav.header-nav {
+        display: flex;
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        gap: 0.6rem;
+        padding-top: 0.5rem;
+        border-top: 1px solid var(--border-color);
+        font-size: 0.85rem;
+        scrollbar-width: none;
+      }
+      nav.header-nav::-webkit-scrollbar { display: none; }
+      nav.header-nav a {
+        padding: 0.25rem 0.55rem;
+        background: var(--bg-tertiary);
+        border-radius: 4px;
+        flex-shrink: 0;
+      }
+      .hero h1 { font-size: 1.9rem; }
+      .hero p.tagline { font-size: 1.05rem; }
+      .hero-actions { flex-direction: column; align-items: stretch; }
+      .btn-primary, .btn-secondary { justify-content: center; }
+      main.container { padding: 1.5rem 1rem 3rem; }
     }
   </style>
 </head>
@@ -239,18 +294,19 @@
   <header class="site-header">
     <div class="header-inner">
       <div class="brand">
-        <span>🌤️</span>
+        <img src="favicon.svg" alt="" width="24" height="24">
         <span>Local Wally HUD</span>
       </div>
+      <a href="https://github.com/ravibaskaran/local-wally" class="btn-download">GitHub Repo</a>
       <nav class="header-nav">
         <a href="#overview">Overview</a>
         <a href="#why">Why Local Wally</a>
         <a href="#providers">Providers</a>
         <a href="#install">Install</a>
         <a href="#shortcuts">Shortcuts</a>
+        <a href="#troubleshooting">Support</a>
         <a href="walkthrough.html">Walkthrough</a>
         <a href="https://github.com/ravibaskaran/local-wally/blob/main/CHANGELOG.md">Changelog</a>
-        <a href="https://github.com/ravibaskaran/local-wally" class="btn-download">GitHub</a>
       </nav>
     </div>
   </header>
@@ -269,7 +325,7 @@
 
       <div class="hero-actions">
         <a href="https://github.com/ravibaskaran/local-wally/releases/latest" class="btn-primary">
-          <span>🚀</span> Download Latest Release (v0.14.0)
+          <span>🚀</span> Download Latest Release
         </a>
         <a href="#install" class="btn-secondary">
           <span>⚡</span> Quick Install Guide
@@ -281,12 +337,12 @@
     </div>
 
     <div id="overview" class="overview-frame">
-      <img src="screenshots/01-local-wally-overview.png" alt="Local Wally HUD Desktop Overview showing live weather, hardware telemetry, 24-hour forecast, regional news, audio visualizer, and Pomodoro focus timer" />
+      <img src="screenshots/01-local-wally-overview.png" alt="Local Wally HUD Desktop Overview showing live weather, hardware telemetry, 24-hour forecast, regional news, audio visualizer, and Pomodoro focus timer" width="1920" height="1080" />
     </div>
 
     <section id="why" class="content-section">
       <h2>✨ Why Local Wally?</h2>
-      <p>Most animated wallpapers are heavy video loops or unoptimized browser scripts that consume 5% to 15% CPU, drain laptop batteries, and cause micro-stutter during gaming.</p>
+      <p>Animated wallpapers can cause noticeable background battery drain or system stutter during intensive tasks.</p>
       
       <div class="grid-2">
         <div class="card">
@@ -294,11 +350,11 @@
           <p>Finds your local weather, solar times, and air quality automatically without accounts, API keys, or credit cards. Just install and run.</p>
         </div>
         <div class="card">
-          <h3>Low Resource Overhead</h3>
-          <p>Designed for roughly 0.0% CPU and GPU load when parked or idle, measured informally on the author's hardware (AMD Ryzen AI / Windows 11 / WebView2), and delivers a smooth 60 FPS animation loop when active.</p>
+          <h3>Designed to Minimize Idle Overhead</h3>
+          <p>Halts animation loops and canvas drawing when idle, occluded, or when games and fullscreen applications are running. Smooth 60 FPS visual effects activate only during active precipitation, audio visualization, or user interaction.</p>
         </div>
         <div class="card">
-          <h3>Deep Sleep When Busy</h3>
+          <h3>Automatic Game and Screen Parking</h3>
           <p>When you maximize a window, launch a game, or lock your screen, Lively Wallpaper pauses playback. Local Wally immediately parks all animation loops and clears canvas draw buffers.</p>
         </div>
         <div class="card">
@@ -312,50 +368,52 @@
       <h2>🔑 Keyless Defaults vs. Keyed Providers</h2>
       <p>Local Wally functions completely out of the box with zero API keys. Commercial third-party keys are only required if you choose to activate a keyed provider:</p>
 
-      <table>
-        <thead>
-          <tr>
-            <th>Telemetry Type</th>
-            <th>Default Provider (Zero Keys Needed)</th>
-            <th>Optional Keyed Providers (Key Required if Selected)</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><strong>Weather & Forecast</strong></td>
-            <td><strong>Open-Meteo</strong>: High-precision global forecast models with zero configuration</td>
-            <td><strong>WeatherAPI.com</strong> (free key), <strong>OpenWeatherMap</strong> (account key)</td>
-          </tr>
-          <tr>
-            <td><strong>Air Quality (AQI)</strong></td>
-            <td><strong>Open-Meteo AQI</strong>: European AQI with PM2.5 and PM10 metrics</td>
-            <td><strong>WAQI / AQICN</strong> (personal token)</td>
-          </tr>
-          <tr>
-            <td><strong>Wallpaper Photos</strong></td>
-            <td><strong>Unsplash</strong>: Curated CDN photography matching live weather and resolution</td>
-            <td><strong>Wallhaven</strong>, <strong>Pexels</strong>, <strong>Pixabay</strong> (personal API keys)</td>
-          </tr>
-          <tr>
-            <td><strong>Regional News</strong></td>
-            <td><strong>Google News</strong>: Keyless regional RSS headlines via CORS proxy</td>
-            <td><strong>NewsAPI</strong>, <strong>Currents News</strong> (personal API keys)</td>
-          </tr>
-          <tr>
-            <td><strong>Music & Focus</strong></td>
-            <td><strong>Windows SMTC</strong>: Local Windows media transport controls + 32-bar visualizer</td>
-            <td>None needed (100% local)</td>
-          </tr>
-          <tr>
-            <td><strong>Hardware Health</strong></td>
-            <td><strong>System Telemetry</strong>: CPU, GPU, RAM, Disk, Net Down/Up, Battery</td>
-            <td>None needed (100% local)</td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Telemetry Type</th>
+              <th>Default Provider (Zero Keys Needed)</th>
+              <th>Optional Keyed Providers (Key Required if Selected)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Weather & Forecast</strong></td>
+              <td><strong>Open-Meteo</strong>: High-precision global forecast models with zero configuration</td>
+              <td><strong>WeatherAPI.com</strong> (free key), <strong>OpenWeatherMap</strong> (account key)</td>
+            </tr>
+            <tr>
+              <td><strong>Air Quality (AQI)</strong></td>
+              <td><strong>Open-Meteo AQI</strong>: European AQI with PM2.5 and PM10 metrics</td>
+              <td><strong>WAQI / AQICN</strong> (personal token)</td>
+            </tr>
+            <tr>
+              <td><strong>Wallpaper Photos</strong></td>
+              <td><strong>Unsplash</strong>: Curated CDN photography matching live weather and resolution</td>
+              <td><strong>Wallhaven</strong>, <strong>Pexels</strong>, <strong>Pixabay</strong> (personal API keys)</td>
+            </tr>
+            <tr>
+              <td><strong>Regional News</strong></td>
+              <td><strong>Google News</strong>: Keyless regional RSS headlines via CORS proxy</td>
+              <td><strong>NewsAPI</strong>, <strong>Currents News</strong> (personal API keys)</td>
+            </tr>
+            <tr>
+              <td><strong>Music & Focus</strong></td>
+              <td><strong>Windows SMTC</strong>: Local Windows media transport controls + 32-bar visualizer</td>
+              <td>None needed (100% local)</td>
+            </tr>
+            <tr>
+              <td><strong>Hardware Health</strong></td>
+              <td><strong>System Telemetry</strong>: CPU, GPU, RAM, Disk, Net Down/Up, Battery</td>
+              <td>None needed (100% local)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
       <div class="callout">
-        <strong>Masked Credentials & Safe Fallback:</strong> All API key input fields in Lively Wallpaper are masked. If you enter an invalid key or a network request times out, Local Wally automatically falls back to Open-Meteo to prevent broken states.
+        <strong>Masked Credentials & Safe Fallback:</strong> All API key input fields in Lively Wallpaper are masked. If a keyed weather or air quality request fails, Local Wally falls back to Open-Meteo. Keyed wallpaper providers fall back to Unsplash, and keyed news providers fall back to Google News.
       </div>
     </section>
 
@@ -381,57 +439,59 @@
       <h2>⌨️ Verified Keyboard Shortcuts</h2>
       <p>When previewing in a browser or clicking the wallpaper on your desktop:</p>
 
-      <table>
-        <thead>
-          <tr>
-            <th style="width: 120px; text-align: center;">Key</th>
-            <th style="width: 220px;">Action</th>
-            <th>Behavior</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td style="text-align: center;"><kbd>D</kbd></td>
-            <td><strong>Diagnostics & Location</strong></td>
-            <td>Opens the diagnostic overlay (FPS, GPU info, cache status) and city search tool.</td>
-          </tr>
-          <tr>
-            <td style="text-align: center;"><kbd>T</kbd></td>
-            <td><strong>Toggle Temp Unit</strong></td>
-            <td>Switches temperature display between Celsius (°C) and Fahrenheit (°F).</td>
-          </tr>
-          <tr>
-            <td style="text-align: center;"><kbd>C</kbd></td>
-            <td><strong>Cycle Contrast Mode</strong></td>
-            <td>Cycles theme: Auto (Wallpaper-Adaptive) -> Dark Glass -> Light Glass.</td>
-          </tr>
-          <tr>
-            <td style="text-align: center;"><kbd>M</kbd></td>
-            <td><strong>Cycle Demo Music</strong></td>
-            <td>Cycles demo audio tracks in preview mode (Synthwave -> Lo-Fi -> Ambient -> Idle).</td>
-          </tr>
-          <tr>
-            <td style="text-align: center;"><kbd>P</kbd></td>
-            <td><strong>Pomodoro Start / Pause</strong></td>
-            <td>Starts or pauses the active Pomodoro focus countdown.</td>
-          </tr>
-          <tr>
-            <td style="text-align: center;"><kbd>←</kbd> / <kbd>→</kbd></td>
-            <td><strong>Forecast Tabs</strong></td>
-            <td>Navigates between forecast metrics: Temp, Feels, Precip, Wind, Humidity, AQI.</td>
-          </tr>
-          <tr>
-            <td style="text-align: center;"><kbd>Click</kbd> / <kbd>Enter</kbd></td>
-            <td><strong>Open Card Drawer</strong></td>
-            <td>Slides open the detailed contextual telemetry drawer for any card.</td>
-          </tr>
-          <tr>
-            <td style="text-align: center;"><kbd>Esc</kbd></td>
-            <td><strong>Dismiss Drawer / Popover</strong></td>
-            <td>Closes any open detail drawer, hover popover, or location search dropdown.</td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 120px; text-align: center;">Key</th>
+              <th style="width: 220px;">Action</th>
+              <th>Behavior</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="text-align: center;"><kbd>D</kbd></td>
+              <td><strong>Diagnostics & Location</strong></td>
+              <td>Opens the diagnostic overlay (FPS, GPU info, cache status) and city search tool.</td>
+            </tr>
+            <tr>
+              <td style="text-align: center;"><kbd>T</kbd></td>
+              <td><strong>Toggle Temp Unit</strong></td>
+              <td>Switches temperature display between Celsius (°C) and Fahrenheit (°F).</td>
+            </tr>
+            <tr>
+              <td style="text-align: center;"><kbd>C</kbd></td>
+              <td><strong>Cycle Contrast Mode</strong></td>
+              <td>Cycles theme: Auto (Wallpaper-Adaptive) -> Dark Glass -> Light Glass.</td>
+            </tr>
+            <tr>
+              <td style="text-align: center;"><kbd>M</kbd></td>
+              <td><strong>Cycle Demo Music</strong></td>
+              <td>Cycles demo audio tracks in preview mode (Synthwave -> Lo-Fi -> Ambient -> Idle).</td>
+            </tr>
+            <tr>
+              <td style="text-align: center;"><kbd>P</kbd></td>
+              <td><strong>Pomodoro Start / Pause</strong></td>
+              <td>Starts or pauses the active Pomodoro focus countdown.</td>
+            </tr>
+            <tr>
+              <td style="text-align: center;"><kbd>←</kbd> / <kbd>→</kbd></td>
+              <td><strong>Forecast Tabs</strong></td>
+              <td>Navigates between forecast metrics: Temp, Feels, Precip, Wind, Humidity, AQI.</td>
+            </tr>
+            <tr>
+              <td style="text-align: center;"><kbd>Click</kbd> / <kbd>Enter</kbd></td>
+              <td><strong>Open Card Drawer</strong></td>
+              <td>Slides open the detailed contextual telemetry drawer for any card.</td>
+            </tr>
+            <tr>
+              <td style="text-align: center;"><kbd>Esc</kbd></td>
+              <td><strong>Dismiss Drawer / Popover</strong></td>
+              <td>Closes any open detail drawer, hover popover, or location search dropdown.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
       <div class="callout">
         <strong>Automatic Sync Cadence:</strong> Local Wally refreshes weather and wallpaper data on its configured interval (default 15 minutes). Regional news adheres to an independent 15-minute quota firewall per provider to protect rate limits.
@@ -446,52 +506,54 @@
         <strong>Privacy Notice:</strong> Never submit API keys, unredacted settings exports (<code>.json</code>), personal street addresses, home GPS coordinates, or credentials in public GitHub issues.
       </div>
 
-      <table>
-        <thead>
-          <tr>
-            <th>Problem</th>
-            <th>Likely Cause</th>
-            <th>Recommended Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><strong>Stuck on "Locating..."</strong></td>
-            <td>WebView2 host permission query timed out</td>
-            <td>Upgrade to v0.13.1+ (adds automatic 1500 ms IP fallback race) or press <kbd>D</kbd> to enter a manual city.</td>
-          </tr>
-          <tr>
-            <td><strong>Wrong city detected</strong></td>
-            <td>IP geolocation resolved your ISP gateway city</td>
-            <td>Press <kbd>D</kbd> on your desktop, enter your desired city name or coordinates, and select it.</td>
-          </tr>
-          <tr>
-            <td><strong>Weather or AQI shows "--"</strong></td>
-            <td>Network connectivity issue or provider error</td>
-            <td>Check network access. Local Wally will retry automatically on the next 15-minute refresh cycle.</td>
-          </tr>
-          <tr>
-            <td><strong>WeatherAPI / OpenWeatherMap fails</strong></td>
-            <td>Key missing, invalid, or expired</td>
-            <td>Check your API key in Lively Settings. Local Wally automatically falls back to Open-Meteo.</td>
-          </tr>
-          <tr>
-            <td><strong>News headlines not updating</strong></td>
-            <td>15-minute rate limit quota firewall is active</td>
-            <td>News providers enforce a 15-minute rate-limit window per provider. Wait for the window to elapse.</td>
-          </tr>
-          <tr>
-            <td><strong>Clock frozen after PC sleep</strong></td>
-            <td>System resumed from S0 Modern Standby</td>
-            <td>Upgrade to v0.13.1+. The clock resynchronizes immediately upon wake and network reconnect.</td>
-          </tr>
-          <tr>
-            <td><strong>Visualizer runs during games</strong></td>
-            <td>Lively Wallpaper window pause setting disabled</td>
-            <td>Verify that Lively Wallpaper is configured to pause when fullscreen applications are running.</td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Problem</th>
+              <th>Likely Cause</th>
+              <th>Recommended Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Stuck on "Locating..."</strong></td>
+              <td>WebView2 host permission query timed out</td>
+              <td>Update to the latest release (which incorporates an automatic 1500 ms IP fallback race) or press <kbd>D</kbd> to enter a manual city.</td>
+            </tr>
+            <tr>
+              <td><strong>Wrong city detected</strong></td>
+              <td>IP geolocation resolved your ISP gateway city</td>
+              <td>Press <kbd>D</kbd> on your desktop, enter your desired city name or coordinates, and select it.</td>
+            </tr>
+            <tr>
+              <td><strong>Weather or AQI shows "--"</strong></td>
+              <td>Network connectivity issue or provider error</td>
+              <td>Check network access. Local Wally will retry automatically on the next 15-minute refresh cycle.</td>
+            </tr>
+            <tr>
+              <td><strong>WeatherAPI / OpenWeatherMap fails</strong></td>
+              <td>Key missing, invalid, or expired</td>
+              <td>Check your API key in Lively Settings. Local Wally automatically falls back to Open-Meteo.</td>
+            </tr>
+            <tr>
+              <td><strong>News headlines not updating</strong></td>
+              <td>15-minute rate limit quota firewall is active</td>
+              <td>News providers enforce a 15-minute rate-limit window per provider. Wait for the window to elapse.</td>
+            </tr>
+            <tr>
+              <td><strong>Clock frozen after PC sleep</strong></td>
+              <td>System resumed from S0 Modern Standby</td>
+              <td>Update to the latest release. The clock resynchronizes immediately upon wake and network reconnect.</td>
+            </tr>
+            <tr>
+              <td><strong>Visualizer runs during games</strong></td>
+              <td>Lively Wallpaper window pause setting disabled</td>
+              <td>Verify that Lively Wallpaper is configured to pause when fullscreen applications are running.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
       <p style="margin-top: 1.5rem;">For full walkthrough documentation and advanced settings, see the <a href="walkthrough.html">Complete Walkthrough Guide</a>.</p>
     </section>

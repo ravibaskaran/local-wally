@@ -12,7 +12,7 @@ Local Wally HUD turns your Windows 11 desktop into a living ambient dashboard. I
 ---
 
 ### Quick Actions
-- 🚀 **[Download Latest Release (v0.14.0)](https://github.com/ravibaskaran/local-wally/releases/latest)**: Download the pre-packaged `local-wally.zip` for Lively Wallpaper.
+- 🚀 **[Download Latest Release](https://github.com/ravibaskaran/local-wally/releases/latest)**: Download the pre-packaged `local-wally.zip` for Lively Wallpaper.
 - ⚡ **[Quick Install Guide](#quick-install-guide)**: Get running in under 60 seconds with zero configuration.
 - 📖 **[Complete Setup & Controls Walkthrough](docs/walkthrough.md)**: Explore all provider settings, charts, and troubleshooting.
 - 💬 **[Report a Bug or Request a Feature](https://github.com/ravibaskaran/local-wally/issues)**: Open an issue on GitHub.
@@ -28,7 +28,7 @@ Local Wally HUD turns your Windows 11 desktop into a living ambient dashboard. I
 
 ## ✨ Why Local Wally?
 
-Most animated wallpapers are heavy video loops or unoptimized browser scripts that consume 5% to 15% CPU, drain laptop batteries, and cause frame drops while gaming.
+Many video-based or unoptimized browser wallpapers introduce constant background CPU drain, reduce laptop battery runtimes, and risk frame drops during gaming.
 
 **Local Wally was engineered differently:**
 - **Zero API Keys Required Out of the Box**: Finds your local weather and solar times automatically without accounts, keys, or credit cards.
@@ -53,7 +53,7 @@ Local Wally functions completely out of the box with zero API keys. Keys are onl
 | **Hardware Health** | **System Telemetry**: CPU, GPU, RAM, Disk, Net Down/Up, Battery | None needed (100% local) |
 
 > [!NOTE]
-> All credential fields in Lively Wallpaper are masked. If you enter an invalid key or a keyed request fails, Local Wally falls back cleanly to Open-Meteo to prevent broken states.
+> All credential fields in Lively Wallpaper are masked. If an optional keyed provider encounters an invalid key or network error, Local Wally falls back cleanly to its default keyless provider for that category (weather and air quality fall back to Open-Meteo, wallpapers fall back to Unsplash, and news falls back to Google News) to prevent broken states.
 
 ---
 
@@ -110,12 +110,12 @@ If you run into an issue, check the troubleshooting table below or submit an iss
 
 | Problem | Likely Cause | Recommended Action |
 |---|---|---|
-| **Stuck on "Locating..."** | WebView2 host permission query timed out | Upgrade to v0.13.1+ (adds automatic 1500 ms IP fallback race) or press <kbd>D</kbd> to type a manual city. |
+| **Stuck on "Locating..."** | WebView2 host permission query timed out | Update to the latest release (which incorporates an automatic 1500 ms IP fallback race) or press <kbd>D</kbd> to enter a manual city. |
 | **Wrong city detected** | IP geolocation resolved your ISP gateway city | Press <kbd>D</kbd> on your desktop, enter your desired city name or coordinates, and select it. |
 | **Weather or AQI shows "--"** | Network connectivity issue or provider error | Check network access. Local Wally will retry automatically on the next 15-minute refresh cycle. |
 | **WeatherAPI / OpenWeatherMap fails** | Key missing, invalid, or expired | Check your API key in Lively Settings. Local Wally automatically falls back to Open-Meteo. |
 | **News headlines not updating** | 15-minute rate limit quota firewall is active | News providers enforce a 15-minute rate-limit window per provider. Wait for the window to elapse. |
-| **Clock frozen after PC sleep** | System resumed from S0 Modern Standby | Upgrade to v0.13.1+. The clock resynchronizes immediately upon wake and reconnect. |
+| **Clock frozen after PC sleep** | System resumed from S0 Modern Standby | Update to the latest release. The clock resynchronizes immediately upon wake and reconnect. |
 | **Visualizer runs during games** | Lively Wallpaper window pause setting disabled | Verify that Lively Wallpaper is configured to pause when fullscreen applications are running. |
 
 *For complete troubleshooting details, see [Section 10 of the Walkthrough](docs/walkthrough.md#10-troubleshooting-and-symptom-to-action-guide).*
