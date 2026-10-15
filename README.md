@@ -11,6 +11,10 @@ Local Wally HUD turns your Windows 11 desktop into an ambient, living dashboard.
 
 Best of all, it is designed from the ground up to be **invisible to your computer's performance**: it parks to roughly **0% CPU when idle on the author's target hardware** (Ryzen AI / WebView2 — measured informally, not a cross-hardware guarantee), keeps battery impact low in practice, and requires **no account or API keys** to work out of the box.
 
+<p align="center">
+  <img src="assets/screenshots/01-local-wally-overview.png" alt="Local Wally HUD Desktop Overview showing live weather, hardware telemetry, 24-hour forecast, regional news, audio visualizer, and Pomodoro focus timer" width="100%" />
+</p>
+
 ---
 
 ## ✨ Why Local Wally?
@@ -101,6 +105,111 @@ Most animated wallpapers are notorious resource hogs. They run heavy video loops
 - **15-Minute Cache Firewall**: Prevents rate-limit exhaustion and battery drain with strict client-side caching and in-flight de-duplication across reloads and UI interactions.
 - **Dynamic Source Labeling**: Header and accessibility tags dynamically update to reflect the active provider (`Google News`, `NewsAPI`, `Currents News`).
 - **Interactive Story Dots**: Hovering any dot reveals the publisher outlet and publish age in the floating popover; clicking or keyboard-activating (<kbd>Enter</kbd> / <kbd>Space</kbd>) instantly switches stories and resets the rotation timer. Direct safe `https:` outbound links to full publisher articles in your browser.
+
+---
+
+## 🧭 Interactive HUD Controls and Setup Walkthrough
+
+Local Wally HUD provides a responsive, zero-configuration interface on your desktop. Here is how each major control and configuration surface works.
+
+### 1. First Launch and Location Detection
+
+When Local Wally starts for the first time, it automatically identifies your city using Windows location services or secure IP geolocation.
+- **Silent Boot**: Weather and astronomical ephemeris load automatically for your area without prompts or configuration dialogs.
+- **Offline Resilience**: If your internet connection is unavailable or interrupted, Local Wally falls back to cached values or a safe default without crashing or showing broken state.
+- **Manual Location Override**: If you prefer a fixed city or travel frequently, press <kbd>D</kbd> on your desktop to open the Diagnostics panel and enter your preferred coordinates or city name. You can return to automatic location at any time by clicking **Use automatic**.
+
+---
+
+### 2. Customizing Weather, Air Quality, and Wallpaper Providers
+
+Right-click Local Wally in your Lively Wallpaper library and select **Customise Wallpaper** to access all provider options:
+
+<p align="center">
+  <img src="assets/screenshots/05-lively-settings.png" alt="Lively Wallpaper Customise Settings modal showing provider selectors and masked API key fields" width="85%" />
+</p>
+
+- **Weather Telemetry Provider**:
+  - **Open-Meteo (Keyless Default)**: High-resolution global forecast models with zero configuration.
+  - **WeatherAPI.com (Free Key)**: Alternate global provider with comprehensive current conditions and hourly projections. Enter your free key in the **WeatherAPI.com API Key** field.
+  - **OpenWeatherMap (Key Optional)**: Keyed integration for users with existing OpenWeatherMap accounts.
+- **Air Quality Provider**: Choose between Open-Meteo (European AQI standard) or WAQI ground monitoring stations.
+- **Wallpaper Providers and Rotation**: Choose from Unsplash (keyless ambient default), Wallhaven, Pexels, Pixabay, or automatic round-robin rotation across providers.
+- **Credential Safety**: All API key input fields in Lively Wallpaper and settings dialogs are masked or optional. Local Wally functions completely out of the box with zero keys.
+
+---
+
+### 3. Interactive 24-Hour Forecast Chart
+
+The weather forecast card includes an inline SVG chart displaying Catmull-Rom Bezier curves for the upcoming 24 hours:
+
+<p align="center">
+  <img src="assets/screenshots/02-forecast-chart.png" alt="Local Wally 24-hour forecast chart displaying temperature curve and metric tabs" width="60%" />
+</p>
+
+- **Metric Tabs**: Click any of the six metric tabs (or use the <kbd>←</kbd> and <kbd>→</kbd> arrow keys when focused) to switch between:
+  - **Temp**: Hourly temperature in Celsius or Fahrenheit.
+  - **Feels**: Apparent temperature accounting for wind chill and humidity.
+  - **Precip**: Rain and precipitation probabilities (0% to 100%).
+  - **Wind**: Surface wind speed trajectories.
+  - **Humidity**: Relative atmospheric humidity levels.
+  - **AQI**: Color-coded European Air Quality Index trajectory.
+- **Point Tooltips**: Hover your cursor over any hourly marker or label to view an instant readout of exact projected values.
+
+---
+
+### 4. Regional News Navigation and Story Indicators
+
+The regional news dispatch keeps you informed with local and global headlines:
+
+<p align="center">
+  <img src="assets/screenshots/04-local-news-interactions.png" alt="Regional news card displaying selected story and active navigation dot indicator" width="60%" />
+</p>
+
+- **Story Indicators**: The bottom-right corner of the news card features interactive pagination dots. An elongated cyan pill marks the active story.
+- **Hover Previews**: Hover your mouse over any dot to see the publisher name and relative publish time in a floating acrylic tooltip.
+- **Manual Story Selection**: Click any dot or press <kbd>Enter</kbd> or <kbd>Space</kbd> when navigating via keyboard to jump directly to that story. Selecting a story resets the auto-rotation timer so you have ample time to read.
+- **Opening Articles**: Click the headline to open the original article directly in your default browser. All external links use secure HTTPS targets.
+
+---
+
+### 5. Contextual Hover Details and Telemetry Drawer
+
+Local Wally implements a two-tier progressive disclosure system for in-depth metrics:
+
+<p align="center">
+  <img src="assets/screenshots/03-air-quality-details.png" alt="Air quality card with progressive disclosure floating hover popover" width="60%" />
+</p>
+
+- **Tier 1 (Hover Popovers)**: Hover over or focus any telemetry element (such as Air Quality, Cloud Strata, or Moon Ephemeris) to display a lightweight floating acrylic popover. Popovers clamp within viewport bounds and dismiss immediately with <kbd>Esc</kbd> or when the cursor moves away.
+- **Tier 2 (Telemetry Detail Drawer)**: Click any card or press <kbd>Enter</kbd> to slide open a full-height contextual acrylic drawer with detailed breakdowns, pollutant measurements, and barometric trends. Press <kbd>Esc</kbd> or click outside to close the drawer.
+
+---
+
+### 6. Media Player and Pomodoro Productivity Dock
+
+The companion dock sits unobtrusively below the main HUD:
+
+<p align="center">
+  <img src="assets/screenshots/06-media-and-focus.png" alt="Media player with 32-bar audio visualizer and Pomodoro focus timer dock" width="85%" />
+</p>
+
+- **Pomodoro Focus Timer**:
+  - Four distinct timing methods: **25m** (standard Pomodoro), **52/17** (52 minutes work, 17 minutes rest), **90m** (Ultradian rhythm), and **Flow** (stopwatch count-up mode).
+  - One-click Start/Pause (<kbd>P</kbd>) and Reset buttons with smooth circular SVG progress rings.
+  - Timers use real wall-clock timestamps, preventing drift even when your system is under heavy load.
+- **Universal Windows Media Player & Visualizer**:
+  - Connects to Windows System Media Transport Controls (SMTC) to display track titles, artists, and album art from Spotify, Apple Music, YouTube Music, or browsers.
+  - Features a 32-bar audio visualizer running at 60 FPS that sleeps automatically during silence to maintain 0.0% CPU usage.
+
+---
+
+### 7. Lively Settings and Troubleshooting
+
+- **Sleep and Standby Behavior**: Local Wally monitors system power state. When your computer enters Modern Standby or sleep, all timers and animation loops park immediately. On wake, the clock and hardware meters synchronize instantly.
+- **Fullscreen App Parking**: When a game or full-screen application is focused, Lively Wallpaper pauses Local Wally. All rendering stops and CPU/GPU usage drops to 0.0%.
+- **Forcing Immediate Refresh**: Press <kbd>R</kbd> at any time to bypass the 15-minute cache firewall and download fresh weather, news, and wallpaper data.
+- **Theme Contrast**: Press <kbd>C</kbd> to cycle between Auto (wallpaper-adaptive contrast), Dark Glass, or Light Glass.
 
 ---
 
