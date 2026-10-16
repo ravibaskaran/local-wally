@@ -129,7 +129,7 @@ Local Wally implements a two-tier progressive disclosure system so you can see q
 
 ## 6. Media Player, 60 FPS Sound Visualizer, and Focus Dock
 
-The companion dock sits below the main HUD:
+The companion dock sits directly below the main HUD inside a unified `#hud-stack` flex container, ensuring a constant 14px gap across all screen heights:
 
 <p align="center">
   <img src="screenshots/06-media-and-focus.png" alt="Media player with 32-bar audio visualizer and Pomodoro focus timer dock" width="85%" />
@@ -143,6 +143,7 @@ The companion dock sits below the main HUD:
   - **Flowtime**: Stopwatch count-up mode for open-ended focus sessions.
 - Press <kbd>P</kbd> to start or pause the timer.
 - Real wall-clock timestamp calculations ensure the timer never drifts or loses time when your PC is under heavy load.
+- **Concentric SVG Progress Ring**: Driven by a scalable SVG progress ring with dual linear gradients (cyan for focus, emerald for breaks), optically centered at all display resolutions.
 
 ### Universal Media Player & Audio Visualizer
 - Connects to Windows System Media Transport Controls (SMTC) to display track titles, artists, and album artwork from Spotify, Apple Music, YouTube Music, Tidal, or web browsers.

@@ -45,8 +45,10 @@
       <canvas id="particle-canvas"></canvas>
     </div>
 
-    <!-- Layer 3: 2-Column Bento Grid Frosted Glass HUD (Windows 11 Acrylic) -->
-    <aside id="hud" class="hud top-right" aria-label="Weather Telemetry HUD">
+    <!-- Layer 3 & 3.5: Unified HUD Stack Container -->
+    <div id="hud-stack" class="hud-stack top-right">
+      <!-- Layer 3: 2-Column Bento Grid Frosted Glass HUD (Windows 11 Acrylic) -->
+      <aside id="hud" class="hud top-right" aria-label="Weather Telemetry HUD">
       <!-- Column 1: Primary Weather & Ephemeris Telemetry -->
       <div class="bento-col bento-col-primary">
         <!-- Hero Ceiling Atmospheric Zone (Option B) -->
@@ -457,7 +459,7 @@
             <div id="sync-dot" class="sync-pulse"></div>
             <span id="sync-status">Initializing...</span>
           </div>
-          <span id="hud-version" class="hud-version" title="Local Wally HUD version">v0.14.0</span>
+          <span id="hud-version" class="hud-version" title="Local Wally HUD version">v0.15.0</span>
         </footer>
       </div>
 
@@ -492,7 +494,21 @@
         </div>
         <div class="pomo-content">
           <div class="pomo-ring-wrap">
-            <canvas id="pomodoro-canvas" width="88" height="88"></canvas>
+            <svg id="pomodoro-ring-svg" class="pomo-ring-svg" viewBox="0 0 88 88" width="100%" height="100%" aria-hidden="true">
+              <circle class="pomo-ring-track" cx="44" cy="44" r="36" fill="none" stroke="rgba(255, 255, 255, 0.08)" stroke-width="4.5" />
+              <circle id="pomodoro-ring-bar" class="pomo-ring-bar" cx="44" cy="44" r="36" fill="none" stroke="url(#pomo-grad-focus)" stroke-width="4.5" stroke-linecap="round" stroke-dasharray="226.195" stroke-dashoffset="0" transform="rotate(-90 44 44)" />
+              <defs>
+                <linearGradient id="pomo-grad-focus" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stop-color="#38bdf8" />
+                  <stop offset="100%" stop-color="#0284c7" />
+                </linearGradient>
+                <linearGradient id="pomo-grad-break" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stop-color="#34d399" />
+                  <stop offset="100%" stop-color="#059669" />
+                </linearGradient>
+              </defs>
+            </svg>
+            <canvas id="pomodoro-canvas" width="88" height="88" style="display: none;"></canvas>
             <div class="pomo-ring-center">
               <span id="pomodoro-time">25:00</span>
             </div>
@@ -559,6 +575,7 @@
         </div>
       </section>
     </aside>
+    </div>
 
     <!-- Optional Diagnostics Panel (Press 'D' to toggle) -->
     <div id="diagnostic-panel" aria-hidden="true">

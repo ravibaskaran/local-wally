@@ -612,7 +612,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       pomoModePomo: options.pomoModePomo,
       pomoMode52: options.pomoMode52,
       pomoModeUltra: options.pomoModeUltra,
-      pomoModeFlow: options.pomoModeFlow
+      pomoModeFlow: options.pomoModeFlow,
+      ringBar: options.ringBar || (typeof document !== 'undefined' ? document.getElementById('pomodoro-ring-bar') : null)
     };
 
     this.timerMode = options.timerMode || 'pomodoro'; // 'pomodoro' | 'fiftytwo' | 'ultradian' | 'flowtime'
@@ -1012,6 +1013,20 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (this.dom.card.title !== pTitle) this.dom.card.title = pTitle;
     }
 
+    var progress = 0;
+    if (isFlowFocus) {
+      // Progress towards 90m deep work peak
+      progress = Math.min(1.0, this.flowElapsedSeconds / (90 * 60));
+    } else if (this.totalSeconds > 0) {
+      progress = this.remainingSeconds / this.totalSeconds;
+    }
+
+    if (this.dom.ringBar) {
+      var offset = 226.195 * (1 - progress);
+      this.dom.ringBar.style.strokeDashoffset = offset.toFixed(2);
+      this.dom.ringBar.setAttribute('stroke', (this.mode === 'break' || this.mode === 'longBreak') ? 'url(#pomo-grad-break)' : 'url(#pomo-grad-focus)');
+    }
+
     if (!this.ctx || !this.dom.canvas) return;
     var dpr = (typeof window !== 'undefined' && typeof window.devicePixelRatio === 'number' && window.devicePixelRatio > 1) ? window.devicePixelRatio : 1;
     if (dpr > 1 && !this._dprScaled && typeof this.ctx.scale === 'function') {
@@ -1038,14 +1053,6 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     ctx.lineWidth = lineWidth;
     ctx.strokeStyle = this.isLightTheme ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.08)';
     ctx.stroke();
-
-    var progress = 0;
-    if (isFlowFocus) {
-      // Progress towards 90m deep work peak
-      progress = Math.min(1.0, this.flowElapsedSeconds / (90 * 60));
-    } else if (this.totalSeconds > 0) {
-      progress = this.remainingSeconds / this.totalSeconds;
-    }
 
     if (progress > 0) {
       ctx.beginPath();
@@ -1965,7 +1972,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     var cat = (category || '').toUpperCase();
     var code = Number(wmoCode);
 
-    var newMode = 'WIND';
+    var newMode = 'NONE';
     if (code === 56 || code === 57 || code === 66 || code === 67 || cat.indexOf('SLEET') !== -1 || cat.indexOf('FREEZING') !== -1) {
       newMode = 'SLEET';
     } else if (cat === 'THUNDERSTORM' || code === 95 || code === 96 || code === 99 || cat.indexOf('STORM') !== -1) {
@@ -1975,13 +1982,18 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     } else if (cat === 'SNOW' || (code >= 71 && code <= 77) || code === 85 || code === 86 || cat.indexOf('SNOW') !== -1) {
       newMode = 'SNOW';
     } else {
-      newMode = 'WIND';
+      newMode = 'NONE';
     }
 
     this.mode = newMode;
     this.setWind(deg, speedKm, gustsKm);
 
-    if (this.mode !== 'WIND') {
+    if (this.mode === 'NONE') {
+      this.isSleeping = true;
+      if (this.ctx && this.width > 0 && this.height > 0) {
+        this.ctx.clearRect(0, 0, this.width, this.height);
+      }
+    } else {
       this.isSleeping = false;
     }
   };
@@ -1991,6 +2003,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     if (this.count <= 0) return false;
     if (global.App && (global.App.isPlaybackPaused || !global.App.isRunning)) return false;
     if (this.canvas.style && this.canvas.style.display === 'none') return false;
+    if (this.mode === 'NONE') return false;
     if (this.mode !== 'WIND') return true;
     return (this.windSpeedKm > 0.5);
   };
@@ -2031,6 +2044,13 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
   WindStreamlineEngine.prototype.render = function(dt) {
     if (!this.enabled || this.isSleeping || !this.ctx || !this.canvas) return;
     if (global.App && (global.App.isPlaybackPaused || !global.App.isRunning)) return;
+
+    if (this.mode === 'NONE') {
+      if (this.ctx && this.width > 0 && this.height > 0) {
+        this.ctx.clearRect(0, 0, this.width, this.height);
+      }
+      return;
+    }
 
     if (this.width <= 0 || this.height <= 0) {
       if (this._needsResize) {
@@ -2296,10 +2316,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     showBatteryInfo: true,
 
     /**
-     * Product version (v0.14.0). Rendered into #hud-version (bottom-right of
+     * Product version (v0.15.0). Rendered into #hud-version (bottom-right of
      * the card) so the running build is identifiable at a glance.
      */
-    VERSION: '0.14.0',
+    VERSION: '0.15.0',
     showCelestial: true,
     showAqi: true,
     showEnvironmentalMetrics: true,
@@ -2408,6 +2428,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         bgA: document.getElementById('bg-a'),
         bgB: document.getElementById('bg-b'),
         particleCanvas: document.getElementById('particle-canvas'),
+        hudStack: document.getElementById('hud-stack'),
         hud: document.getElementById('hud'),
         hudColPrimary: document.querySelector('.bento-col-primary'),
         hudColSecondary: document.querySelector('.bento-col-secondary'),
@@ -2672,7 +2693,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
     initEngines: function() {
       if (global.ParticleEngine && this.dom.particleCanvas) {
-        this.particles = new global.ParticleEngine(this.dom.particleCanvas);
+        this.particles = new global.ParticleEngine(this.dom.particleCanvas, { isWallpaper: true });
       }
       if (global.SkyEngine && this.dom.skyBackdrop) {
         this.sky = new global.SkyEngine(this.dom.skyBackdrop, this.dom.celestialContainer);
@@ -2736,6 +2757,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           btnReset: this.dom.pomoBtnReset,
           pillFocus: this.dom.pomoPillFocus,
           pillBreak: this.dom.pomoPillBreak,
+          ringBar: document.getElementById('pomodoro-ring-bar'),
           pomoModePomo: document.getElementById('pomo-mode-pomo'),
           pomoMode52: document.getElementById('pomo-mode-52'),
           pomoModeUltra: document.getElementById('pomo-mode-ultra'),
@@ -3331,6 +3353,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
 
       for (var i = 0; i < allPositions.length; i++) {
+        if (this.dom.hudStack) {
+          this.dom.hudStack.classList.remove(allPositions[i]);
+        }
         this.dom.hud.classList.remove(allPositions[i]);
         if (this.dom.dockMediaFocus) {
           this.dom.dockMediaFocus.classList.remove(allPositions[i]);
@@ -3357,6 +3382,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         else targetClass = 'top-right';
       }
 
+      if (this.dom.hudStack) {
+        this.dom.hudStack.classList.add(targetClass);
+      }
       this.dom.hud.classList.add(targetClass);
       if (this.dom.dockMediaFocus) {
         this.dom.dockMediaFocus.classList.add(targetClass);
@@ -3649,9 +3677,11 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         if (!hwVisible && !newsVisible) {
           this.dom.hudColSecondary.style.display = 'none';
           if (this.dom.hud) this.dom.hud.classList.add('hud-single-col');
+          if (this.dom.hudStack) this.dom.hudStack.classList.add('hud-single-col');
         } else {
           this.dom.hudColSecondary.style.display = '';
           if (this.dom.hud) this.dom.hud.classList.remove('hud-single-col');
+          if (this.dom.hudStack) this.dom.hudStack.classList.remove('hud-single-col');
 
           // Helper classes for single-item expansion in secondary col
           if (this.dom.hudHwBlock) {
@@ -3703,46 +3733,20 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           }
         }
 
-        // Dynamically compute companion dock vertical positioning offset and collision avoidance
+        // In the unified .hud-stack container, flexbox layout maintains a constant
+        // 14px gap between #hud and #dock-media-focus without vertical clamping drift.
+        // We also calculate clamped --dock-top and --dock-bottom custom properties for
+        // compatibility with responsive calculations and test assertions.
         if (this.dom.hud && this.dom.dockMediaFocus) {
-          var offsetGap = 0;
-          var vh = (typeof window !== 'undefined' && window.innerHeight) ? window.innerHeight : 1080;
-          var vw = (typeof window !== 'undefined' && window.innerWidth) ? window.innerWidth : 1920;
-
-          // Check if HUD and companion dock would collide vertically
-          var isShortViewport = (vh < 600);
-          var hudClass = this.dom.hud.className || '';
-          var isRight = hudClass.indexOf('right') !== -1;
-          var isLeft = hudClass.indexOf('left') !== -1;
-
           if (this.dom.dockMediaFocus.style) {
-            if (isShortViewport && vw >= 700) {
-              // When vertical space is insufficient (<600px), split horizontally if screen is wide enough
-              if (isRight) {
-                this.dom.dockMediaFocus.style.left = '20px';
-                this.dom.dockMediaFocus.style.right = 'auto';
-                this.dom.dockMediaFocus.style.bottom = '16px';
-                this.dom.dockMediaFocus.style.top = 'auto';
-              } else if (isLeft) {
-                this.dom.dockMediaFocus.style.right = '20px';
-                this.dom.dockMediaFocus.style.left = 'auto';
-                this.dom.dockMediaFocus.style.bottom = '16px';
-                this.dom.dockMediaFocus.style.top = 'auto';
-              } else {
-                this.dom.dockMediaFocus.style.left = '';
-                this.dom.dockMediaFocus.style.right = '';
-                this.dom.dockMediaFocus.style.top = '';
-                this.dom.dockMediaFocus.style.bottom = '';
-              }
-            } else {
-              // Reset inline horizontal overrides for standard viewports
-              this.dom.dockMediaFocus.style.left = '';
-              this.dom.dockMediaFocus.style.right = '';
-              this.dom.dockMediaFocus.style.top = '';
-              this.dom.dockMediaFocus.style.bottom = '';
-            }
+            this.dom.dockMediaFocus.style.left = '';
+            this.dom.dockMediaFocus.style.right = '';
+            this.dom.dockMediaFocus.style.top = '';
+            this.dom.dockMediaFocus.style.bottom = '';
           }
-
+          var offsetGap = 14;
+          var vh = (typeof window !== 'undefined' && window.innerHeight) ? window.innerHeight : 1080;
+          var isShortViewport = (vh < 600);
           var topOffsetNum = 32 + hudHeight + offsetGap;
           var bottomOffsetNum = 32 + hudHeight + offsetGap;
           if (!isShortViewport) {
@@ -3755,8 +3759,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           }
           var topOffset = topOffsetNum + 'px';
           var bottomOffset = bottomOffsetNum + 'px';
-          document.documentElement.style.setProperty('--dock-top', topOffset);
-          document.documentElement.style.setProperty('--dock-bottom', bottomOffset);
+          if (typeof document !== 'undefined' && document.documentElement && document.documentElement.style) {
+            document.documentElement.style.setProperty('--dock-top', topOffset);
+            document.documentElement.style.setProperty('--dock-bottom', bottomOffset);
+          }
         }
       }
 

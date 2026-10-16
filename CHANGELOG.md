@@ -8,6 +8,26 @@ For downloadable packages, installers, and release tags, visit [GitHub Releases]
 
 ## Release History
 
+### Version 0.15.0 - Unified HUD Stack, Concentric Pomodoro Timer, Ambient HUD Animations & Atmosphere Isolation
+- **Unified HUD & Dock Stack Layout**:
+  - Wrapped `#hud` and `#dock-media-focus` inside a unified `#hud-stack` flex container with a constant `gap: 14px`.
+  - Eliminated vertical clamping drift and gap fluctuations between cards caused by absolute sibling coordinate detachment on short or high-DPI displays.
+  - Coordinated positioning classes and responsive single-column layouts (`.hud-single-col`) cleanly across the shared stack container.
+- **Concentric Scalable SVG Pomodoro Ring**:
+  - Replaced fixed-dimension canvas ring drawing with a resolution-independent SVG progress ring (`viewBox="0 0 88 88"`).
+  - Added dual-mode linear gradients (`#pomo-grad-focus` for focus, `#pomo-grad-break` for rest intervals) and animated `stroke-dashoffset` transitions.
+  - Locked countdown timer text into optical concentric alignment using `position: absolute; inset: 0;` on `.pomo-ring-center`, preventing distortion across responsive breakpoints.
+- **Atmospheric Weather Precision**:
+  - `WindStreamlineEngine.prototype.setWeather` accurately parks into `mode = 'NONE'` during overcast, cloudy, or clear conditions without precipitation.
+  - Canvas clears completely and execution halts at 0% CPU/GPU, eliminating misleading rain-like streamline streaks on dry overcast days.
+- **Desktop Wallpaper Particle Isolation**:
+  - Added `options.isWallpaper` support to `ParticleEngine`.
+  - Background wallpaper canvas suppresses precipitation particles (`activePrecipCount = 0`) to preserve clean desktop wallpapers.
+  - Atmospheric precipitation effects (rain, drizzle, snow, sleet, thunderstorm) remain strictly confined to the weather card hero ceiling (`#hud-wind-canvas`).
+- **Continuous Ambient HUD Icon Animations**:
+  - Implemented continuous vector keyframe animations across all HUD badges and icons: Location Pin (`anim-pin-float`), Rain Outlook (`anim-rain-drops`), Temperature Peak (`anim-thermometer-pulse`), Daylight Solar (`anim-sun-spin`), Golden Hour (`anim-golden-glow`), Sky Event (`anim-star-twinkle`), Air Quality (`anim-wind-drift`), Hardware Monitor (`anim-chip-pulse`), News Feed (`anim-news-pulse`), Pomodoro Timer (`anim-clock-pulse`), and Now Playing (`anim-audio-vibe`).
+  - Added accessibility fallbacks under `@media (prefers-reduced-motion: reduce)` to disable animations immediately when requested.
+
 ### Version 0.14.0 — Animated Metric Meteocons & WeatherAPI.com Alternate Provider
 - **Animated Metric Icons (Bas Milius Meteocons)**:
   - Bundled standalone, official Meteocons animated fill SVGs (`assets/icons/weather/humidity.svg`, `assets/icons/weather/cloudy.svg`, `assets/icons/weather/raindrop-measure.svg`) replacing legacy static outlines in the 3-column environmental metrics row.

@@ -102,7 +102,9 @@
     return profile;
   };
 
-  function ParticleEngine(canvasElement) {
+  function ParticleEngine(canvasElement, options) {
+    options = options || {};
+    this.isWallpaper = !!options.isWallpaper;
     this.canvas = canvasElement;
     this.ctx = canvasElement.getContext('2d', {
       alpha: true,
@@ -241,7 +243,10 @@
     if (!Number.isFinite(this.windFactor) || this.windFactor < 0) this.windFactor = 0.2;
     if (this.windFactor > 1.8) this.windFactor = 1.8;
 
-    // Active particle count based on weather severity and user multiplier
+    // Active particle count based on weather severity and user multiplier.
+    // When isWallpaper is true, desktop wallpaper precipitation particles are silenced
+    // (count = 0) to preserve clean wallpaper aesthetics, with atmospheric precipitation
+    // rendered strictly inside the weather card hero ceiling (#hud-wind-canvas).
     var baseCount = 0;
     if (this.mode === 'THUNDERSTORM') {
       baseCount = 1400;
@@ -257,7 +262,13 @@
 
     var targetCount = Math.floor(baseCount * this.densityMultiplier);
     if (targetCount > MAX_PRECIP) targetCount = MAX_PRECIP;
-    this.activePrecipCount = targetCount;
+
+    if (this.isWallpaper) {
+      this.activePrecipCount = 0;
+      this.lightningAlpha = 0.0;
+    } else {
+      this.activePrecipCount = targetCount;
+    }
 
     // Fix 9: Initialize newly activated particle slots on density increase
     if (targetCount > oldCount) {
@@ -287,7 +298,8 @@
     this.transitionTime = 0.5;
     var isHeavy = (newMode === 'THUNDERSTORM' || newMode === 'RAIN');
     var speedMultiplier = isHeavy ? 1.0 : 0.6;
-    for (var pIdx = 0; pIdx < this.activePrecipCount; pIdx++) {
+    var count = Math.max(this.activePrecipCount, 1);
+    for (var pIdx = 0; pIdx < count; pIdx++) {
       if (newMode === 'SNOW') {
         this.pVx[pIdx] = (random() - 0.5) * 0.6 + (this.windFactor * 0.4);
         this.pVy[pIdx] = 0.8 + random() * 1.6;
