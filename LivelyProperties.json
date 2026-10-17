@@ -2,7 +2,7 @@
   "customLocation": {
     "type": "textbox",
     "value": "",
-    "text": "Custom Location (blank = Automatic) — e.g. Bangalore or 12.97,77.59"
+    "text": "Custom Location (blank = Automatic) - e.g. Bangalore or 12.97,77.59"
   },
   "hudPosition": {
     "type": "dropdown",
@@ -171,6 +171,12 @@
     "value": "",
     "text": "Currents API Key (Optional)"
   },
+  "newsFocus": {
+    "type": "dropdown",
+    "value": 1,
+    "items": ["Nearby (City Only)", "Balanced (City with Region Fallback)", "Wider (Country & World)"],
+    "text": "News Focus"
+  },
   "showHardwareMonitor": {
     "type": "checkbox",
     "value": true,
@@ -252,7 +258,7 @@
   "settingsExport": {
     "type": "button",
     "value": "Export Settings (incl. API keys)",
-    "text": "Local Wally — Backup & Restore"
+    "text": "Local Wally - Backup & Restore"
   },
   "settingsImport": {
     "type": "button",

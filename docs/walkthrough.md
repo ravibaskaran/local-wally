@@ -11,10 +11,12 @@ This guide provides a comprehensive walkthrough for configuring, customizing, an
 4. [Regional News Ingestion and Interactive Story Navigation](#4-regional-news-ingestion-and-interactive-story-navigation)
 5. [Progressive Disclosure: Hover Popovers and Telemetry Drawer](#5-progressive-disclosure-hover-popovers-and-telemetry-drawer)
 6. [Media Player, 60 FPS Sound Visualizer, and Focus Dock](#6-media-player-60-fps-sound-visualizer-and-focus-dock)
-7. [Upgrading Local Wally While Preserving Settings](#7-upgrading-local-wally-while-preserving-settings)
-8. [Lively Properties Reference Table](#8-lively-properties-reference-table)
-9. [Advanced Configuration (config.js)](#9-advanced-configuration-configjs)
-10. [Troubleshooting and Symptom-to-Action Guide](#10-troubleshooting-and-symptom-to-action-guide)
+7. [Wallpaper Favorites and Avoidance Engine](#7-wallpaper-favorites-and-avoidance-engine)
+8. [OneDrive Personal Settings Synchronization](#8-onedrive-personal-settings-synchronization)
+9. [Upgrading Local Wally While Preserving Settings](#9-upgrading-local-wally-while-preserving-settings)
+10. [Lively Properties Reference Table](#10-lively-properties-reference-table)
+11. [Advanced Configuration (config.js)](#11-advanced-configuration-configjs)
+12. [Troubleshooting and Symptom-to-Action Guide](#12-troubleshooting-and-symptom-to-action-guide)
 
 ---
 
@@ -103,6 +105,11 @@ The regional news dispatch keeps you informed with local and global headlines:
 - **Interactive Navigation**: Click any dot or press <kbd>Enter</kbd> / <kbd>Space</kbd> when focused to switch directly to that story. Manually selecting a story pauses the automatic rotation timer so you can read without disruption.
 - **Publisher Tooltips**: Hover over any indicator dot to see the publisher name and relative publication time.
 - **Reading Full Articles**: Click the headline to open the original article in your default web browser. All external links use secure `https:` destinations.
+- **Geographic News Focus**: Configure your preferred geographic query breadth in Lively Settings or in the News detail drawer:
+  - **Nearby (City Only)**: Queries your specific city or metro area exclusively without broadening.
+  - **Balanced (Default)**: Tries your city first, smoothly falling back to national or global editions if local coverage is sparse.
+  - **Wider (Country & World)**: Prioritizes national and international headlines first.
+- **On-Demand Manual Pull ("Get latest")**: When Google News is active, open the news detail drawer and click **Get latest** to fetch fresh headlines immediately through a sequential CORS proxy cascade. Includes a 30-second cooldown timer to prevent rate limiting.
 
 ---
 
@@ -123,6 +130,8 @@ Local Wally implements a two-tier progressive disclosure system so you can see q
 ### Tier 2: Contextual Telemetry Drawer
 - Click any card or press <kbd>Enter</kbd> to slide open a full-height acrylic drawer.
 - Shows complete meteorological parameters, barometric pressure, wind gusts, particulate measurements, and astronomical ephemeris.
+- **Truthful Weather Provenance**: The weather detail drawer provides an honest breakdown of your atmospheric data source, distinguishing between live network telemetry, cached entries, stale offline snapshots, and fallback routes. Displays provider name, exact station observation time (when reported by the provider), fetch time, and cache age.
+- **HUD Weather Freshness Badge**: A compact pill badge on the weather card displays real-time data status (`Live · Just now`, `Live · 4m ago`, `Cached · 12m old`, `Stale · 25m old`, or `Fallback`) without fabricating live claims for cached data.
 - Press <kbd>Esc</kbd> or click outside the drawer to close it.
 
 ---
@@ -153,7 +162,37 @@ The companion dock sits directly below the main HUD inside a unified `#hud-stack
 
 ---
 
-## 7. Upgrading Local Wally While Preserving Settings
+## 7. Wallpaper Favorites and Avoidance Engine
+
+Local Wally includes a native wallpaper personalization engine that operates entirely via lightweight metadata without saving bulky image files to disk:
+
+- **Floating Wallpaper Actions Bar**: Located at the bottom-right corner of your desktop:
+  - **Favorite (Heart)**: Adds the currently displayed wallpaper to your permanent collection.
+  - **Less Like This (Ban / Thumbs Down)**: Immediately flags the current wallpaper as avoided and rotates to the next candidate.
+  - **Favorites Gallery (Bookmark / Folder)**: Slides open the Favorites drawer.
+- **Favorites Slide-Out Drawer**:
+  - Displays a clean gallery of all your favorited wallpapers.
+  - Click **Apply** on any card to immediately switch to that wallpaper.
+  - Click **Remove** to delete the wallpaper from your favorites collection.
+- **Instant Undo Protection**: When you click "Less like this", a temporary 6-second toast notification appears with an **Undo** button in case you clicked it by mistake.
+- **Intelligent Candidate Filtering**: When rotating wallpapers, avoided asset IDs are strictly filtered out before ranking candidates. If all candidate images are in your avoided list, Local Wally preserves your current wallpaper rather than showing a duplicate or entering an infinite retry loop.
+- **Strict Collection Bounds**: Favorites are capped at 100 items and avoided records at 200 items, using automatic LRU eviction to prevent storage bloat.
+
+---
+
+## 8. OneDrive Personal Settings Synchronization
+
+Local Wally features optional, cross-device synchronization with personal Microsoft OneDrive accounts:
+
+- **Zero Helper Daemons or Registry Hacks**: Uses standard OAuth 2.0 Device Code Flow (RFC 8628). Click **Connect OneDrive** in the Diagnostics panel (press <kbd>D</kbd>), open `microsoft.com/devicelogin` in your browser, and enter the displayed 8-character code.
+- **Sandboxed Least-Privilege Access**: Uses Microsoft Graph delegated `Files.ReadWrite.AppFolder` scope, storing one small configuration file (`local-wally-settings.json`) in your private `OneDrive/Apps/Local Wally` folder. Local Wally cannot see or modify any other files in your OneDrive.
+- **Strict Privacy Firewall (Zero Location in Cloud)**: All GPS coordinates, manual city names, location history, cached weather, news snapshots, and OAuth tokens are strictly stripped before uploading. Personal location data stays 100% on your local PC.
+- **Local-First Architecture**: Your wallpaper and HUD boot instantly from local storage in under 50ms. Background sync checks are non-blocking and automatically park during games or screen lock.
+- **Deterministic 3-Way Merge**: Synchronizes your customized Lively settings, API keys, and wallpaper favorites across PCs while preserving whichever machine made the newest edits.
+
+---
+
+## 9. Upgrading Local Wally While Preserving Settings
 
 Lively Wallpaper maintains customized properties per wallpaper ID. Importing a release zip directly always mints a new wallpaper ID, which starts with default values. To upgrade without losing your customized settings, choose one of these three methods:
 
@@ -181,7 +220,7 @@ Lively Wallpaper maintains customized properties per wallpaper ID. Importing a r
 
 ---
 
-## 8. Lively Properties Reference Table
+## 10. Lively Properties Reference Table
 
 The following table lists every property defined in `LivelyProperties.json`:
 
@@ -209,6 +248,7 @@ The following table lists every property defined in `LivelyProperties.json`:
 | `enableDynamicSolarLighting` | Dynamic Solar Lighting & Shadows | checkbox | `true` | Toggle sun-angle lighting and card drop shadows |
 | `showNewsFeed` | Show Regional News Feed | checkbox | `true` | Show or hide news card |
 | `newsProvider` | News Provider | dropdown | `Auto (API keys first)` | Auto (API keys first), Google News, NewsAPI, Currents News, Rotate configured sources |
+| `newsFocus` | News Focus | dropdown | `Balanced (City with Region Fallback)` | Nearby (City Only), Balanced (City with Region Fallback), Wider (Country & World) |
 | `newsApiKey` | NewsAPI Key (Optional) | textbox | `""` | Personal NewsAPI key |
 | `currentsApiKey` | Currents API Key (Optional) | textbox | `""` | Personal Currents API key |
 | `showHardwareMonitor` | Show Hardware Monitor | checkbox | `true` | Show or hide CPU/GPU/RAM/Disk gauges |
@@ -231,8 +271,8 @@ The following table lists every property defined in `LivelyProperties.json`:
 
 ---
 
-<a id="9-advanced-configuration-config-js"></a>
-## 9. Advanced Configuration (config.js)
+<a id="11-advanced-configuration-config-js"></a>
+## 11. Advanced Configuration (config.js)
 
 When running Local Wally outside of Lively Wallpaper (such as in a local browser preview via `node serve.js`), settings can be modified in `config.js`. The schema mirrors the properties in Lively Wallpaper:
 
@@ -244,6 +284,7 @@ window.LOCAL_WALLY_CONFIG = {
   glassSaturationPct: 190,
   tempUnit: 'C',
   newsRotateIntervalSeconds: 7,
+  newsFocus: 'balanced',
   hwUpdateIntervalSeconds: 10,
   wallpaperProvider: 'unsplash',
   weatherProvider: 'open-meteo',
@@ -265,7 +306,7 @@ window.LOCAL_WALLY_CONFIG = {
 
 ---
 
-## 10. Troubleshooting and Symptom-to-Action Guide
+## 12. Troubleshooting and Symptom-to-Action Guide
 
 The following symptom-to-action table is based on verified application logic:
 
@@ -276,6 +317,8 @@ The following symptom-to-action table is based on verified application logic:
 | **Weather or AQI displays "--" or "Unavailable"** | Network connectivity issue or upstream provider returned incomplete payload | Check your internet connection. Local Wally never fabricates missing metrics. It will retry automatically on the next scheduled refresh interval (default 15 minutes). |
 | **WeatherAPI.com or OpenWeatherMap fails** | Missing, invalid, or expired API key | Ensure your key is typed correctly in Lively Wallpaper settings. If the keyed call fails, Local Wally automatically falls back to Open-Meteo. |
 | **Regional news headlines are not updating** | 15-minute news quota firewall is active, or CORS proxy is temporarily unreachable | News enforces an independent 15-minute rate limit window per provider to protect API quotas. Wait for the window to expire. If using Google News, verify your internet connection. |
+| **OneDrive sync prompts "Sign-in required"** | Microsoft OAuth token expired or revoked | Press <kbd>D</kbd> on the desktop, click **Connect OneDrive**, and complete the Device Code sign-in flow at `microsoft.com/devicelogin`. |
+| **Wallpaper marked as avoided still appears** | Collection bound reached or all provider candidates are avoided | Avoided list holds up to 200 items. If all candidate images from your active provider are avoided, Local Wally preserves your current wallpaper rather than breaking. |
 | **Wallpaper or data does not update immediately** | Local Wally adheres to its configured refresh cadence (default 15 minutes) | Data refreshes automatically according to your **Data Refresh Interval** slider (5 to 30 minutes). Changing a provider setting in Lively immediately triggers a fresh sync. |
 | **HUD clock or hardware meters frozen after sleep** | System entered S0 Modern Standby or deep sleep | Update to the latest release. On resume from sleep or when the network comes back online, the clock synchronizes immediately and triggers a background refresh if elapsed time exceeds 15 minutes. |
 | **Visualizer or animation runs when a game is open** | Lively Wallpaper window pause event was not forwarded by host | Ensure Lively Wallpaper settings are set to **Pause** when applications are fullscreen or focused. In `LivelyInfo.json`, verify that `--pause-event true` is present in the arguments. |

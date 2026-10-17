@@ -33,9 +33,12 @@ Many video-based or unoptimized browser wallpapers introduce constant background
 **Local Wally was engineered differently:**
 - **Zero API Keys Required Out of the Box**: Finds your local weather and solar times automatically without accounts, keys, or credit cards.
 - **Engineered for Low Resource Overhead**: Target design of roughly 0.0% CPU and GPU load when parked or idle, measured informally on the author's test hardware (AMD Ryzen AI / Windows 11 / WebView2) with a 60 FPS animation loop when active. Real-world usage varies by hardware configuration, screen resolution, and active particle density.
-- **Deep Sleep When Busy**: When you maximize a window, launch a game, or lock your screen, Lively Wallpaper pauses playback. Local Wally halts all animation loops and canvas rendering immediately.
+- **Deep Sleep When Busy**: When you maximize a window, launch a game, or lock your screen, Lively Wallpaper pauses playback. Local Wally halts all animation loops, timers, and polling immediately.
 - **Desktop-Friendly Layout**: Sits neatly on the right half of your screen so standard Windows desktop icons on the left stay unobstructed.
 - **Weather-Adaptive Solar Lighting**: Background landscapes match current conditions and are illuminated by real-time sun angles, warm golden hour glows, and gentle nocturnal moonlit ambiance with shifting card drop shadows.
+- **OneDrive Personal Settings Sync**: Syncs user settings and wallpaper preferences seamlessly across PCs via OAuth 2.0 Device Code Flow (`microsoft.com/devicelogin`) with a strict zero-location-data privacy firewall.
+- **Wallpaper Favorites & "Less Like This" Engine**: Favorite wallpapers to a slide-out gallery or filter out unwanted scenes with a 6-second undo toast.
+- **Truthful Weather Provenance**: Live freshness badges (`Live`, `Cached`, `Stale`, `Fallback`) and complete data origin breakdowns in the detail drawer.
 
 ---
 

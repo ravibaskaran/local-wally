@@ -244,10 +244,12 @@
 <li><a href="#4-regional-news-ingestion-and-interactive-story-navigation">Regional News Ingestion and Interactive Story Navigation</a></li>
 <li><a href="#5-progressive-disclosure-hover-popovers-and-telemetry-drawer">Progressive Disclosure: Hover Popovers and Telemetry Drawer</a></li>
 <li><a href="#6-media-player-60-fps-sound-visualizer-and-focus-dock">Media Player, 60 FPS Sound Visualizer, and Focus Dock</a></li>
-<li><a href="#7-upgrading-local-wally-while-preserving-settings">Upgrading Local Wally While Preserving Settings</a></li>
-<li><a href="#8-lively-properties-reference-table">Lively Properties Reference Table</a></li>
-<li><a href="#9-advanced-configuration-configjs">Advanced Configuration (config.js)</a></li>
-<li><a href="#10-troubleshooting-and-symptom-to-action-guide">Troubleshooting and Symptom-to-Action Guide</a></li>
+<li><a href="#7-wallpaper-favorites-and-avoidance-engine">Wallpaper Favorites and Avoidance Engine</a></li>
+<li><a href="#8-onedrive-personal-settings-synchronization">OneDrive Personal Settings Synchronization</a></li>
+<li><a href="#9-upgrading-local-wally-while-preserving-settings">Upgrading Local Wally While Preserving Settings</a></li>
+<li><a href="#10-lively-properties-reference-table">Lively Properties Reference Table</a></li>
+<li><a href="#11-advanced-configuration-configjs">Advanced Configuration (config.js)</a></li>
+<li><a href="#12-troubleshooting-and-symptom-to-action-guide">Troubleshooting and Symptom-to-Action Guide</a></li>
 </ol>
 <hr />
 <h2 id="1-first-launch-and-location-cascade">1. First Launch and Location Cascade</h2>
@@ -328,6 +330,14 @@
 <li><strong>Interactive Navigation</strong>: Click any dot or press <kbd>Enter</kbd> / <kbd>Space</kbd> when focused to switch directly to that story. Manually selecting a story pauses the automatic rotation timer so you can read without disruption.</li>
 <li><strong>Publisher Tooltips</strong>: Hover over any indicator dot to see the publisher name and relative publication time.</li>
 <li><strong>Reading Full Articles</strong>: Click the headline to open the original article in your default web browser. All external links use secure <code>https:</code> destinations.</li>
+<li><strong>Geographic News Focus</strong>: Configure your preferred geographic query breadth in Lively Settings or in the News detail drawer:
+  <ul>
+    <li><strong>Nearby (City Only)</strong>: Queries your specific city or metro area exclusively without broadening.</li>
+    <li><strong>Balanced (Default)</strong>: Tries your city first, smoothly falling back to national or global editions if local coverage is sparse.</li>
+    <li><strong>Wider (Country & World)</strong>: Prioritizes national and international headlines first.</li>
+  </ul>
+</li>
+<li><strong>On-Demand Manual Pull ("Get latest")</strong>: When Google News is active, open the news detail drawer and click <strong>Get latest</strong> to fetch fresh headlines immediately through a sequential CORS proxy cascade. Includes a 30-second cooldown timer to prevent rate limiting.</li>
 </ul>
 <hr />
 <h2 id="5-progressive-disclosure-hover-popovers-and-telemetry-drawer">5. Progressive Disclosure: Hover Popovers and Telemetry Drawer</h2>
@@ -346,6 +356,8 @@
 <ul>
 <li>Click any card or press <kbd>Enter</kbd> to slide open a full-height acrylic drawer.</li>
 <li>Shows complete meteorological parameters, barometric pressure, wind gusts, particulate measurements, and astronomical ephemeris.</li>
+<li><strong>Truthful Weather Provenance</strong>: The weather detail drawer provides an honest breakdown of your atmospheric data source, distinguishing between live network telemetry, cached entries, stale offline snapshots, and fallback routes. Displays provider name, exact station observation time (when reported by the provider), fetch time, and cache age.</li>
+<li><strong>HUD Weather Freshness Badge</strong>: A compact pill badge on the weather card displays real-time data status (<code>Live · Just now</code>, <code>Live · 4m ago</code>, <code>Cached · 12m old</code>, <code>Stale · 25m old</code>, or <code>Fallback</code>) without fabricating live claims for cached data.</li>
 <li>Press <kbd>Esc</kbd> or click outside the drawer to close it.</li>
 </ul>
 <hr />
@@ -373,7 +385,33 @@
 <li>In browser preview mode, press <kbd>M</kbd> to cycle through built-in demo tracks (Synthwave, Lo-Fi, Ambient).</li>
 </ul>
 <hr />
-<h2 id="7-upgrading-local-wally-while-preserving-settings">7. Upgrading Local Wally While Preserving Settings</h2>
+<h2 id="7-wallpaper-favorites-and-avoidance-engine">7. Wallpaper Favorites and Avoidance Engine</h2>
+<p>Local Wally includes a native wallpaper personalization engine that operates entirely via lightweight metadata without saving bulky image files to disk:</p>
+<ul>
+<li><strong>Floating Wallpaper Actions Bar</strong>: Located at the bottom-right corner of your desktop:
+  <ul>
+    <li><strong>Favorite (Heart)</strong>: Adds the currently displayed wallpaper to your permanent collection.</li>
+    <li><strong>Less Like This (Ban / Thumbs Down)</strong>: Immediately flags the current wallpaper as avoided and rotates to the next candidate.</li>
+    <li><strong>Favorites Gallery (Bookmark / Folder)</strong>: Slides open the Favorites drawer.</li>
+  </ul>
+</li>
+<li><strong>Favorites Slide-Out Drawer</strong>: Displays a clean gallery of all your favorited wallpapers. Click <strong>Apply</strong> on any card to immediately switch to that wallpaper, or <strong>Remove</strong> to delete it from your favorites collection.</li>
+<li><strong>Instant Undo Protection</strong>: When you click "Less like this", a temporary 6-second toast notification appears with an <strong>Undo</strong> button in case you clicked it by mistake.</li>
+<li><strong>Intelligent Candidate Filtering</strong>: When rotating wallpapers, avoided asset IDs are strictly filtered out before ranking candidates. If all candidate images are in your avoided list, Local Wally preserves your current wallpaper rather than showing a duplicate or entering an infinite retry loop.</li>
+<li><strong>Strict Collection Bounds</strong>: Favorites are capped at 100 items and avoided records at 200 items, using automatic LRU eviction to prevent storage bloat.</li>
+</ul>
+<hr />
+<h2 id="8-onedrive-personal-settings-synchronization">8. OneDrive Personal Settings Synchronization</h2>
+<p>Local Wally features optional, cross-device synchronization with personal Microsoft OneDrive accounts:</p>
+<ul>
+<li><strong>Zero Helper Daemons or Registry Hacks</strong>: Uses standard OAuth 2.0 Device Code Flow (RFC 8628). Click <strong>Connect OneDrive</strong> in the Diagnostics panel (press <kbd>D</kbd>), open <code>microsoft.com/devicelogin</code> in your browser, and enter the displayed 8-character code.</li>
+<li><strong>Sandboxed Least-Privilege Access</strong>: Uses Microsoft Graph delegated <code>Files.ReadWrite.AppFolder</code> scope, storing one small configuration file (<code>local-wally-settings.json</code>) in your private <code>OneDrive/Apps/Local Wally</code> folder. Local Wally cannot see or modify any other files in your OneDrive.</li>
+<li><strong>Strict Privacy Firewall (Zero Location in Cloud)</strong>: All GPS coordinates, manual city names, location history, cached weather, news snapshots, and OAuth tokens are strictly stripped before uploading. Personal location data stays 100% on your local PC.</li>
+<li><strong>Local-First Architecture</strong>: Your wallpaper and HUD boot instantly from local storage in under 50ms. Background sync checks are non-blocking and automatically park during games or screen lock.</li>
+<li><strong>Deterministic 3-Way Merge</strong>: Synchronizes your customized Lively settings, API keys, and wallpaper favorites across PCs while preserving whichever machine made the newest edits.</li>
+</ul>
+<hr />
+<h2 id="9-upgrading-local-wally-while-preserving-settings">9. Upgrading Local Wally While Preserving Settings</h2>
 <p>Lively Wallpaper maintains customized properties per wallpaper ID. Importing a release zip directly always mints a new wallpaper ID, which starts with default values. To upgrade without losing your customized settings, choose one of these three methods:</p>
 <h3>Method 1: One-Click Updater Script (Recommended)</h3>
 <ol>
@@ -400,7 +438,7 @@
 <div class="callout warning">
 <p><strong>Privacy Notice</strong>: Settings backup files contain your configured API keys and custom location settings. Always keep your backup JSON file private. Never post or share an unredacted settings export in public GitHub issues or forums.</p></div>
 <hr />
-<h2 id="8-lively-properties-reference-table">8. Lively Properties Reference Table</h2>
+<h2 id="10-lively-properties-reference-table">10. Lively Properties Reference Table</h2>
 <p>The following table lists every property defined in <code>LivelyProperties.json</code>:</p>
 <div class="table-wrap">
 <table><thead><tr><th>Setting Identifier</th><th>UI Label</th><th>Type</th><th>Default</th><th>Options / Range</th></tr></thead><tbody>
@@ -426,6 +464,7 @@
 <tr><td><code>enableDynamicSolarLighting</code></td><td>Dynamic Solar Lighting & Shadows</td><td>checkbox</td><td><code>true</code></td><td>Toggle sun-angle lighting and card drop shadows</td></tr>
 <tr><td><code>showNewsFeed</code></td><td>Show Regional News Feed</td><td>checkbox</td><td><code>true</code></td><td>Show or hide news card</td></tr>
 <tr><td><code>newsProvider</code></td><td>News Provider</td><td>dropdown</td><td><code>Auto (API keys first)</code></td><td>Auto (API keys first), Google News, NewsAPI, Currents News, Rotate configured sources</td></tr>
+<tr><td><code>newsFocus</code></td><td>News Focus</td><td>dropdown</td><td><code>Balanced (City with Region Fallback)</code></td><td>Nearby (City Only), Balanced (City with Region Fallback), Wider (Country & World)</td></tr>
 <tr><td><code>newsApiKey</code></td><td>NewsAPI Key (Optional)</td><td>textbox</td><td><code>""</code></td><td>Personal NewsAPI key</td></tr>
 <tr><td><code>currentsApiKey</code></td><td>Currents API Key (Optional)</td><td>textbox</td><td><code>""</code></td><td>Personal Currents API key</td></tr>
 <tr><td><code>showHardwareMonitor</code></td><td>Show Hardware Monitor</td><td>checkbox</td><td><code>true</code></td><td>Show or hide CPU/GPU/RAM/Disk gauges</td></tr>
@@ -448,7 +487,7 @@
 </tbody></table>
 </div>
 <hr />
-<h2 id="9-advanced-configuration-config-js"><a id="9-advanced-configuration-configjs"></a>9. Advanced Configuration (config.js)</h2>
+<h2 id="11-advanced-configuration-config-js"><a id="11-advanced-configuration-configjs"></a><a id="9-advanced-configuration-config-js"></a><a id="9-advanced-configuration-configjs"></a>11. Advanced Configuration (config.js)</h2>
 <p>When running Local Wally outside of Lively Wallpaper (such as in a local browser preview via <code>node serve.js</code>), settings can be modified in <code>config.js</code>. The schema mirrors the properties in Lively Wallpaper:</p>
 <pre><code>
 <p>window.LOCAL_WALLY_CONFIG = {</p>
@@ -458,6 +497,7 @@
 <p>  glassSaturationPct: 190,</p>
 <p>  tempUnit: 'C',</p>
 <p>  newsRotateIntervalSeconds: 7,</p>
+<p>  newsFocus: 'balanced',</p>
 <p>  hwUpdateIntervalSeconds: 10,</p>
 <p>  wallpaperProvider: 'unsplash',</p>
 <p>  weatherProvider: 'open-meteo',</p>
@@ -477,7 +517,7 @@
 <p>};</p>
 </code></pre>
 <hr />
-<h2 id="10-troubleshooting-and-symptom-to-action-guide">10. Troubleshooting and Symptom-to-Action Guide</h2>
+<h2 id="12-troubleshooting-and-symptom-to-action-guide"><a id="10-troubleshooting-and-symptom-to-action-guide"></a>12. Troubleshooting and Symptom-to-Action Guide</h2>
 <p>The following symptom-to-action table is based on verified application logic:</p>
 <div class="table-wrap">
 <table><thead><tr><th>Symptom</th><th>Verified Cause</th><th>Action to Take</th></tr></thead><tbody>
@@ -486,6 +526,8 @@
 <tr><td><strong>Weather or AQI displays "--" or "Unavailable"</strong></td><td>Network connectivity issue or upstream provider returned incomplete payload</td><td>Check your internet connection. Local Wally never fabricates missing metrics. It will retry automatically on the next scheduled refresh interval (default 15 minutes).</td></tr>
 <tr><td><strong>WeatherAPI.com or OpenWeatherMap fails</strong></td><td>Missing, invalid, or expired API key</td><td>Ensure your key is typed correctly in Lively Wallpaper settings. If the keyed call fails, Local Wally automatically falls back to Open-Meteo.</td></tr>
 <tr><td><strong>Regional news headlines are not updating</strong></td><td>15-minute news quota firewall is active, or CORS proxy is temporarily unreachable</td><td>News enforces an independent 15-minute rate limit window per provider to protect API quotas. Wait for the window to expire. If using Google News, verify your internet connection.</td></tr>
+<tr><td><strong>OneDrive sync prompts "Sign-in required"</strong></td><td>Microsoft OAuth token expired or revoked</td><td>Press <kbd>D</kbd> on the desktop, click <strong>Connect OneDrive</strong>, and complete the Device Code sign-in flow at <code>microsoft.com/devicelogin</code>.</td></tr>
+<tr><td><strong>Wallpaper marked as avoided still appears</strong></td><td>Collection bound reached or all provider candidates are avoided</td><td>Avoided list holds up to 200 items. If all candidate images from your active provider are avoided, Local Wally preserves your current wallpaper rather than breaking.</td></tr>
 <tr><td><strong>Wallpaper or data does not update immediately</strong></td><td>Local Wally adheres to its configured refresh cadence (default 15 minutes)</td><td>Data refreshes automatically according to your <strong>Data Refresh Interval</strong> slider (5 to 30 minutes). Changing a provider setting in Lively immediately triggers a fresh sync.</td></tr>
 <tr><td><strong>HUD clock or hardware meters frozen after sleep</strong></td><td>System entered S0 Modern Standby or deep sleep</td><td>Update to the latest release. On resume from sleep or when the network comes back online, the clock synchronizes immediately and triggers a background refresh if elapsed time exceeds 15 minutes.</td></tr>
 <tr><td><strong>Visualizer or animation runs when a game is open</strong></td><td>Lively Wallpaper window pause event was not forwarded by host</td><td>Ensure Lively Wallpaper settings are set to <strong>Pause</strong> when applications are fullscreen or focused. In <code>LivelyInfo.json</code>, verify that <code>--pause-event true</code> is present in the arguments.</td></tr>

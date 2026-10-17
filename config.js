@@ -214,6 +214,17 @@
     // Custom Currents News API key (optional/blank by default)
     currentsApiKey: '',
 
+    // Geographic Focus Scope for Google News
+    // Default: 'balanced' | Options: 'nearby' (city only), 'balanced' (city with country fallback), 'wider' (country and world)
+    newsFocus: 'balanced',
+
+    // --------------------------------------------------------------------------
+    // 20c. ONEDRIVE CLOUD SETTINGS SYNC (OPTIONAL)
+    // --------------------------------------------------------------------------
+    oneDrive: {
+      clientId: '38977a41-21c6-430c-8d1e-e274a496b864'
+    },
+
     // --------------------------------------------------------------------------
     // 21. HARDWARE SYSTEM TELEMETRY MONITOR DISPLAY
     // --------------------------------------------------------------------------

@@ -85,6 +85,10 @@
     newsProvider: (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.newsProvider) || 'auto',
     newsApiKey: (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.newsApiKey) || '',
     currentsApiKey: (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.currentsApiKey) || '',
+    newsFocus: (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.newsFocus) || 'balanced',
+    _lastManualGoogleNewsPull: 0,
+    _WALLPAPER_FEEDBACK_KEY: 'local_wally_wallpaper_feedback',
+    _wallpaperFeedback: null,
 
     /**
      * Detects native physical display dimensions
@@ -124,7 +128,7 @@
     // ---- Location cascade (v0.8.7) ------------------------------------------
     // Order: manual entry → persisted auto location (prompt-free, instant) →
     // silent auto-detection. HTML5 Geolocation is consulted ONLY when the
-    // permission state is already 'granted' — a wallpaper never raises a
+    // permission state is already 'granted' - a wallpaper never raises a
     // permission dialog; without a prior grant the silent IP lookup runs.
 
     _LOCATION_AUTO_STORE_KEY: 'LIVELY_HUD_LOCATION_AUTO',
@@ -164,12 +168,12 @@
     /**
      * Resolves geographical coordinates for the whole pipeline.
      * Cascade:
-     *   1. Manual location (user entry via the diagnostic panel) — wins when
+     *   1. Manual location (user entry via the diagnostic panel) - wins when
      *      set; geocoded once and cached, boots stay instant and offline-safe.
-     *   2. Persisted auto location — instant paint, no detection, no prompts;
+     *   2. Persisted auto location - instant paint, no detection, no prompts;
      *      a silent background re-detect adopts city changes via
      *      onLocationChanged listeners.
-     *   3. Silent detection — HTML5 Geolocation only when its permission is
+     *   3. Silent detection - HTML5 Geolocation only when its permission is
      *      already 'granted' (never prompts), then the keyless IP lookup
      *      (ipapi.co), then config.defaultLocation.
      * @returns {Promise<{latitude, longitude, city, region, country, countryCode, source}>}
@@ -182,7 +186,7 @@
         // A broken/offline manual entry never breaks the atmosphere pipeline:
         // fall back to silent automatic detection without persisting. A
         // SUPERSEDED resolution (a newer intent landed while this one ran)
-        // gets one retry against the LATEST record instead — the stale boot
+        // gets one retry against the LATEST record instead - the stale boot
         // path must not jump to auto-detection while a newer manual intent
         // is in flight (v0.8.14).
         return this._resolveManual(manual).catch(function(manualErr) {
@@ -235,7 +239,7 @@
           return self._fetchJsonWithTimeout(url, timeoutMs);
         }
 
-        // 1. HTML5 Geolocation — silently only when already granted (v0.8.7):
+        // 1. HTML5 Geolocation - silently only when already granted (v0.8.7):
         //    navigator.permissions.query performs no prompt; any other state
         //    ('prompt', 'denied', unsupported API) skips GPS without asking.
         //    In WebView2, when PermissionRequested is unhandled by the host,
@@ -373,7 +377,7 @@
 
     /**
      * Silent background re-detect for boots that painted a persisted
-     * location. Adopts only when CITY (or country) actually changed —
+     * location. Adopts only when CITY (or country) actually changed -
      * coordinate jitter never flips the user's town. Notifies
      * onLocationChanged listeners so the HUD re-syncs for the new place.
      */
@@ -428,7 +432,7 @@
           JSON.stringify({ location: loc, detectedAt: new Date().toISOString() })
         );
       } catch (e) {
-        // Storage unavailable — detection stays ephemeral (rule: memory-first)
+        // Storage unavailable - detection stays ephemeral (rule: memory-first)
       }
     },
 
@@ -444,8 +448,8 @@
           var rec = JSON.parse(raw);
           if (rec && rec.entry) {
             // Self-heal against corrupt/hand-crafted records: reject entries
-            // that lack the fields their type requires — or fall outside
-            // geographic ranges — instead of feeding undefined into coordinate
+            // that lack the fields their type requires - or fall outside
+            // geographic ranges - instead of feeding undefined into coordinate
             // math downstream (R08). Zeros remain legitimate coordinates.
             if (rec.entry.type === 'coords' &&
                 this._isValidCoordPair(rec.entry.latitude, rec.entry.longitude)) {
@@ -492,13 +496,13 @@
           return;
         }
       } catch (e) {
-        // Storage unavailable — fall through to the memory-only record
+        // Storage unavailable - fall through to the memory-only record
       }
       this._memoryManualRecord = rec;
     },
 
-    // Manual-location intent generation (R02): every NEW user intent — typed
-    // entry, suggestion pick, clear/Auto, Customize delivery — bumps this
+    // Manual-location intent generation (R02): every NEW user intent - typed
+    // entry, suggestion pick, clear/Auto, Customize delivery - bumps this
     // counter. Asynchronous continuations capture it and become silent no-ops
     // when superseded: late geocodes can never restore an abandoned intent,
     // clear a newer valid result, or clobber storage/property mirrors.
@@ -580,7 +584,7 @@
         longErr.generation = gen;
         return Promise.reject(longErr);
       }
-      // A suggestion already carries its coordinates — skip the re-geocode
+      // A suggestion already carries its coordinates - skip the re-geocode
       // (and its re-ranking surprises): clicking "Bengaluru, India" must land
       // exactly on the row the user picked. Range-validated (v0.8.14); an
       // invalid pre-resolution falls through to the normal geocode path.
@@ -601,19 +605,19 @@
           return { ok: false, superseded: true, generation: gen, error: 'Superseded by a newer location intent' };
         }
         if (!list || !list.length) {
-          // R07: the LATEST requested name cannot resolve — the previous
+          // R07: the LATEST requested name cannot resolve - the previous
           // override is cleared and Auto takes over (generation-checked, so
           // an obsolete failure can never clear a newer valid result).
           self.clearManualLocation();
-          return { ok: false, error: 'No matching place found — check spelling' };
+          return { ok: false, error: 'No matching place found - check spelling' };
         }
         var top = list[0];
         // Validate the geocoder result before it can become active
         // (v0.8.14): invalid remote coordinates fail like any unresolvable
-        // latest name — override cleared, Auto takes over (R07).
+        // latest name - override cleared, Auto takes over (R07).
         if (!self._isValidCoordPair(top.latitude, top.longitude)) {
           self.clearManualLocation();
-          return { ok: false, error: 'Geocoder returned invalid coordinates — check spelling' };
+          return { ok: false, error: 'Geocoder returned invalid coordinates - check spelling' };
         }
         var rec = {
           // Canonical name (geocoder spelling) + the user's submitted alias
@@ -630,7 +634,7 @@
       }).catch(function(err) {
         // Tag EVERY rejection with its generation (QA v0.8.17): the UI catch
         // handler must distinguish an OBSOLETE failure (network error from an
-        // older intent) from the latest one — an untagged stale failure could
+        // older intent) from the latest one - an untagged stale failure could
         // otherwise clear a newer location.
         if (err && typeof err.generation !== 'number') err.generation = gen;
         throw err;
@@ -641,7 +645,7 @@
      * Marks the start of a manual-location intent and returns the new
      * generation (v0.8.14). The Customize dispatcher calls this BEFORE its
      * identical-value short-circuit, so even a re-delivered value invalidates
-     * pending older work — a pending B can never resolve after the user has
+     * pending older work - a pending B can never resolve after the user has
      * visibly returned to the saved location A.
      */
     beginManualIntent: function() {
@@ -673,7 +677,7 @@
       var t = text.trim().toLowerCase();
       if (rec.entry.type === 'name') {
         // The user may re-deliver the canonical geocoded name (Bengaluru),
-        // the alias they typed (Bangalore), or the resolved city label —
+        // the alias they typed (Bangalore), or the resolved city label -
         // all three match (R05).
         var candidates = [];
         if (rec.entry.name) candidates.push(String(rec.entry.name));
@@ -1295,7 +1299,7 @@
 
     /**
      * Formats the wall-clock hour (0-23) of an absolute instant in the given
-     * IANA timezone — DST-aware presentation (LW10). One cached Intl formatter
+     * IANA timezone - DST-aware presentation (LW10). One cached Intl formatter
      * per timezone. Falls back to host-local hour when tz is unusable.
      */
     formatTzHour: function(tz, epochMs) {
@@ -1326,7 +1330,7 @@
     },
 
     WeatherAdapter: {
-      normalizeOpenMeteo: function(data) {
+      normalizeOpenMeteo: function(data, options) {
         var current = data.current || {};
         var daily = data.daily || {};
         var hourly = data.hourly || {};
@@ -1337,6 +1341,21 @@
         var apparentC = current.apparent_temperature != null ? current.apparent_temperature : tempC;
         var tempMaxC = (daily.temperature_2m_max && daily.temperature_2m_max[0] != null) ? daily.temperature_2m_max[0] : (tempC + 3);
         var tempMinC = (daily.temperature_2m_min && daily.temperature_2m_min[0] != null) ? daily.temperature_2m_min[0] : (tempC - 4);
+
+        var observedAtUtc = null;
+        if (current.time != null) {
+          if (typeof current.time === 'number') {
+            observedAtUtc = current.time * 1000;
+          } else {
+            var parsedTime = new Date(current.time).getTime();
+            if (Number.isFinite(parsedTime)) observedAtUtc = parsedTime;
+          }
+        }
+
+        var opt = options || {};
+        var reqProv = opt.sourceRequested || 'open-meteo';
+        var actProv = 'open-meteo';
+        var isFallback = (opt.isFallback != null) ? !!opt.isFallback : (reqProv !== actProv);
 
         var weather = {
           tempC: Math.round(tempC * 10) / 10,
@@ -1365,7 +1384,15 @@
           cloudHigh: (current.cloud_cover_high != null && Number.isFinite(current.cloud_cover_high)) ? Math.max(0, Math.min(100, Math.round(current.cloud_cover_high))) : 0,
           precipitationMm: current.precipitation != null ? current.precipitation : 0.0,
           isDay: current.is_day != null ? current.is_day : 1,
-          timezone: data.timezone || null
+          timezone: data.timezone || null,
+          provenance: {
+            sourceRequested: reqProv,
+            sourceActual: actProv,
+            isFallback: isFallback,
+            fetchedAtUtc: (opt.fetchedAtUtc != null) ? opt.fetchedAtUtc : Date.now(),
+            observedAtUtc: observedAtUtc || null,
+            freshness: 'live'
+          }
         };
 
         var locTz = data.timezone || null;
@@ -1434,7 +1461,7 @@
         }
 
         // Full-resolution analytics series: every available hourly measurement
-        // with an absolute timestamp (LW08) — the chart's 8-point projection is
+        // with an absolute timestamp (LW08) - the chart's 8-point projection is
         // display-only and no longer the analytics source.
         var hourlyAnalytics = [];
         for (var a = 0; a < count; a++) {
@@ -1470,6 +1497,7 @@
 
         var result = Object.assign({}, weather, {
           weather: weather,
+          provenance: weather.provenance,
           hourlyForecast: hourlyForecast,
           hourlyAnalytics: hourlyAnalytics,
           hourly: hourlyForecast
@@ -1606,7 +1634,7 @@
             return res.json();
           })
           .then(function(data) {
-            return ApiService.WeatherAdapter.normalizeOpenMeteo(data);
+            return ApiService.WeatherAdapter.normalizeOpenMeteo(data, options);
           });
       },
 
@@ -1615,7 +1643,7 @@
         return ApiService.WeatherAdapter['open-meteo'](lat, lon, options);
       },
 
-      normalizeOpenWeatherMap: function(data) {
+      normalizeOpenWeatherMap: function(data, options) {
         var isOneCall = !!(data && data.current);
         var cur = isOneCall ? data.current : ((data.list && data.list[0]) || {});
         var main = cur.main || cur;
@@ -1665,6 +1693,13 @@
           normTz = tzSign + (tzH < 10 ? '0' : '') + tzH + ':' + (tzM < 10 ? '0' : '') + tzM;
         }
 
+        var dtSec = cur.dt || (data && data.dt);
+        var observedAtUtc = (dtSec != null && Number.isFinite(dtSec)) ? (dtSec * 1000) : null;
+        var opt = options || {};
+        var reqProv = opt.sourceRequested || 'openweathermap';
+        var actProv = 'openweathermap';
+        var isFallback = (opt.isFallback != null) ? !!opt.isFallback : (reqProv !== actProv);
+
         var weather = {
           tempC: Math.round(tempC * 10) / 10,
           tempF: Math.round(((tempC * 9 / 5) + 32) * 10) / 10,
@@ -1692,7 +1727,15 @@
           cloudHigh: (cur.clouds != null && Number.isFinite(cur.clouds)) ? Math.max(0, Math.min(100, Math.round(cur.clouds))) : ((cur.clouds && cur.clouds.all != null) ? Math.max(0, Math.min(100, Math.round(cur.clouds.all))) : 0),
           precipitationMm: Math.round(precipMm * 10) / 10,
           isDay: (weather0.icon && weather0.icon.indexOf('n') !== -1) ? 0 : 1,
-          timezone: normTz
+          timezone: normTz,
+          provenance: {
+            sourceRequested: reqProv,
+            sourceActual: actProv,
+            isFallback: isFallback,
+            fetchedAtUtc: (opt.fetchedAtUtc != null) ? opt.fetchedAtUtc : Date.now(),
+            observedAtUtc: observedAtUtc || null,
+            freshness: 'live'
+          }
         };
 
         var hourlyForecast = [];
@@ -1769,6 +1812,7 @@
 
         return Object.assign({}, weather, {
           weather: weather,
+          provenance: weather.provenance,
           hourlyForecast: hourlyForecast,
           hourlyAnalytics: hourlyAnalytics,
           hourly: hourlyForecast
@@ -1780,7 +1824,7 @@
         key = String(key || '').trim();
         if (!key) {
           console.warn('[ApiService] No OpenWeatherMap API key provided, falling back to open-meteo');
-          return ApiService.WeatherAdapter['open-meteo'](lat, lon, options);
+          return ApiService.WeatherAdapter['open-meteo'](lat, lon, Object.assign({}, options, { sourceRequested: 'openweathermap', isFallback: true }));
         }
 
         var oneCallUrl = 'https://api.openweathermap.org/data/3.0/onecall?' +
@@ -1809,15 +1853,15 @@
               });
           })
           .then(function(data) {
-            return ApiService.WeatherAdapter.normalizeOpenWeatherMap(data);
+            return ApiService.WeatherAdapter.normalizeOpenWeatherMap(data, options);
           })
           .catch(function(err) {
             console.warn('[ApiService] OpenWeatherMap fetch failed, falling back to open-meteo:', err.message);
-            return ApiService.WeatherAdapter['open-meteo'](lat, lon, options);
+            return ApiService.WeatherAdapter['open-meteo'](lat, lon, Object.assign({}, options, { sourceRequested: 'openweathermap', isFallback: true }));
           });
       },
 
-      normalizeWeatherApi: function(data) {
+      normalizeWeatherApi: function(data, options) {
         var cur = (data && data.current) || {};
         var loc = (data && data.location) || {};
         var forecastDays = (data && data.forecast && Array.isArray(data.forecast.forecastday)) ? data.forecast.forecastday : [];
@@ -1853,6 +1897,12 @@
         var isDay = cur.is_day === 1 ? 1 : (cur.is_day === 0 ? 0 : 1);
         var timezone = loc.tz_id || null;
 
+        var observedAtUtc = (cur.last_updated_epoch != null && Number.isFinite(cur.last_updated_epoch)) ? (cur.last_updated_epoch * 1000) : null;
+        var opt = options || {};
+        var reqProv = opt.sourceRequested || 'weatherapi';
+        var actProv = 'weatherapi';
+        var isFallback = (opt.isFallback != null) ? !!opt.isFallback : (reqProv !== actProv);
+
         var weather = {
           tempC: Math.round(tempC * 10) / 10,
           tempF: Math.round(tempF * 10) / 10,
@@ -1881,7 +1931,15 @@
           precipitationMm: precipMm,
           precipMm: precipMm,
           isDay: isDay,
-          timezone: timezone
+          timezone: timezone,
+          provenance: {
+            sourceRequested: reqProv,
+            sourceActual: actProv,
+            isFallback: isFallback,
+            fetchedAtUtc: (opt.fetchedAtUtc != null) ? opt.fetchedAtUtc : Date.now(),
+            observedAtUtc: observedAtUtc || null,
+            freshness: 'live'
+          }
         };
 
         var allHours = [];
@@ -1999,6 +2057,7 @@
 
         return Object.assign({}, weather, {
           weather: weather,
+          provenance: weather.provenance,
           hourlyForecast: hourlyForecast,
           hourlyAnalytics: hourlyAnalytics,
           hourly: hourlyForecast
@@ -2010,7 +2069,7 @@
         key = String(key || '').trim();
         if (!key) {
           console.warn('[ApiService] No WeatherAPI key provided, falling back to open-meteo');
-          return ApiService.WeatherAdapter['open-meteo'](lat, lon, options);
+          return ApiService.WeatherAdapter['open-meteo'](lat, lon, Object.assign({}, options, { sourceRequested: 'weatherapi', isFallback: true }));
         }
 
         var url = 'https://api.weatherapi.com/v1/forecast.json?key=' +
@@ -2024,11 +2083,11 @@
             return res.json();
           })
           .then(function(data) {
-            return ApiService.WeatherAdapter.normalizeWeatherApi(data);
+            return ApiService.WeatherAdapter.normalizeWeatherApi(data, options);
           })
           .catch(function(err) {
             console.warn('[ApiService] WeatherAPI fetch failed, falling back to open-meteo:', err.message);
-            return ApiService.WeatherAdapter['open-meteo'](lat, lon, options);
+            return ApiService.WeatherAdapter['open-meteo'](lat, lon, Object.assign({}, options, { sourceRequested: 'weatherapi', isFallback: true }));
           });
       }
     },
@@ -2355,7 +2414,7 @@
         return customKeyword.trim();
       }
       var cat = (weatherCategory || '').toUpperCase();
-      // v0.8.8: EVERY category carries a night variant — a night wallpaper
+      // v0.8.8: EVERY category carries a night variant - a night wallpaper
       // must never show a daylight scene (user report: green daytime field
       // at 8:58 PM). Stock sites match 'night ' tags well across providers.
       var nightPrefix = isDay ? '' : 'night ';
@@ -2381,12 +2440,183 @@
       }
     },
 
+    getWallpaperFeedback: function() {
+      var loaded = null;
+      try {
+        if (typeof localStorage !== 'undefined') {
+          var raw = localStorage.getItem('local_wally_wallpaper_feedback');
+          if (raw) {
+            var parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === 'object') {
+              loaded = {
+                favorites: Array.isArray(parsed.favorites) ? parsed.favorites.slice(0, 100) : [],
+                avoided: Array.isArray(parsed.avoided) ? parsed.avoided.slice(0, 200) : []
+              };
+            }
+          }
+        }
+      } catch (e) {}
+      if (loaded) {
+        this._wallpaperFeedback = loaded;
+        return loaded;
+      }
+      if (this._wallpaperFeedback && typeof this._wallpaperFeedback === 'object') {
+        return this._wallpaperFeedback;
+      }
+      this._wallpaperFeedback = { favorites: [], avoided: [] };
+      return this._wallpaperFeedback;
+    },
+
+    saveWallpaperFeedback: function(feedback) {
+      var fb = feedback || {};
+      var favs = Array.isArray(fb.favorites) ? fb.favorites : [];
+      var avs = Array.isArray(fb.avoided) ? fb.avoided : [];
+
+      var dedupFavs = [];
+      var seenFavKeys = Object.create(null);
+      for (var i = 0; i < favs.length; i++) {
+        var f = favs[i];
+        if (!f) continue;
+        var fKey = f.assetKey || (f.provider && f.id ? (f.provider + ':' + f.id) : (f.id || f.url));
+        if (fKey && !seenFavKeys[fKey]) {
+          seenFavKeys[fKey] = true;
+          if (!f.assetKey && fKey) f.assetKey = fKey;
+          dedupFavs.push(f);
+        }
+      }
+      dedupFavs = dedupFavs.slice(0, 100);
+
+      var dedupAvoided = [];
+      var seenAvoidKeys = Object.create(null);
+      for (var j = 0; j < avs.length; j++) {
+        var a = avs[j];
+        if (!a) continue;
+        var aKey = typeof a === 'string' ? a : (a.assetKey || (a.provider && a.id ? (a.provider + ':' + a.id) : (a.id || a.url)));
+        if (aKey && !seenAvoidKeys[aKey]) {
+          seenAvoidKeys[aKey] = true;
+          if (typeof a === 'object' && !a.assetKey) a.assetKey = aKey;
+          dedupAvoided.push(a);
+        }
+      }
+      dedupAvoided = dedupAvoided.slice(0, 200);
+
+      var payload = {
+        favorites: dedupFavs,
+        avoided: dedupAvoided
+      };
+      this._wallpaperFeedback = payload;
+      try {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('local_wally_wallpaper_feedback', JSON.stringify(payload));
+        }
+      } catch (e) {}
+      return payload;
+    },
+
+    addWallpaperFavorite: function(asset) {
+      if (!asset) return;
+      var key = asset.assetKey || (asset.provider && asset.id ? (asset.provider + ':' + asset.id) : (asset.id || asset.url));
+      if (!key) return;
+      var fb = this.getWallpaperFeedback();
+      var favs = fb.favorites.slice();
+      for (var i = favs.length - 1; i >= 0; i--) {
+        var k = favs[i].assetKey || (favs[i].provider && favs[i].id ? (favs[i].provider + ':' + favs[i].id) : (favs[i].id || favs[i].url));
+        if (k === key) {
+          favs.splice(i, 1);
+        }
+      }
+      var assetToStore = Object.assign({}, asset, { assetKey: key, savedAt: Date.now() });
+      favs.unshift(assetToStore);
+      fb.favorites = favs;
+      return this.saveWallpaperFeedback(fb);
+    },
+
+    removeWallpaperFavorite: function(assetKey) {
+      if (!assetKey) return;
+      var fb = this.getWallpaperFeedback();
+      fb.favorites = fb.favorites.filter(function(f) {
+        var k = f.assetKey || (f.provider && f.id ? (f.provider + ':' + f.id) : (f.id || f.url));
+        return k !== assetKey;
+      });
+      return this.saveWallpaperFeedback(fb);
+    },
+
+    avoidWallpaper: function(asset) {
+      if (!asset) return;
+      var key = (typeof asset === 'string') ? asset : (asset.assetKey || (asset.provider && asset.id ? (asset.provider + ':' + asset.id) : (asset.id || asset.url)));
+      if (!key) return;
+      var fb = this.getWallpaperFeedback();
+      var avoided = fb.avoided.slice();
+      avoided = avoided.filter(function(a) {
+        var k = typeof a === 'string' ? a : (a.assetKey || (a.provider && a.id ? (a.provider + ':' + a.id) : (a.id || a.url)));
+        return k !== key;
+      });
+      var itemToStore = (typeof asset === 'string') ? { assetKey: key, avoidedAt: Date.now() } : Object.assign({}, asset, { assetKey: key, avoidedAt: Date.now() });
+      avoided.unshift(itemToStore);
+      fb.avoided = avoided;
+      fb.favorites = fb.favorites.filter(function(f) {
+        var fk = f.assetKey || (f.provider && f.id ? (f.provider + ':' + f.id) : (f.id || f.url));
+        return fk !== key;
+      });
+      return this.saveWallpaperFeedback(fb);
+    },
+
+    undoAvoidWallpaper: function(assetKey) {
+      if (!assetKey) return;
+      var fb = this.getWallpaperFeedback();
+      fb.avoided = fb.avoided.filter(function(a) {
+        var k = typeof a === 'string' ? a : (a.assetKey || (a.provider && a.id ? (a.provider + ':' + a.id) : (a.id || a.url)));
+        return k !== assetKey;
+      });
+      return this.saveWallpaperFeedback(fb);
+    },
+
+    isWallpaperAvoided: function(assetKey) {
+      if (!assetKey) return false;
+      var fb = this.getWallpaperFeedback();
+      for (var i = 0; i < fb.avoided.length; i++) {
+        var a = fb.avoided[i];
+        var k = typeof a === 'string' ? a : (a.assetKey || (a.provider && a.id ? (a.provider + ':' + a.id) : (a.id || a.url)));
+        if (k === assetKey) return true;
+        if (a && a.id && a.id === assetKey) return true;
+        if (a && a.url && a.url === assetKey) return true;
+      }
+      return false;
+    },
+
+    isWallpaperFavorite: function(assetKey) {
+      if (!assetKey) return false;
+      var fb = this.getWallpaperFeedback();
+      for (var i = 0; i < fb.favorites.length; i++) {
+        var f = fb.favorites[i];
+        var k = f.assetKey || (f.provider && f.id ? (f.provider + ':' + f.id) : (f.id || f.url));
+        if (k === assetKey) return true;
+        if (f && f.id && f.id === assetKey) return true;
+        if (f && f.url && f.url === assetKey) return true;
+      }
+      return false;
+    },
+
     rankWallpaperCandidates: function(candidates, targetWidth, targetHeight) {
       if (!Array.isArray(candidates) || candidates.length === 0) return [];
       var targetAspect = targetWidth / targetHeight;
       var recentSet = new Set(this.getRecentWallpapers());
 
-      return candidates.slice().sort(function(a, b) {
+      var self = this;
+      var filtered = candidates.filter(function(c) {
+        if (!c) return false;
+        var key = c.assetKey || (c.provider && c.id ? (c.provider + ':' + c.id) : (c.id || c.url));
+        if (self.isWallpaperAvoided(key)) return false;
+        if (c.id && self.isWallpaperAvoided(c.id)) return false;
+        if (c.url && self.isWallpaperAvoided(c.url)) return false;
+        return true;
+      });
+      if (filtered.length === 0) {
+        return [];
+      }
+      var eligible = filtered;
+
+      return eligible.slice().sort(function(a, b) {
         var aInRecent = recentSet.has(a.id) || recentSet.has(a.url);
         var bInRecent = recentSet.has(b.id) || recentSet.has(b.url);
 
@@ -2537,7 +2767,7 @@
               };
             });
             var ranked = self.rankWallpaperCandidates(candidates, nativeRes.width, nativeRes.height);
-            return ranked[0];
+            return (ranked && ranked.length > 0) ? ranked[0] : null;
           });
       },
 
@@ -2627,6 +2857,26 @@
      * Unified wallpaper dispatcher supporting Unsplash, Wallhaven, Pexels, Pixabay,
      * rotation of configured sources, weather relevance, screen fit, and recent history.
      */
+    getCurrentBackgroundMetadata: function() {
+      try {
+        if (typeof localStorage !== 'undefined') {
+          var url = localStorage.getItem('local_wally_cached_bg_url');
+          if (url) {
+            return {
+              provider: localStorage.getItem('local_wally_cached_bg_provider') || 'unsplash',
+              id: 'retained-current',
+              url: url,
+              sourceUrl: 'https://unsplash.com',
+              photographer: localStorage.getItem('local_wally_cached_bg_photographer') || 'Current Wallpaper',
+              photographerUrl: localStorage.getItem('local_wally_cached_bg_photographer_url') || 'https://unsplash.com',
+              description: 'Retained current wallpaper'
+            };
+          }
+        }
+      } catch (e) {}
+      return null;
+    },
+
     fetchWallpaper: function(weatherCategory, isDay, customKeyword) {
       var self = this;
       var nativeRes = self.getNativeResolution();
@@ -2685,6 +2935,12 @@
             });
           }
           throw err;
+        })
+        .catch(function(err) {
+          console.warn('[ApiService] Candidate ranking or provider empty, retaining current wallpaper:', err && err.message);
+          var current = self.getCurrentBackgroundMetadata();
+          if (current) return current;
+          throw err;
         });
     },
 
@@ -2718,7 +2974,7 @@
 
       // Reject zoneless/date-only strings: Date.parse would silently apply the
       // host timezone (a bare YYYY-MM-DD even ends in "-DD", which superficially
-      // resembles an offset) — require a time component plus an explicit zone
+      // resembles an offset) - require a time component plus an explicit zone
       if (!/[T ]\d{2}:\d{2}/.test(s)) return null;
       var zoneStripped = s.replace(/\s*\([^)]*\)\s*$/, '');
       var hasExplicitZone = /(?:Z|[+-]\d{2}:?\d{2}|UT|GMT|EST|EDT|CST|CDT|MST|MDT|PST|PDT)$/i.test(zoneStripped);
@@ -2770,10 +3026,10 @@
      * @param {string} [countryCode]
      * @returns {Promise<Array<{title: string, source: string, link: string}>>} Top 5 articles
      */
-    fetchRegionalNews: function(cityName, countryCode) {
+    fetchRegionalNews: function(cityName, countryCode, focusScope) {
       var self = this;
       var cleanCity = (cityName && String(cityName).trim()) || 'Local';
-      // Unknown/invalid country codes become EMPTY — never an invented region
+      // Unknown/invalid country codes become EMPTY - never an invented region
       // (R03). Empty country slides the chain to the world edition.
       var cleanCountry = (countryCode && String(countryCode).trim().toUpperCase()) || '';
       if (cleanCountry.length !== 2) {
@@ -2783,10 +3039,10 @@
       var cityUsable = !this._isPlaceholderCity(cityName);
       var geoUrl = 'https://news.google.com/rss/headlines/section/geo/' + encodeURIComponent(cleanCity) +
         '?hl=en&gl=' + cleanCountry + '&ceid=' + cleanCountry + ':en';
-      // Country-level edition (was hardcoded US) — keyless users outside the US
+      // Country-level edition (was hardcoded US) - keyless users outside the US
       // get their own regional news instead of American headlines.
       // Country-level news edition (was hardcoded US; empty country = world
-      // edition) — local news for any region, honest for city-less pins.
+      // edition) - local news for any region, honest for city-less pins.
       var fallbackUrl = (cleanCountry)
         ? 'https://news.google.com/rss?hl=en&gl=' + cleanCountry + '&ceid=' + cleanCountry + ':en'
         : 'https://news.google.com/rss?hl=en';
@@ -2903,8 +3159,25 @@
         return attemptProxy(0);
       }
 
-      // Proximity-targeted geo RSS feed first; fall back to country/world edition
-      var geoAttempt = (cityUsable && cleanCountry)
+      var scope = focusScope || this.newsFocus || 'balanced';
+      var canGeo = (cityUsable && cleanCountry);
+
+      if (scope === 'nearby') {
+        if (!canGeo) return Promise.reject(new Error('Nearby geo news skipped: no usable locality/country'));
+        return requestXml(geoUrl);
+      }
+
+      if (scope === 'wider') {
+        return requestXml(fallbackUrl).catch(function(err) {
+          if (canGeo) {
+            return requestXml(geoUrl);
+          }
+          throw err;
+        });
+      }
+
+      // Default: balanced (geoUrl first, fall back to fallbackUrl)
+      var geoAttempt = canGeo
         ? requestXml(geoUrl)
         : Promise.reject(new Error('Geo RSS skipped: no usable locality/country'));
       return geoAttempt.catch(function() {
@@ -2912,12 +3185,38 @@
       });
       // Terminal fallback policy (LW05): errors propagate to fetchNews, which
       // serves matching real cached stories (stale-marked) or an explicit
-      // unavailable state — never fabricated headlines.
+      // unavailable state - never fabricated headlines.
+    },
+
+    manualPullGoogleNews: function(cityName, countryCode, focusScope) {
+      var now = Date.now();
+      var COOLDOWN_MS = 30000;
+      if (this._lastManualGoogleNewsPull && (now - this._lastManualGoogleNewsPull < COOLDOWN_MS)) {
+        var secondsLeft = Math.ceil((COOLDOWN_MS - (now - this._lastManualGoogleNewsPull)) / 1000);
+        return Promise.resolve({
+          ok: false,
+          coolingDown: true,
+          secondsLeft: secondsLeft,
+          error: 'Cooldown active. Please wait ' + secondsLeft + 's.'
+        });
+      }
+      this._lastManualGoogleNewsPull = now;
+      var self = this;
+      return this.fetchRegionalNews(cityName, countryCode, focusScope)
+        .then(function(articles) {
+          if (!articles || articles.length === 0) {
+            return { ok: false, error: 'No articles found' };
+          }
+          return { ok: true, articles: articles };
+        })
+        .catch(function(err) {
+          return { ok: false, error: (err && err.message) || 'Failed to pull Google News' };
+        });
     },
 
     NewsAdapter: {
       'google-news': function(city, countryCode) {
-        return ApiService.fetchRegionalNews(city, countryCode).then(function(articles) {
+        return ApiService.fetchRegionalNews(city, countryCode, ApiService.newsFocus).then(function(articles) {
           return (articles || []).filter(function(a) {
             return a && a.link && /^https:\/\//i.test(a.link);
           }).map(function(a) {
@@ -3086,7 +3385,7 @@
     // a quota-safety guarantee, not a tunable: 15 min = at most 96 network
     // calls/day per keyed provider, under every known free-tier daily ceiling
     // (NewsAPI ~100/day; Currents 200/day). Do not expose it in Lively
-    // Properties or config.js — a user-facing knob would invite 5-minute
+    // Properties or config.js - a user-facing knob would invite 5-minute
     // polling and burned keys. (v0.8.5)
     NEWS_QUOTA_COOLDOWN_KEYED_MS: 15 * 60 * 1000,
     // KEYLESS (Google News chain: GDELT + public RSS gateways): a true 5-minute
@@ -3197,7 +3496,7 @@
 
     /**
      * Persists the quota stamps. Returns TRUE only when the write actually
-     * landed (v0.8.14): keyed reservations are durable evidence — if this
+     * landed (v0.8.14): keyed reservations are durable evidence - if this
      * cannot be written, the caller fails the request CLOSED instead of
      * granting a private in-memory window that the next reload forgets.
      */
@@ -3268,8 +3567,8 @@
 
     /**
      * Atomic quota reservation for ONE keyed news HTTP request (R01/R10).
-     * The window is reserved at the actual request boundary — every keyed
-     * GET consumes eligibility — and, when the host exposes the Web Locks
+     * The window is reserved at the actual request boundary - every keyed
+     * GET consumes eligibility - and, when the host exposes the Web Locks
      * API, the read-check-persist critical section is serialized across
      * wallpaper instances sharing this storage bucket (rereads persisted
      * stamps inside the lock, merges, checks, then persists the
@@ -3309,7 +3608,7 @@
 
     /**
      * The single gate every KEYED news HTTP call must pass (R01): reserves
-     * the provider's window first — one HTTP GET = one consumed window —
+     * the provider's window first - one HTTP GET = one consumed window -
      * then issues the request. Never bypass; never batch several GETs into
      * one reservation.
      */
@@ -3317,7 +3616,7 @@
       var self = this;
       return this._reserveNewsWindow(provider).then(function(granted) {
         if (!granted) {
-          return Promise.reject(new Error('Quota window active for ' + provider + ' — deferring to the next eligible window'));
+          return Promise.reject(new Error('Quota window active for ' + provider + ' - deferring to the next eligible window'));
         }
         return self.fetchWithTimeout(url, timeoutMs, { headers: headers });
       });
@@ -3327,7 +3626,7 @@
 
     /**
      * Lightweight in-memory per-provider outcome record for the D-panel news
-     * status line (v0.8.15) — how the user can SEE why a card is empty:
+     * status line (v0.8.15) - how the user can SEE why a card is empty:
      * attempted query, result count, tier and time of the last attempt.
      */
     _newsLastOutcome: {},
@@ -3396,7 +3695,7 @@
     },
 
     /**
-     * True when a keyed provider has a PENDING tier for this location — the
+     * True when a keyed provider has a PENDING tier for this location - the
      * honest "regional stories arrive within 15 minutes" condition (v0.8.15).
      */
     newsPendingSummary: function(city, country) {
@@ -3481,14 +3780,14 @@
      * GET is issued per attempt. On success the tier is remembered as
      * working; on empty/failure the NEXT tier is retained as pending intent
      * for the next eligible window (a remembered working tier earns one
-     * same-tier retry before advancing — bounded reset-once semantics).
+     * same-tier retry before advancing - bounded reset-once semantics).
      * Discovery across region tiers therefore spans cooldown windows by
      * design; the cross-provider ladder still tries other eligible
      * providers in the SAME attempt.
      *
      * v0.8.12: country-level memory. When a tier has proven to work for ANY
      * location in a country, a NEW location in that country starts directly
-     * at that tier — so a manual city like Bengaluru inherits India's
+     * at that tier - so a manual city like Bengaluru inherits India's
      * working tier immediately instead of rediscovering tiers window by
      * window. Country keys live at `<provider>||<CC>` and only ever store
      * successes.
@@ -3512,7 +3811,7 @@
       }
       // Fresh identities (no exact state) start at the CITY tier (tier 0):
       // local news is the better product when it exists. The country memory
-      // is the FALLBACK TARGET — if the city tier comes back empty, the
+      // is the FALLBACK TARGET - if the city tier comes back empty, the
       // proven reusable country tier is pended directly (v0.8.14), so an
       // empty-city location still lands on real news in its next eligible
       // window instead of walking tiers one by one.
@@ -3560,7 +3859,7 @@
           }
           if (!hasNext) nextTier = entry.tier; // last tier: retry it next window
           self._writeNewsTierState(tierKey, { tier: nextTier, status: 'pending' });
-          return Promise.reject(new Error(provider + ' window consumed — next tier pending for the next eligible window'));
+          return Promise.reject(new Error(provider + ' window consumed - next tier pending for the next eligible window'));
         }
       );
     },
@@ -3569,12 +3868,12 @@
      * Regional news dispatcher with identity-bound request isolation (LW04),
      * an unbypassable per-provider quota firewall (LW06/v0.8.11 R01: every
      * KEYED HTTP GET reserves its own 15-minute window at the request
-     * boundary — one GET per window per provider; the keyless chain is one
+     * boundary - one GET per window per provider; the keyless chain is one
      * logical attempt per 5-minute window), a 5-minute query-aware response
      * cache, rotation when keyed providers exist, and a cross-provider
      * ladder (keyed first, keyless last; every leg inside its own window).
      * Terminal failures surface matching real cached stories (stale-marked)
-     * or an empty unavailable state — never fabricated headlines (LW05).
+     * or an empty unavailable state - never fabricated headlines (LW05).
      * There is deliberately NO force parameter: nothing may bypass the
      * quota firewall.
      */
@@ -3672,7 +3971,7 @@
         }
       }
 
-      // Quota firewall — cannot be bypassed by settings events or refresh paths (LW06)
+      // Quota firewall - cannot be bypassed by settings events or refresh paths (LW06)
       if (!self._newsCooldownReady(primaryProvider)) {
         if (cachedEnvelope && cachedEnvelope.timestamp &&
             envelopeMatches(cachedEnvelope) &&
@@ -3713,7 +4012,7 @@
           if (isSuperseded()) return [];
           // Cross-provider ladder (v0.8.9): try every remaining ELIGIBLE
           // provider (both keyed first, then the keyless Google News chain),
-          // each leg inside its own quota window — no firewall bypass.
+          // each leg inside its own quota window - no firewall bypass.
           // Keyed providers first, keyless Google News chain last (v0.8.9)
           var remaining = [];
           for (var pi = 0; pi < eligible.length; pi++) {
@@ -3775,7 +4074,7 @@
       self._newsInflightCount++;
       self._newsInflightOrder.push(identity);
       // Bounded in-flight map: evict the OLDEST entry past a hard cap so live
-      // dedupe entries survive — only the single oldest identity loses
+      // dedupe entries survive - only the single oldest identity loses
       // protection (CORR-7), never the whole map.
       if (self._newsInflightOrder.length > 16) {
         var oldestIdentity = self._newsInflightOrder.shift();
@@ -3823,7 +4122,7 @@
 
       return self.getLocation().then(function(loc) {
         // Fetch news asynchronously in the background so it never blocks ready weather updates.
-        // News network eligibility is decided by its own quota firewall — an
+        // News network eligibility is decided by its own quota firewall - an
         // atmosphere/wallpaper force refresh can no longer bypass it (LW06).
         var newsPromise = self.fetchNews(loc.city, loc.countryCode || loc.country)
           .catch(function(err) {

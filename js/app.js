@@ -2319,7 +2319,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
      * Product version (v0.15.0). Rendered into #hud-version (bottom-right of
      * the card) so the running build is identifiable at a glance.
      */
-    VERSION: '0.15.0',
+    VERSION: '0.16.0',
     showCelestial: true,
     showAqi: true,
     showEnvironmentalMetrics: true,
@@ -2354,6 +2354,11 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       this.updateGpuDiagnostics();
       this.bindEvents();
       this.bindLively();
+      this.initWallpaperFeedbackUI();
+      this.initOneDriveSyncUI();
+      if (typeof global.OneDriveSync !== 'undefined' && typeof global.OneDriveSync.init === 'function') {
+        global.OneDriveSync.init();
+      }
 
       // Render initial celestial ephemeris & clock
       this.renderCelestial();
@@ -2420,6 +2425,422 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
     },
 
+    initWallpaperFeedbackUI: function() {
+      var self = this;
+      if (this.dom.wpActionFav && typeof this.dom.wpActionFav.addEventListener === 'function') {
+        this.dom.wpActionFav.addEventListener('click', function() {
+          var asset = self.getCurrentWallpaperAsset();
+          if (!asset || !global.ApiService || typeof global.ApiService.toggleWallpaperFavorite !== 'function') return;
+          var res = global.ApiService.toggleWallpaperFavorite(asset);
+          self.updateWallpaperFeedbackUI();
+          if (self.dom.wpFavoritesDrawer && !self.dom.wpFavoritesDrawer.classList.contains('is-hidden')) {
+            self.renderFavoritesDrawerList();
+          }
+        });
+      }
+
+      if (this.dom.wpActionAvoid && typeof this.dom.wpActionAvoid.addEventListener === 'function') {
+        this.dom.wpActionAvoid.addEventListener('click', function() {
+          var asset = self.getCurrentWallpaperAsset();
+          if (!asset || !global.ApiService || typeof global.ApiService.avoidWallpaper !== 'function') return;
+          var key = asset.assetKey || asset.id || asset.url;
+          self._lastAvoidedAssetKey = key;
+          global.ApiService.avoidWallpaper(asset);
+          self.updateWallpaperFeedbackUI();
+
+          if (self.dom.wpAvoidToast) {
+            self.dom.wpAvoidToast.classList.remove('is-hidden');
+            clearTimeout(self._avoidToastTimer);
+            self._avoidToastTimer = setTimeout(function() {
+              if (self.dom.wpAvoidToast) self.dom.wpAvoidToast.classList.add('is-hidden');
+            }, 6000);
+          }
+
+          // Rotate wallpaper to next un-avoided candidate
+          self.loadAtmosphere(true);
+        });
+      }
+
+      if (this.dom.wpAvoidUndoBtn && typeof this.dom.wpAvoidUndoBtn.addEventListener === 'function') {
+        this.dom.wpAvoidUndoBtn.addEventListener('click', function() {
+          if (self._lastAvoidedAssetKey && global.ApiService && typeof global.ApiService.undoAvoidWallpaper === 'function') {
+            global.ApiService.undoAvoidWallpaper(self._lastAvoidedAssetKey);
+            self._lastAvoidedAssetKey = null;
+          }
+          if (self.dom.wpAvoidToast) {
+            self.dom.wpAvoidToast.classList.add('is-hidden');
+          }
+          self.updateWallpaperFeedbackUI();
+        });
+      }
+
+      if (this.dom.wpActionFavoritesDrawer && typeof this.dom.wpActionFavoritesDrawer.addEventListener === 'function') {
+        this.dom.wpActionFavoritesDrawer.addEventListener('click', function() {
+          var isClosed = !self.dom.wpFavoritesDrawer || self.dom.wpFavoritesDrawer.classList.contains('is-hidden');
+          if (isClosed) {
+            self.openWallpaperFavoritesDrawer();
+          } else {
+            self.closeWallpaperFavoritesDrawer();
+          }
+        });
+      }
+
+      if (this.dom.wpDrawerClose && typeof this.dom.wpDrawerClose.addEventListener === 'function') {
+        this.dom.wpDrawerClose.addEventListener('click', function() {
+          self.closeWallpaperFavoritesDrawer();
+        });
+      }
+
+      this.updateWallpaperFeedbackUI();
+    },
+
+    getCurrentWallpaperAsset: function() {
+      var bg = this.currentWallpaper;
+      var url = this.lastBgUrl || (bg && bg.url);
+      if (!url && typeof localStorage !== 'undefined') {
+        try {
+          url = localStorage.getItem('local_wally_cached_bg_url') || '';
+        } catch (e) {
+          url = '';
+        }
+      }
+      if (!url) return null;
+      var provider = (bg && bg.provider) || 'unsplash';
+      var photographer = (bg && bg.photographer) || 'Artist';
+      var photographerUrl = (bg && bg.photographerUrl) || 'https://unsplash.com';
+      try {
+        if (typeof localStorage !== 'undefined') {
+          provider = (bg && bg.provider) || localStorage.getItem('local_wally_cached_bg_provider') || 'unsplash';
+          photographer = (bg && bg.photographer) || localStorage.getItem('local_wally_cached_bg_photographer') || 'Artist';
+          photographerUrl = (bg && bg.photographerUrl) || localStorage.getItem('local_wally_cached_bg_photographer_url') || 'https://unsplash.com';
+        }
+      } catch (e) {}
+      var id = (bg && bg.id) ? String(bg.id) : url.replace(/[^a-zA-Z0-9]/g, '').slice(-16);
+      var assetKey = provider + ':' + id;
+      var sourceUrl = (bg && bg.sourceUrl) || url;
+      return {
+        provider: provider,
+        id: id,
+        assetKey: assetKey,
+        url: url,
+        photographer: photographer,
+        photographerUrl: photographerUrl,
+        sourceUrl: sourceUrl
+      };
+    },
+
+    setCustomWallpaper: function(urlOrAsset) {
+      if (!urlOrAsset) return;
+      var asset = (typeof urlOrAsset === 'string') ? {
+        url: urlOrAsset,
+        provider: 'custom',
+        photographer: 'Custom Selection',
+        photographerUrl: urlOrAsset,
+        sourceUrl: urlOrAsset
+      } : urlOrAsset;
+      this.currentWallpaper = asset;
+      this.updateBackground(asset);
+      this.updateWallpaperFeedbackUI();
+    },
+
+    openWallpaperFavoritesDrawer: function() {
+      if (!this.dom.wpFavoritesDrawer) return;
+      this.dom.wpFavoritesDrawer.classList.remove('is-hidden');
+      if (typeof this.dom.wpFavoritesDrawer.setAttribute === 'function') {
+        this.dom.wpFavoritesDrawer.setAttribute('aria-hidden', 'false');
+      }
+      if (this.dom.wpActionFavoritesDrawer && typeof this.dom.wpActionFavoritesDrawer.setAttribute === 'function') {
+        this.dom.wpActionFavoritesDrawer.setAttribute('aria-expanded', 'true');
+      }
+      this.renderFavoritesDrawerList();
+    },
+
+    closeWallpaperFavoritesDrawer: function() {
+      if (!this.dom.wpFavoritesDrawer) return;
+      this.dom.wpFavoritesDrawer.classList.add('is-hidden');
+      if (typeof this.dom.wpFavoritesDrawer.setAttribute === 'function') {
+        this.dom.wpFavoritesDrawer.setAttribute('aria-hidden', 'true');
+      }
+      if (this.dom.wpActionFavoritesDrawer && typeof this.dom.wpActionFavoritesDrawer.setAttribute === 'function') {
+        this.dom.wpActionFavoritesDrawer.setAttribute('aria-expanded', 'false');
+      }
+    },
+
+    updateWallpaperFeedbackUI: function() {
+      var asset = this.getCurrentWallpaperAsset();
+      var fb = (global.ApiService && typeof global.ApiService.getWallpaperFeedback === 'function')
+        ? global.ApiService.getWallpaperFeedback()
+        : { favorites: [], avoided: [] };
+      var favs = (fb && fb.favorites) || [];
+
+      if (this.dom.wpActionFav && asset && global.ApiService) {
+        var key = asset.assetKey || asset.id || asset.url;
+        var isFav = (typeof global.ApiService.isWallpaperFavorite === 'function') &&
+                    (global.ApiService.isWallpaperFavorite(key) ||
+                     global.ApiService.isWallpaperFavorite(asset.id) ||
+                     global.ApiService.isWallpaperFavorite(asset.url));
+        if (isFav) {
+          if (this.dom.wpActionFav.classList && typeof this.dom.wpActionFav.classList.add === 'function') {
+            this.dom.wpActionFav.classList.add('is-favorited');
+          }
+          this.dom.wpActionFav.title = 'Remove current wallpaper from favorites';
+          var span = (typeof this.dom.wpActionFav.querySelector === 'function') ? this.dom.wpActionFav.querySelector('span') : null;
+          if (span) span.textContent = 'Favorited';
+          var svg = (typeof this.dom.wpActionFav.querySelector === 'function') ? this.dom.wpActionFav.querySelector('svg') : null;
+          if (svg && typeof svg.setAttribute === 'function') svg.setAttribute('fill', '#f59e0b');
+        } else {
+          if (this.dom.wpActionFav.classList && typeof this.dom.wpActionFav.classList.remove === 'function') {
+            this.dom.wpActionFav.classList.remove('is-favorited');
+          }
+          this.dom.wpActionFav.title = 'Save current wallpaper to favorites';
+          var span2 = (typeof this.dom.wpActionFav.querySelector === 'function') ? this.dom.wpActionFav.querySelector('span') : null;
+          if (span2) span2.textContent = 'Favorite';
+          var svg2 = (typeof this.dom.wpActionFav.querySelector === 'function') ? this.dom.wpActionFav.querySelector('svg') : null;
+          if (svg2 && typeof svg2.setAttribute === 'function') svg2.setAttribute('fill', 'none');
+        }
+      }
+
+      if (this.dom.wpActionFavoritesDrawer) {
+        var spanDrawer = (typeof this.dom.wpActionFavoritesDrawer.querySelector === 'function')
+          ? this.dom.wpActionFavoritesDrawer.querySelector('span')
+          : null;
+        if (spanDrawer) spanDrawer.textContent = 'Saved (' + favs.length + ')';
+      }
+
+      if (this.dom.wpFavoritesDrawer && !this.dom.wpFavoritesDrawer.classList.contains('is-hidden')) {
+        this.renderFavoritesDrawerList();
+      }
+    },
+
+    renderFavoritesDrawerList: function() {
+      var self = this;
+      if (!this.dom.wpDrawerList) return;
+      var fb = (global.ApiService && typeof global.ApiService.getWallpaperFeedback === 'function')
+        ? global.ApiService.getWallpaperFeedback()
+        : { favorites: [] };
+      var favs = (fb && fb.favorites) || [];
+
+      if (favs.length === 0) {
+        if (this.dom.wpDrawerEmpty && this.dom.wpDrawerEmpty.classList) this.dom.wpDrawerEmpty.classList.remove('is-hidden');
+        this.dom.wpDrawerList.innerHTML = '';
+        return;
+      }
+
+      if (this.dom.wpDrawerEmpty && this.dom.wpDrawerEmpty.classList) this.dom.wpDrawerEmpty.classList.add('is-hidden');
+      var html = '';
+      for (var i = 0; i < favs.length; i++) {
+        var it = favs[i];
+        var thumb = it.url || '';
+        var author = it.photographer || 'Artist';
+        var prov = it.provider || 'wallpaper';
+        var key = it.assetKey || (prov + ':' + it.id);
+
+        html += '<div class="wp-fav-item" data-key="' + key + '">' +
+          '<img class="wp-fav-thumb" src="' + thumb + '" alt="Wallpaper preview" loading="lazy" />' +
+          '<div class="wp-fav-info">' +
+            '<span class="wp-fav-author">' + author + '</span>' +
+            '<span class="wp-fav-provider">' + prov + '</span>' +
+          '</div>' +
+          '<div class="wp-fav-actions">' +
+            '<button class="wp-fav-apply-btn" data-key="' + key + '" title="Apply this wallpaper">Apply</button>' +
+            '<button class="wp-fav-remove-btn" data-key="' + key + '" title="Remove from favorites">&times;</button>' +
+          '</div>' +
+        '</div>';
+      }
+      this.dom.wpDrawerList.innerHTML = html;
+
+      var applyButtons = this.dom.wpDrawerList.querySelectorAll ? this.dom.wpDrawerList.querySelectorAll('.wp-fav-apply-btn') : [];
+      for (var a = 0; a < applyButtons.length; a++) {
+        applyButtons[a].addEventListener('click', function() {
+          var k = this.getAttribute('data-key');
+          var found = favs.find(function(f) { return (f.assetKey || (f.provider + ':' + f.id)) === k; });
+          if (found) {
+            self.setCustomWallpaper(found);
+          }
+        });
+      }
+
+      var removeButtons = this.dom.wpDrawerList.querySelectorAll ? this.dom.wpDrawerList.querySelectorAll('.wp-fav-remove-btn') : [];
+      for (var r = 0; r < removeButtons.length; r++) {
+        removeButtons[r].addEventListener('click', function() {
+          var k = this.getAttribute('data-key');
+          if (k && global.ApiService && typeof global.ApiService.removeWallpaperFavorite === 'function') {
+            global.ApiService.removeWallpaperFavorite(k);
+            self.updateWallpaperFeedbackUI();
+          }
+        });
+      }
+    },
+
+    initOneDriveSyncUI: function() {
+      var self = this;
+      this.dom.onedriveStatusLabel = document.getElementById('onedrive-status-label');
+      this.dom.onedriveConnectBtn = document.getElementById('onedrive-connect-btn');
+      this.dom.onedriveSyncBtn = document.getElementById('onedrive-sync-btn');
+      this.dom.onedriveDisconnectBtn = document.getElementById('onedrive-disconnect-btn');
+      this.dom.onedriveSyncDetail = document.getElementById('onedrive-sync-detail');
+      this.dom.onedriveAuthModal = document.getElementById('onedrive-auth-modal');
+      this.dom.onedriveModalClose = document.getElementById('onedrive-modal-close');
+      this.dom.onedriveModalCancel = document.getElementById('onedrive-modal-cancel');
+      this.dom.onedriveUserCode = document.getElementById('onedrive-user-code');
+      this.dom.onedriveCopyCodeBtn = document.getElementById('onedrive-copy-code-btn');
+      this.dom.onedriveAuthUrl = document.getElementById('onedrive-auth-url');
+      this.dom.onedriveAuthStatus = document.getElementById('onedrive-auth-status');
+
+      if (this.dom.onedriveConnectBtn) {
+        this.dom.onedriveConnectBtn.addEventListener('click', function() {
+          self.openOneDriveAuthModal();
+        });
+      }
+
+      if (this.dom.onedriveSyncBtn) {
+        this.dom.onedriveSyncBtn.addEventListener('click', function() {
+          if (!global.OneDriveSync) return;
+          if (self.dom.onedriveSyncDetail) self.dom.onedriveSyncDetail.textContent = 'Syncing...';
+          global.OneDriveSync.sync(true).then(function() {
+            self.updateOneDriveUI();
+          }).catch(function() {
+            self.updateOneDriveUI();
+          });
+        });
+      }
+
+      if (this.dom.onedriveDisconnectBtn) {
+        this.dom.onedriveDisconnectBtn.addEventListener('click', function() {
+          if (global.OneDriveSync) {
+            global.OneDriveSync.disconnect();
+          }
+          self.updateOneDriveUI();
+        });
+      }
+
+      if (this.dom.onedriveCopyCodeBtn) {
+        this.dom.onedriveCopyCodeBtn.addEventListener('click', function() {
+          var code = self.dom.onedriveUserCode ? self.dom.onedriveUserCode.textContent.trim() : '';
+          if (code && code !== '--------') {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(code);
+            }
+            var origText = self.dom.onedriveCopyCodeBtn.textContent;
+            self.dom.onedriveCopyCodeBtn.textContent = 'Copied!';
+            setTimeout(function() {
+              if (self.dom.onedriveCopyCodeBtn) self.dom.onedriveCopyCodeBtn.textContent = origText;
+            }, 2000);
+          }
+        });
+      }
+
+      if (this.dom.onedriveModalClose) {
+        this.dom.onedriveModalClose.addEventListener('click', function() {
+          self.closeOneDriveAuthModal();
+        });
+      }
+
+      if (this.dom.onedriveModalCancel) {
+        this.dom.onedriveModalCancel.addEventListener('click', function() {
+          self.closeOneDriveAuthModal();
+        });
+      }
+
+      this._onedrivePollTimer = setInterval(function() {
+        if (!self.isPlaybackPaused) self.updateOneDriveUI();
+      }, 3000);
+
+      this.updateOneDriveUI();
+    },
+
+    openOneDriveAuthModal: function() {
+      var self = this;
+      if (!this.dom.onedriveAuthModal) return;
+      this.dom.onedriveAuthModal.classList.remove('is-hidden');
+      this.dom.onedriveAuthModal.setAttribute('aria-hidden', 'false');
+
+      if (this.dom.onedriveAuthStatus) this.dom.onedriveAuthStatus.textContent = 'Generating device sign-in code...';
+      if (this.dom.onedriveUserCode) this.dom.onedriveUserCode.textContent = '--------';
+
+      if (global.OneDriveSync && typeof global.OneDriveSync.startDeviceAuth === 'function') {
+        global.OneDriveSync.startDeviceAuth().then(function(authData) {
+          if (self.dom.onedriveUserCode) self.dom.onedriveUserCode.textContent = authData.user_code;
+          if (self.dom.onedriveAuthUrl) {
+            self.dom.onedriveAuthUrl.href = authData.verification_uri || 'https://microsoft.com/devicelogin';
+            self.dom.onedriveAuthUrl.textContent = 'Open ' + (authData.verification_uri || 'microsoft.com/devicelogin');
+          }
+          if (self.dom.onedriveAuthStatus) {
+            self.dom.onedriveAuthStatus.textContent = 'Enter code ' + authData.user_code + ' at the Microsoft login portal.';
+          }
+          global.OneDriveSync.pollToken(authData.device_code, authData.interval, function(authSuccess) {
+            if (self.dom.onedriveAuthStatus) self.dom.onedriveAuthStatus.textContent = 'Connected successfully!';
+            setTimeout(function() {
+              self.closeOneDriveAuthModal();
+              self.updateOneDriveUI();
+            }, 1200);
+          }, function(authErr) {
+            if (self.dom.onedriveAuthStatus) {
+              self.dom.onedriveAuthStatus.textContent = (authErr && authErr.message) || 'Authentication failed';
+            }
+            self.updateOneDriveUI();
+          });
+        }).catch(function(err) {
+          if (self.dom.onedriveAuthStatus) self.dom.onedriveAuthStatus.textContent = 'Failed: ' + (err && err.message);
+          self.updateOneDriveUI();
+        });
+      }
+    },
+
+    closeOneDriveAuthModal: function() {
+      if (this.dom.onedriveAuthModal) {
+        this.dom.onedriveAuthModal.classList.add('is-hidden');
+        this.dom.onedriveAuthModal.setAttribute('aria-hidden', 'true');
+      }
+      if (global.OneDriveSync && typeof global.OneDriveSync.cancelDeviceAuth === 'function') {
+        global.OneDriveSync.cancelDeviceAuth();
+      }
+      this.updateOneDriveUI();
+    },
+
+    updateOneDriveUI: function() {
+      if (!global.OneDriveSync) return;
+      var status = global.OneDriveSync.getStatus();
+      var isConnected = status.connected;
+      var state = status.state;
+      var lastSync = status.lastSyncTime;
+      var lastErr = status.lastError;
+
+      if (this.dom.onedriveStatusLabel) {
+        var labelText = 'Not connected';
+        if (state === 'auth_pending') labelText = 'Sign-in pending...';
+        else if (state === 'syncing') labelText = 'Syncing...';
+        else if (state === 'up_to_date') labelText = 'Connected & synced';
+        else if (state === 'offline') labelText = 'Offline (cached)';
+        else if (state === 'sign_in_needed') labelText = 'Sign-in expired';
+        else if (state === 'conflict') labelText = 'Conflict resolved';
+        else if (state === 'error') labelText = 'Sync error';
+        else if (isConnected) labelText = 'Connected';
+        this.dom.onedriveStatusLabel.textContent = labelText;
+      }
+
+      if (this.dom.onedriveSyncDetail) {
+        var detailText = '';
+        if (lastSync > 0) {
+          detailText = 'Last synced: ' + new Date(lastSync).toLocaleTimeString();
+        }
+        if (lastErr) {
+          detailText += (detailText ? ' · ' : '') + 'Error: ' + lastErr;
+        }
+        this.dom.onedriveSyncDetail.textContent = detailText;
+      }
+
+      if (this.dom.onedriveConnectBtn) {
+        this.dom.onedriveConnectBtn.style.display = isConnected ? 'none' : 'inline-flex';
+      }
+      if (this.dom.onedriveSyncBtn) {
+        this.dom.onedriveSyncBtn.style.display = isConnected ? 'inline-flex' : 'none';
+      }
+      if (this.dom.onedriveDisconnectBtn) {
+        this.dom.onedriveDisconnectBtn.style.display = isConnected ? 'inline-flex' : 'none';
+      }
+    },
+
     cacheDom: function() {
       this.dom = {
         viewport: document.getElementById('viewport'),
@@ -2435,6 +2856,28 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         hudClock: document.getElementById('hud-clock'),
         hudDate: document.getElementById('hud-date'),
         hudLocationText: document.getElementById('hud-location-text'),
+        hudWeatherFreshness: document.getElementById('hud-weather-freshness'),
+        wpActionFav: document.getElementById('wp-action-fav'),
+        wpActionAvoid: document.getElementById('wp-action-avoid'),
+        wpActionFavoritesDrawer: document.getElementById('wp-action-favorites-drawer'),
+        wpFavoritesDrawer: document.getElementById('wallpaper-favorites-drawer'),
+        wpDrawerClose: document.getElementById('wp-drawer-close'),
+        wpDrawerList: document.getElementById('wp-drawer-list'),
+        wpDrawerEmpty: document.getElementById('wp-drawer-empty'),
+        wpAvoidToast: document.getElementById('wp-avoid-toast'),
+        wpAvoidUndoBtn: document.getElementById('wp-avoid-undo-btn'),
+        onedriveStatusLabel: document.getElementById('onedrive-status-label'),
+        onedriveConnectBtn: document.getElementById('onedrive-connect-btn'),
+        onedriveSyncBtn: document.getElementById('onedrive-sync-btn'),
+        onedriveDisconnectBtn: document.getElementById('onedrive-disconnect-btn'),
+        onedriveSyncDetail: document.getElementById('onedrive-sync-detail'),
+        onedriveAuthModal: document.getElementById('onedrive-auth-modal'),
+        onedriveModalClose: document.getElementById('onedrive-modal-close'),
+        onedriveModalCancel: document.getElementById('onedrive-modal-cancel'),
+        onedriveUserCode: document.getElementById('onedrive-user-code'),
+        onedriveCopyCodeBtn: document.getElementById('onedrive-copy-code-btn'),
+        onedriveAuthUrl: document.getElementById('onedrive-auth-url'),
+        onedriveAuthStatus: document.getElementById('onedrive-auth-status'),
         hudWeatherIcon: document.getElementById('hud-weather-icon'),
         hudTempVal: document.getElementById('hud-temp-val'),
         hudTempUnit: document.getElementById('hud-temp-unit'),
@@ -2664,7 +3107,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           var safeCachedUrl = String(cachedUrl || '').replace(/["\\\n\r]/g, '');
           this.dom.bgA.style.backgroundImage = 'url("' + safeCachedUrl + '")';
           if (this.dom.unsplashCredit) {
-            // Always show the watermark when a wallpaper was restored —
+            // Always show the watermark when a wallpaper was restored -
             // provider-first, derived from cache or the URL hostname so old
             // caches (no provider key) still label correctly (v0.8.16).
             var cachedProvider = '';
@@ -2811,7 +3254,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       });
 
       // Manual refresh control removed (v0.8.4): news and atmosphere update
-      // automatically on their own cadences — news every 5 minutes within the
+      // automatically on their own cadences - news every 5 minutes within the
       // quota firewall, atmosphere on its cache TTL.
 
       // Settings Backup & Restore (v0.8.6): wired inside the diagnostic panel
@@ -2904,6 +3347,12 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           if (self.isHoverPopoverOpen) {
             if (e.preventDefault) e.preventDefault();
             self.hideHoverPopover();
+          } else if (self.dom.wpFavoritesDrawer && !self.dom.wpFavoritesDrawer.classList.contains('is-hidden')) {
+            if (e.preventDefault) e.preventDefault();
+            self.closeWallpaperFavoritesDrawer();
+          } else if (self.dom.onedriveAuthModal && !self.dom.onedriveAuthModal.classList.contains('is-hidden')) {
+            if (e.preventDefault) e.preventDefault();
+            self.closeOneDriveAuthModal();
           } else if (self.isDetailOpen) {
             if (e.preventDefault) e.preventDefault();
             self.closeCardDetail();
@@ -3122,7 +3571,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             );
             if (global.ApiService) global.ApiService.newsProvider = npVal;
             // Intent updates immediately, but the news quota firewall decides
-            // network eligibility — property updates cannot bypass it (LW06)
+            // network eligibility - property updates cannot bypass it (LW06)
             self.fetchNews();
             break;
           case 'newsApiKey':
@@ -3131,6 +3580,13 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             break;
           case 'currentsApiKey':
             if (global.ApiService) global.ApiService.currentsApiKey = val;
+            self.fetchNews();
+            break;
+          case 'newsFocus':
+            var focusMap = ['nearby', 'balanced', 'wider'];
+            var fVal = (typeof val === 'number') ? (focusMap[val] || 'balanced') : String(val).toLowerCase();
+            if (global.ApiService) global.ApiService.newsFocus = fVal;
+            self.newsFocus = fVal;
             self.fetchNews();
             break;
           case 'showHardwareMonitor':
@@ -3242,7 +3698,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             var locText = String(val == null ? '' : val).trim();
             var locApi = global.ApiService;
             if (locApi) {
-              // EVERY delivery is a new intent (v0.8.14) — bumped BEFORE the
+              // EVERY delivery is a new intent (v0.8.14) - bumped BEFORE the
               // identical-value short-circuit: a redelivered saved location
               // must invalidate any pending older request so a pending B can
               // never resolve after the user visibly returned to saved A.
@@ -3261,12 +3717,12 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
                 }
                 if (res && res.ok) {
                   self.setDomText(self.dom.locStatusLabel,
-                    'Manual location: ' + res.location.city + (res.location.country ? ', ' + res.location.country : '') + ' — refreshing...');
+                    'Manual location: ' + res.location.city + (res.location.country ? ', ' + res.location.country : '') + ' - refreshing...');
                   self.loadAtmosphere(true);
                 } else {
-                  // R07: latest name unresolvable — Auto is active again.
+                  // R07: latest name unresolvable - Auto is active again.
                   self.setDomText(self.dom.locStatusLabel,
-                    'Could not resolve "' + locText + '" — using automatic location');
+                    'Could not resolve "' + locText + '" - using automatic location');
                   self.loadAtmosphere(true);
                 }
               }).catch(function(err) {
@@ -3278,7 +3734,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
                 }
                 locApi.clearManualLocation();
                 self.setDomText(self.dom.locStatusLabel,
-                  'Manual location failed — using automatic location');
+                  'Manual location failed - using automatic location');
                 self.loadAtmosphere(true);
               });
             }
@@ -3335,7 +3791,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         'middle-right', 'middle-left', 'middle-top', 'middle-bottom', 'center'
       ];
 
-      // Compositor cleanup: width/top/bottom no longer interpolate — layout
+      // Compositor cleanup: width/top/bottom no longer interpolate - layout
       // lands discretely and only a transform-only FLIP animation eases the
       // dock's visible move back to zero (no text/control scaling)
       var dockForFlip = this.dom.dockMediaFocus;
@@ -3449,7 +3905,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           }
           // Late-enable: make sure the 5-minute automatic news cadence exists
           // even when the feed was disabled at boot (v0.8.4). The immediate
-          // fetch stays pause-gated — no network attempts while hidden.
+          // fetch stays pause-gated - no network attempts while hidden.
           if (!this.newsFetchTimer && !this.isPlaybackPaused) {
             var newsFetchTick = function() {
               if (this.isPlaybackPaused || !this.showNewsFeed) return;
@@ -3744,7 +4200,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             this.dom.dockMediaFocus.style.top = '';
             this.dom.dockMediaFocus.style.bottom = '';
           }
-          var offsetGap = 14;
+          var offsetGap = 0;
           var vh = (typeof window !== 'undefined' && window.innerHeight) ? window.innerHeight : 1080;
           var isShortViewport = (vh < 600);
           var topOffsetNum = 32 + hudHeight + offsetGap;
@@ -4053,7 +4509,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     /**
      * Keep the wallpaper watermark ABOVE the Windows taskbar (v0.8.20): the
      * wallpaper page spans the full screen while the taskbar floats over its
-     * bottom edge — a fixed bottom:10px pill sits permanently UNDER it and is
+     * bottom edge - a fixed bottom:10px pill sits permanently UNDER it and is
      * never seen. Use the screen's reserved strip (screen.height -
      * screen.availHeight); the 72px CSS floor is the no-JS fallback.
      */
@@ -4072,7 +4528,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
     /**
      * D-panel wallpaper source line (v0.8.18): always answers "where is the
-     * wallpaper from?" even when the on-screen watermark is missed —
+     * wallpaper from?" even when the on-screen watermark is missed -
      * provider label + the exact source/URL from the cached credit.
      */
     updateWallpaperDiagnostics: function() {
@@ -4091,7 +4547,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           ? this._wallpaperCreditLabel(provider || this._wallpaperProviderFromUrl(url), photographer)
           : (provider || 'Wallpaper');
         var source = photographerUrl || url;
-        this.setDomText(this.dom.diagWallpaperStatus, 'Wallpaper source: ' + (label || 'Unknown') + ' — ' + source);
+        this.setDomText(this.dom.diagWallpaperStatus, 'Wallpaper source: ' + (label || 'Unknown') + ' - ' + source);
       } catch (e) {
         this.setDomText(this.dom.diagWallpaperStatus, 'Wallpaper source: unavailable');
       }
@@ -4099,7 +4555,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
     /**
      * D-panel news status (v0.8.15): per-provider last outcome, remaining
-     * quota window and pending tier — the honest way to see WHY a news card
+     * quota window and pending tier - the honest way to see WHY a news card
      * is empty (bad key vs empty city tier vs window pending).
      */
     updateNewsDiagnostics: function() {
@@ -4134,11 +4590,11 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         global.ApiService.getLocation().then(function(loc) {
           if (!self.showDiagnostics) return;
           this.setDomText(self.dom.locStatusLabel,
-            'Location source: Automatic — ' + loc.city + (loc.country ? ', ' + loc.country : '') +
+            'Location source: Automatic - ' + loc.city + (loc.country ? ', ' + loc.country : '') +
             ' (' + loc.source + ')');
         }.bind(this)).catch(function() {
           if (!self.showDiagnostics) return;
-          self.setDomText(self.dom.locStatusLabel, 'Location source: Automatic — unavailable');
+          self.setDomText(self.dom.locStatusLabel, 'Location source: Automatic - unavailable');
         });
       }
     },
@@ -4165,7 +4621,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         var item = document.createElement('div');
         item.className = 'loc-suggest-item';
         item.setAttribute('role', 'option');
-        // Escaped text nodes only — no HTML construction from remote place data.
+        // Escaped text nodes only - no HTML construction from remote place data.
         var nameSpan = document.createElement('span');
         nameSpan.textContent = opt.name + (opt.admin1 ? ', ' + opt.admin1 : '');
         var countrySpan = document.createElement('span');
@@ -4229,17 +4685,17 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       global.ApiService.setManualLocation(opt.name, opt).then(function(res) {
         if (res && res.superseded) return; // a newer intent won (R02)
         if (!res.ok) {
-          self.setDomText(self.dom.locStatusLabel, 'Manual location rejected: ' + res.error + ' — using automatic location');
+          self.setDomText(self.dom.locStatusLabel, 'Manual location rejected: ' + res.error + ' - using automatic location');
           self.loadAtmosphere(true);
           return;
         }
         var resolved = res.location;
         self.setDomText(self.dom.locStatusLabel,
-          'Manual location: ' + resolved.city + (resolved.country ? ', ' + resolved.country : '') + ' — refreshing...');
+          'Manual location: ' + resolved.city + (resolved.country ? ', ' + resolved.country : '') + ' - refreshing...');
         self.syncCustomLocationProperty(resolved.city);
         self.loadAtmosphere(true);
       }).catch(function(err) {
-        self.setDomText(self.dom.locStatusLabel, 'Manual location failed: ' + (err && err.message) + ' — using automatic location');
+        self.setDomText(self.dom.locStatusLabel, 'Manual location failed: ' + (err && err.message) + ' - using automatic location');
         if (global.ApiService && global.ApiService.clearManualLocation) global.ApiService.clearManualLocation();
         self.loadAtmosphere(true);
       });
@@ -4273,7 +4729,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (!input || !global.ApiService || typeof global.ApiService._geocodeCity !== 'function') return;
       var text = String(input.value || '').trim();
       // Every edit is a fresh suggestion generation (R12): responses from an
-      // earlier query can never render — including slow/failed responses that
+      // earlier query can never render - including slow/failed responses that
       // settle after the user moved on, cleared the field, or closed the panel.
       this._locSuggestGeneration = (this._locSuggestGeneration || 0) + 1;
       var gen = this._locSuggestGeneration;
@@ -4284,7 +4740,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       // Coordinates typed directly: no autocomplete needed; Enter applies.
       if (/^\s*-?\d{1,3}/.test(text) && text.indexOf(',') !== -1) {
         this.hideLocationSuggestions();
-        this.setDomText(this.dom.locStatusLabel, 'Coordinates mode — press Enter to set this location');
+        this.setDomText(this.dom.locStatusLabel, 'Coordinates mode - press Enter to set this location');
         return;
       }
       this._locSuggestDebounce = setTimeout(function() {
@@ -4301,7 +4757,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
     /**
      * Applies the raw input (city name or "lat, lon") on Enter when no
-     * suggestion row is highlighted — the manual path behind the
+     * suggestion row is highlighted - the manual path behind the
      * autocomplete dropdown.
      */
     _applyManualLocationFromInput: function() {
@@ -4324,14 +4780,14 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       global.ApiService.setManualLocation(text).then(function(res) {
         if (res && res.superseded) return; // a newer intent won (R02)
         if (!res.ok) {
-          self.setDomText(self.dom.locStatusLabel, 'Manual location rejected: ' + res.error + ' — using automatic location');
+          self.setDomText(self.dom.locStatusLabel, 'Manual location rejected: ' + res.error + ' - using automatic location');
           self.loadAtmosphere(true);
           return;
         }
         var resolved = res.location;
         self.setDomText(self.dom.locStatusLabel,
-          'Manual location: ' + resolved.city + (resolved.country ? ', ' + resolved.country : '') + ' — refreshing...');
-        // R04: coordinate pins mirror as coordinates on the property — a
+          'Manual location: ' + resolved.city + (resolved.country ? ', ' + resolved.country : '') + ' - refreshing...');
+        // R04: coordinate pins mirror as coordinates on the property - a
         // city label would swallow a genuine pin on round-trip.
         var rec = global.ApiService._readManualRecord ? global.ApiService._readManualRecord() : null;
         if (rec && rec.entry && rec.entry.type === 'coords') {
@@ -4341,7 +4797,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         }
         self.loadAtmosphere(true);
       }).catch(function(err) {
-        self.setDomText(self.dom.locStatusLabel, 'Manual location failed: ' + (err && err.message) + ' — using automatic location');
+        self.setDomText(self.dom.locStatusLabel, 'Manual location failed: ' + (err && err.message) + ' - using automatic location');
         if (global.ApiService && global.ApiService.clearManualLocation) global.ApiService.clearManualLocation();
         self.loadAtmosphere(true);
       });
@@ -4350,12 +4806,12 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     /**
      * Settings Backup & Restore (v0.8.6)
      *
-     * Exports every user-tunable Lively property (INCLUDING API keys — the
+     * Exports every user-tunable Lively property (INCLUDING API keys - the
      * user explicitly asked for keys) plus all app-owned localStorage entries
      * as one portable JSON file, and imports it back on any machine.
      *
      * SECURITY MODEL: the export is a plain JSON file containing credentials
-     * in cleartext — documented; the user keeps the file safe. Import applies
+     * in cleartext - documented; the user keeps the file safe. Import applies
      * only whitelisted property names (App.SETTINGS_PROPNAMES, mirroring the
      * LivelyBridge property dispatcher), URL-embedded key values are
      * charset-checked, and only app-owned storage keys
@@ -4369,6 +4825,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     SETTINGS_PROPNAMES: [
       'customLocation',
       'hudPosition', 'glassBlur', 'particleDensity', 'tempUnit', 'refreshInterval',
+      'newsFocus',
       'wallpaperProvider', 'unsplashApiKey', 'wallhavenApiKey', 'pexelsApiKey',
       'pixabayApiKey', 'weatherSimulation', 'contrastMode', 'showMediaFocusDock',
       'showNewsFeed', 'newsProvider', 'newsApiKey', 'currentsApiKey',
@@ -4443,7 +4900,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
      * Export through a real Save-As dialog when the runtime supports the
      * File System Access API (Chromium/WebView2 do): the user picks the
      * destination and filename. The picker needs user activation, so a
-     * host-triggered export may reject it — in that case (and where the API
+     * host-triggered export may reject it - in that case (and where the API
      * is missing) the classic blob download runs instead, with the status
      * line saying exactly which path was taken. Never claims success for
      * bytes that were not written.
@@ -4496,7 +4953,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             self.setDomText(self.dom.diagBackupStatus, 'Export cancelled');
             return;
           }
-          // No user activation (host-triggered) or picker unavailable here —
+          // No user activation (host-triggered) or picker unavailable here -
           // the download fallback keeps the export functional.
           self._exportViaDownload(json, fileName, describe);
         });
@@ -4516,7 +4973,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         link.click();
         document.body.removeChild(link);
         setTimeout(function() { URL.revokeObjectURL(url); }, 2000);
-        describe(fileName + ' (Downloads — click Export from the D panel for a Save-As dialog)');
+        describe(fileName + ' (Downloads - click Export from the D panel for a Save-As dialog)');
       } catch (e) {
         this.setDomText(this.dom.diagBackupStatus, 'Export failed: ' + (e && e.message));
       }
@@ -4559,7 +5016,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
     /**
      * Validates one exported settings text. Returns {ok:true, payload} or
-     * {ok:false, error}. Pure function — unit-tested in scratch suites.
+     * {ok:false, error}. Pure function - unit-tested in scratch suites.
      */
     _parseSettingsExport: function(text) {
       if (typeof text !== 'string') return { ok: false, error: 'No file content' };
@@ -4616,11 +5073,15 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
      * Host-write path (when the environment exposes an outbound write): each
      * value reaches the Lively property model and is counted as PERSISTENT.
      * Bridge-replay path: values apply to the running session only, counted
-     * as RUNTIME — the caller must not claim persistence or auto-reload over
+     * as RUNTIME - the caller must not claim persistence or auto-reload over
      * them. Storage keys of the app's own prefixes are restored verbatim;
      * operational state (quota/tier stamps) is never restored (R09); other
-     * keys are ignored. Pure-ish — unit-tested in scratch suites.
+     * keys are ignored. Pure-ish - unit-tested in scratch suites.
      */
+    applySettingsPayload: function(payload, isSync) {
+      return this._applySettingsPayload(payload);
+    },
+
     _applySettingsPayload: function(payload) {
       var self = this;
       var applied = 0;
@@ -4628,10 +5089,11 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       var skipped = 0;
 
       var hasHostWrite = typeof global.livelyPropertyValueChanged === 'function';
+      var props = (payload && (payload.livelyProperties || payload.settings)) || {};
       for (var i = 0; i < this.SETTINGS_PROPNAMES.length; i++) {
         var name = this.SETTINGS_PROPNAMES[i];
-        if (!Object.prototype.hasOwnProperty.call(payload.livelyProperties, name)) continue;
-        var val = payload.livelyProperties[name];
+        if (!Object.prototype.hasOwnProperty.call(props, name)) continue;
+        var val = props[name];
         if (this._KEY_PROPS.indexOf(name) !== -1) {
           // API keys: non-string values and oversized strings are rejected at
           // the import boundary; blank stays valid. Keys actually embedded in
@@ -4643,6 +5105,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
               val.trim() && /[^A-Za-z0-9._~-]/.test(val.trim())) { skipped++; continue; }
         }
         applied++;
+        if (self.settings && typeof self.settings === "object") {
+          self.settings[name] = val;
+        }
         if (hasHostWrite) {
           try {
             global.livelyPropertyValueChanged(name, val);
@@ -4654,6 +5119,11 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         } else if (global.LivelyBridge && global.LivelyBridge.emitProperty) {
           global.LivelyBridge.emitProperty(name, val);
         }
+      }
+
+      var wp = payload && (payload.wallpaperPreferences || payload.wallpaperFeedback);
+      if (wp && global.ApiService && typeof global.ApiService.saveWallpaperFeedback === "function") {
+        global.ApiService.saveWallpaperFeedback(wp);
       }
 
       var storageRestored = 0;
@@ -4711,17 +5181,17 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             if (runtimeOnly > 0) msg += ', ' + runtimeOnly + ' runtime-only';
             msg += ')';
           }
-          if (summary.skipped) msg += ' — ' + summary.skipped + ' skipped';
+          if (summary.skipped) msg += ' - ' + summary.skipped + ' skipped';
           msg += ' + ' + summary.storageRestored + ' storage entries';
           if (summary.storageSkipped) msg += ' (' + summary.storageSkipped + ' operational skipped)';
           if (partial) {
             // Honest partial restore (v0.8.14): no full-success claim, no
             // automatic reload over a half-restored state.
             msg += '. PARTIAL: ' + summary.storageFailed + ' storage entr' +
-              (summary.storageFailed === 1 ? 'y' : 'ies') + ' could not be written — re-run the import after freeing storage';
+              (summary.storageFailed === 1 ? 'y' : 'ies') + ' could not be written - re-run the import after freeing storage';
           }
           if (runtimeOnly > 0) {
-            msg += '. Runtime-only values apply now; host persistence is unverified until a Lively restart test — update Lively\'s Customize panel to persist them.';
+            msg += '. Runtime-only values apply now; host persistence is unverified until a Lively restart test - update Lively\'s Customize panel to persist them.';
           }
           self.setDomText(self.dom.diagBackupStatus, msg);
           // Reload only for a complete, host-submitted import; a partial or
@@ -4948,7 +5418,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
 
       // Continuously refresh celestial ephemeris, sky gradient, and dynamic solar lighting (every 15s)
-      // A negative elapsed value means the wall clock jumped backward — refresh
+      // A negative elapsed value means the wall clock jumped backward - refresh
       // immediately so ephemeris state can never freeze on a stale timestamp (LW13)
       var elapsedCelestial = now.getTime() - this.lastCelestialUpdate;
       if (!this.lastCelestialUpdate || elapsedCelestial >= 15000 || elapsedCelestial < 0) {
@@ -5152,7 +5622,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (this.dom.ephemerisMoonset) this.setDomText(this.dom.ephemerisMoonset, moonsetStr);
 
       // 3. Day vs Night Row Toggling (the night-moon item lives inside the
-      //    moon row; the stale standalone toggles were dead code — QA v0.8.17)
+      //    moon row; the stale standalone toggles were dead code - QA v0.8.17)
       if (isDay) {
         if (this.dom.hudEphemerisSunRow) this.dom.hudEphemerisSunRow.classList.remove('is-hidden');
         if (this.dom.hudEphemerisMoonRow) this.dom.hudEphemerisMoonRow.classList.add('is-hidden');
@@ -5248,7 +5718,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
         // Remaining-day window per DESIGN_BLUEPRINT §29.2: current hour through
         // LOCAL midnight in the location's IANA timezone. Each point's LOCAL
-        // calendar-date key is computed with one cached formatter per timezone —
+        // calendar-date key is computed with one cached formatter per timezone -
         // no whole-hour boundary search, no fixed 24h arithmetic, DST-exact on
         // 23h/25h days (LW02). Without a valid timezone the metric reports
         // unavailable instead of silently borrowing the host timezone.
@@ -5289,7 +5759,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             // From the current interval onward only: a point whose whole-hour
             // interval already ended is a past reading, never a remaining-day peak
             if (hPtMs + 3600000 <= nowMsPeak) continue;
-            // Same LOCAL calendar date in the location tz — no tomorrow leak
+            // Same LOCAL calendar date in the location tz - no tomorrow leak
             if (hPtMs < dayStartMs || hPtMs >= dayEndMs) continue;
 
             var appTemp = isF ? hPt.apparentF : hPt.apparentC;
@@ -5896,7 +6366,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           selfRef._popoverMouseMoveHandler(e);
         }, { passive: true, capture: true });
         // The OS delivers these when the cursor leaves our window entirely or
-        // focus moves elsewhere — instant closes for paths where they fire.
+        // focus moves elsewhere - instant closes for paths where they fire.
         document.addEventListener('mouseleave', function() {
           if (selfRef.isHoverPopoverOpen) selfRef.hideHoverPopover();
         });
@@ -5946,7 +6416,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     _popoverCursorInsideBounds: function() {
       // Unknown cursor position is NOT "outside" (v0.8.14): hover without a
       // subsequent mousemove, keyboard focus, and touch all open the popover
-      // with no coordinates yet — those get the bounded inside grace instead
+      // with no coordinates yet - those get the bounded inside grace instead
       // of the short outside expiry.
       if (this._popoverLastX === null || this._popoverLastY === null) return true;
       var x = this._popoverLastX;
@@ -5987,7 +6457,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       var sinceAny = now - (this._popoverAnyMoveAt || 0);
       var insideNow = this._popoverCursorInsideBounds();
       // Foreground accelerator (v0.8.15): when another window owns the
-      // focus, the user is demonstrably working elsewhere — a popover that
+      // focus, the user is demonstrably working elsewhere - a popover that
       // survives silence on an unfocused page is stale after 1.5s, even when
       // the last known cursor position was over the card. (An actively
       // hovering reader keeps generating mousemove events, so this never
@@ -6372,6 +6842,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     },
 
     renderCardDetailContent: function(cardType) {
+      var self = this;
       if (!this.dom.hudCardDetail || !this.dom.hudDetailBody) return;
 
       function esc(str) {
@@ -6466,7 +6937,21 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             '<div class="hud-detail-item full-width">' +
               '<span class="hud-detail-item-label">Location & Source</span>' +
               '<span class="hud-detail-item-val">' + esc(locName) + '</span>' +
-              '<span class="hud-detail-item-sub">Provider: ' + esc(weather.provider || 'Open-Meteo API') + ' (Verified Live)</span>' +
+              (function() {
+              var prov = weather.provenance || {};
+              var provActual = prov.sourceActual || weather.provider || 'Open-Meteo';
+              var provFallback = prov.isFallback ? ('Fallback from ' + (prov.sourceRequested || 'primary')) : 'Direct';
+              var ingestedTime = (prov.fetchedAtUtc || (self.state && self.state.timestamp)) ? new Date(prov.fetchedAtUtc || self.state.timestamp).toLocaleTimeString() : 'Recent';
+              var stationTime = prov.observedAtUtc ? new Date(prov.observedAtUtc).toLocaleTimeString() : 'Not reported by provider';
+              var fresh = (prov.freshness || 'live');
+              var freshLabel = fresh.charAt(0).toUpperCase() + fresh.slice(1);
+
+              return '<span class="hud-detail-item-sub">' +
+                'Provider: ' + esc(provActual) + ' (' + esc(provFallback) + ') · Freshness: ' + esc(freshLabel) +
+                '<br>Ingestion Time: ' + esc(ingestedTime) +
+                '<br>Station Observation: ' + esc(stationTime) +
+              '</span>';
+            })() +
             '</div>' +
           '</div>';
           break;
@@ -6532,9 +7017,30 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           if (iconEl) iconEl.innerHTML = this.getDetailIconSvg('news');
           if (titleEl) titleEl.textContent = 'News Feed';
 
+          var currentFocus = this.newsFocus || (global.ApiService && global.ApiService.newsFocus) || 'balanced';
+          var activeProv = (global.ApiService && global.ApiService.newsProvider) || 'auto';
+          var isGoogleNews = (activeProv === 'google-news');
+
+          var controlsHeader =
+            '<div class="hud-detail-news-controls" style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">' +
+              '<div style="display: flex; align-items: center; gap: 6px;">' +
+                '<label for="hud-detail-news-focus" style="font-size: 0.78rem; color: #94a3b8;">Focus:</label>' +
+                '<select id="hud-detail-news-focus" class="hud-detail-select" style="background: rgba(15, 23, 42, 0.6); color: #f8fafc; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 6px; padding: 2px 6px; font-size: 0.78rem;">' +
+                  '<option value="nearby"' + (currentFocus === 'nearby' ? ' selected' : '') + '>Nearby (City)</option>' +
+                  '<option value="balanced"' + (currentFocus === 'balanced' ? ' selected' : '') + '>Balanced</option>' +
+                  '<option value="wider"' + (currentFocus === 'wider' ? ' selected' : '') + '>Wider (Regional/World)</option>' +
+                '</select>' +
+              '</div>' +
+              (isGoogleNews ?
+                '<div style="display: flex; align-items: center; gap: 6px;">' +
+                  '<button id="hud-news-pull-btn" class="hud-detail-btn" type="button" style="padding: 2px 8px; font-size: 0.78rem; border-radius: 6px; cursor: pointer;">Get latest</button>' +
+                  '<span id="hud-news-pull-status" class="hud-news-pull-status" style="font-size: 0.75rem; color: #94a3b8;" role="status"></span>' +
+                '</div>' : '') +
+            '</div>';
+
           var newsList = this.newsItems || state.news || [];
           if (newsList && newsList.length > 0) {
-            html = '<div class="hud-detail-news-list">';
+            html = controlsHeader + '<div class="hud-detail-news-list">';
             for (var ni = 0; ni < newsList.length; ni++) {
               var nItem = newsList[ni];
               var rawUrl = nItem.link || nItem.url || '';
@@ -6552,7 +7058,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             }
             html += '</div>';
           } else {
-            html = '<div class="hud-detail-item full-width">' +
+            html = controlsHeader + '<div class="hud-detail-item full-width">' +
               '<span class="hud-detail-item-val">No regional news stories available.</span>' +
               '<span class="hud-detail-item-sub">Regional feed returned no usable stories for the current locality.</span>' +
             '</div>';
@@ -6849,7 +7355,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
 
       // Content signature: skip DOM replacement when the drawer markup is
-      // unchanged — repeated refreshes add no nodes and cannot drop focus (LW01)
+      // unchanged - repeated refreshes add no nodes and cannot drop focus (LW01)
       var sigHash = 5381;
       for (var si = 0; si < html.length; si++) {
         sigHash = ((sigHash << 5) + sigHash + html.charCodeAt(si)) | 0;
@@ -6879,7 +7385,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       bodyEl.innerHTML = html;
 
       // Restore focus to the corresponding replacement link without scrolling;
-      // if the story disappeared, fall back to the drawer's close control —
+      // if the story disappeared, fall back to the drawer's close control -
       // never the page background (LW01)
       if (restoreFocusKey != null) {
         var focusTarget = null;
@@ -6898,6 +7404,48 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           } catch (e) {
             try { focusTarget.focus(); } catch (e2) {}
           }
+        }
+      }
+
+      if (cardType === 'news') {
+        var focusSelect = (typeof document !== 'undefined' && document.querySelector) ? document.querySelector('#hud-detail-news-focus') : null;
+        if (focusSelect && typeof focusSelect.addEventListener === 'function') {
+          focusSelect.addEventListener('change', function() {
+            var val = this.value;
+            self.newsFocus = val;
+            if (global.ApiService) global.ApiService.newsFocus = val;
+            self.fetchNews();
+          });
+        }
+        var pullBtn = (typeof document !== 'undefined' && document.querySelector) ? document.querySelector('#hud-news-pull-btn') : null;
+        var pullStatus = (typeof document !== 'undefined' && document.querySelector) ? document.querySelector('#hud-news-pull-status') : null;
+        if (pullBtn && typeof pullBtn.addEventListener === 'function' && global.ApiService && typeof global.ApiService.manualPullGoogleNews === 'function') {
+          pullBtn.addEventListener('click', function() {
+            var loc = self.state && self.state.location;
+            var city = (loc && loc.city) || (self.lastKnownCity) || 'Local';
+            var country = (loc && loc.countryCode) || '';
+            if (pullStatus) pullStatus.textContent = 'Pulling...';
+            pullBtn.disabled = true;
+
+            global.ApiService.manualPullGoogleNews(city, country, self.newsFocus).then(function(res) {
+              pullBtn.disabled = false;
+              if (res && res.ok && Array.isArray(res.articles) && res.articles.length > 0) {
+                if (pullStatus) pullStatus.textContent = 'Updated!';
+                self.newsItems = res.articles;
+                self.currentNewsIdx = 0;
+                self.renderNews(res.articles);
+                self._detailContentSig = null;
+                self.renderCardDetailContent('news');
+              } else if (res && res.coolingDown) {
+                if (pullStatus) pullStatus.textContent = 'Wait ' + (res.secondsLeft || 30) + 's';
+              } else {
+                if (pullStatus) pullStatus.textContent = (res && res.error) ? res.error : 'Pull failed';
+              }
+            }).catch(function(err) {
+              pullBtn.disabled = false;
+              if (pullStatus) pullStatus.textContent = (err && err.message) || 'Error';
+            });
+          });
         }
       }
     },
@@ -7058,7 +7606,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         loc = (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.defaultLocation) || {};
       }
       var city = loc.city || 'Local Area';
-      // Unknown country stays unknown (v0.8.15) — no invented 'US' on the news path.
+      // Unknown country stays unknown (v0.8.15) - no invented 'US' on the news path.
       var country = loc.countryCode || '';
       // No force concept: news network eligibility is owned by the ApiService
       // quota firewall and can never be bypassed from the UI (LW06/CORR-3)
@@ -7076,7 +7624,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             return articles;
           }
           // Empty network result: never blank a card that has a persisted
-          // story snapshot — render the last-known stories as marked-stale
+          // story snapshot - render the last-known stories as marked-stale
           // (v0.8.15) instead of letting an empty array wipe the card.
           var cached = (typeof global.ApiService.getCachedNews === 'function') ? global.ApiService.getCachedNews() : null;
           if (cached && Array.isArray(cached.data) && cached.data.length > 0) {
@@ -7184,7 +7732,17 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     },
 
     renderWeather: function(w) {
-      if (!w) return;
+      if (!w) {
+        this.lastWeatherProvenance = null;
+        if (this.dom.hudWeatherFreshness) {
+          this.dom.hudWeatherFreshness.className = 'weather-freshness-badge freshness-unavailable';
+          this.dom.hudWeatherFreshness.textContent = 'Unavailable';
+          this.dom.hudWeatherFreshness.title = 'Weather data unavailable';
+        }
+        return;
+      }
+
+      this.lastWeatherProvenance = w.provenance || null;
 
       var isF = (this.tempUnit === 'F');
       var rawC = Number.isFinite(w.tempC) ? w.tempC : (Number.isFinite(w.temp) ? w.temp : null);
@@ -7210,6 +7768,43 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (this.dom.hudFeelsLike) this.dom.hudFeelsLike.textContent = (apparent !== '--') ? ('Feels like ' + apparent + '°') : 'Feels like --';
       if (this.dom.hudTempHigh) this.dom.hudTempHigh.textContent = (high !== '--') ? (high + '°') : '--';
       if (this.dom.hudTempLow) this.dom.hudTempLow.textContent = (low !== '--') ? (low + '°') : '--';
+
+      if (this.dom.hudWeatherFreshness) {
+        var prov = w.provenance || {};
+        var fetchedAt = prov.fetchedAtUtc || (this.state && this.state.timestamp) || Date.now();
+        var ageMs = (prov.cacheAgeMs != null) ? prov.cacheAgeMs : Math.max(0, Date.now() - fetchedAt);
+        var minAgo = Math.floor(ageMs / 60000);
+
+        var badgeClass = 'freshness-live';
+        var badgeText = 'Live';
+
+        if (prov.isFallback) {
+          badgeClass = 'freshness-fallback';
+          badgeText = 'Fallback';
+        } else if (prov.freshness === 'live') {
+          badgeClass = 'freshness-live';
+          badgeText = 'Live · ' + (minAgo <= 0 ? 'Just now' : minAgo + 'm ago');
+        } else if (prov.freshness === 'cached') {
+          badgeClass = 'freshness-cached';
+          badgeText = 'Cached · ' + (minAgo <= 0 ? 'Just now' : minAgo + 'm old');
+        } else if (prov.freshness === 'stale') {
+          badgeClass = 'freshness-stale';
+          badgeText = 'Stale · ' + minAgo + 'm old';
+        } else if (prov.freshness === 'emergency') {
+          badgeClass = 'freshness-emergency';
+          badgeText = 'Emergency cache';
+        } else if (prov.freshness === 'synthetic') {
+          badgeClass = 'freshness-synthetic';
+          badgeText = 'Demo / estimated';
+        }
+
+        this.dom.hudWeatherFreshness.className = 'weather-freshness-badge ' + badgeClass;
+        this.dom.hudWeatherFreshness.textContent = badgeText;
+        var pTitle = 'Weather source: ' + (prov.sourceActual || 'auto');
+        if (prov.isFallback) pTitle += ' (fallback from ' + (prov.sourceRequested || 'primary') + ')';
+        if (ageMs > 0) pTitle += ' - Age: ' + Math.round(ageMs / 1000) + 's';
+        this.dom.hudWeatherFreshness.title = pTitle;
+      }
 
       // Animated Meteocon Icon Rendering
       var isDay = (w.isDay != null)
@@ -7352,7 +7947,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
     /**
      * Computes a relative article age AT DISPLAY TIME from the normalized
-     * `publishedMs` (LW15) — no frozen persisted timeAgo strings. Returns ''
+     * `publishedMs` (LW15) - no frozen persisted timeAgo strings. Returns ''
      * when the publish instant is unknown so callers can use their fallback.
      * Stale-marked cache hits report 'Cached'.
      * @param {Object} item News article
@@ -7447,7 +8042,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
       var isDesktopDummy = (level === 1.0 && charging === true && chargingTime === 0 && dischargingTime === Infinity);
       if (isDesktopDummy && !this.batteryCorroborated) {
-        // v0.8.18: the dummy signature is not proof of "no battery" — Windows
+        // v0.8.18: the dummy signature is not proof of "no battery" - Windows
         // laptops on AC can report exactly this when charge times are unknown.
         // Show the row in an honest AC state instead of vanishing (no invented
         // numbers); real events upgrade it to live telemetry when they fire.
@@ -7485,7 +8080,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
     /**
      * Honest AC-mode battery row (v0.8.18): shown when the host exposes only
-     * the "no usable battery data" dummy. Never invents a percentage — the
+     * the "no usable battery data" dummy. Never invents a percentage - the
      * row states AC Power with an unavailable level until a real battery
      * event corroborates live telemetry.
      */
@@ -7517,7 +8112,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     /**
      * Honest "host does not expose battery data" row (v0.8.20): shown when
      * navigator.getBattery is missing or fails (common in hosted WebView2).
-     * The user asked for the BAT row to always be visible — it is, with no
+     * The user asked for the BAT row to always be visible - it is, with no
      * invented numbers.
      */
     showBatteryUnavailableMode: function() {
@@ -7536,7 +8131,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (this.dom.hwBatteryVal) this.dom.hwBatteryVal.textContent = '--%';
       if (this.dom.hwBatteryStatus) this.dom.hwBatteryStatus.textContent = 'Not available';
       if (this.dom.hwBatteryIcon) {
-        this.dom.hwBatteryIcon.textContent = '—';
+        this.dom.hwBatteryIcon.textContent = '-';
         this.dom.hwBatteryIcon.className = 'hw-battery-badge';
       }
       if (this.dom.hwBatteryBar) {
@@ -7880,7 +8475,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     renderNews: function(items) {
       this.clearNewsTimers();
 
-      // Real articles only — the empty/unavailable state renders explicitly
+      // Real articles only - the empty/unavailable state renders explicitly
       // below; no synthetic fallback headlines (LW05)
       if (Array.isArray(items)) {
         this.newsItems = items;
@@ -7888,7 +8483,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
       if (!this.newsItems || this.newsItems.length === 0) {
         if (this.dom.hudNewsHeadline) {
-          this.dom.hudNewsHeadline.textContent = 'No stories right now — new stories arrive automatically';
+          this.dom.hudNewsHeadline.textContent = 'No stories right now - new stories arrive automatically';
         }
         if (this.dom.hudNewsDots) {
           this.dom.hudNewsDots.style.display = 'none';
@@ -7912,7 +8507,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
     /**
      * Story background decoration (v0.8.12): provider image when present,
-     * else a cached keyword image, else — within a strict hourly budget — a
+     * else a cached keyword image, else - within a strict hourly budget - a
      * topical stock image searched from the headline keywords via the user's
      * own Pixabay/Unsplash key. Purely decorative: never invents news data,
      * and a missing key or exhausted budget simply leaves the plain card.
@@ -7975,10 +8570,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
     _newsImageBudgetOk: function() {
       // Persisted rolling-hour budget (v0.8.14): the advertised six
-      // searches/hour hold across reloads — and across views only insofar as
+      // searches/hour hold across reloads - and across views only insofar as
       // the storage bucket is shared (documented; host verification pending).
       // Durable state is REQUIRED: if the budget cannot be read or written,
-      // optional image searches fail closed (decoration only — the card just
+      // optional image searches fail closed (decoration only - the card just
       // stays plain).
       try {
         if (typeof global.localStorage === 'undefined' || !global.localStorage) return false;
@@ -8034,10 +8629,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
      * 48-hour artifact retention (v0.8.18, user request): downloaded-artifact
      * CACHES are swept on boot and daily so nothing keeps growing. Kinds:
      *  - keyword-image cache entries older than the TTL (legacy entries
-     *    without a timestamp are treated as expired — it is only a cache).
+     *    without a timestamp are treated as expired - it is only a cache).
      *  - the news story snapshot envelope when older than the TTL (stories
      *    from two days ago are stale anyway; a fresh fetch backfills).
-     * NOT touched: the single wallpaper url/credit reference (not growth —
+     * NOT touched: the single wallpaper url/credit reference (not growth -
      * it powers the instant-boot paint) and the bounded tier memory (≤40).
      */
     ARTIFACT_TTL_MS: 48 * 60 * 60 * 1000,
@@ -8096,7 +8691,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     /**
      * Topical image search via the user's own keys (v0.8.12, hardened v0.8.14):
      * Pixabay first (CORS-enabled, key in query); on error or no usable image
-     * — and only when another budget slot remains — fall through to Unsplash.
+     * - and only when another budget slot remains - fall through to Unsplash.
      * Every ACTUAL provider HTTP search consumes a persisted budget slot
      * (checked BEFORE the request). Fails closed on unavailable budget state.
      * Calls back exactly once with a validated https URL or null.
@@ -8154,7 +8749,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
     /**
      * News card story background (v0.8.9): paints the headline's image behind
-     * a fixed dark scrim — text contrast is guaranteed by the CSS scrim, never
+     * a fixed dark scrim - text contrast is guaranteed by the CSS scrim, never
      * by the image itself. Loads off-DOM first; only a successfully decoded
      * image is applied (no broken-image flash); null/false clears it.
      */
@@ -8207,11 +8802,11 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     /**
      * Honest empty-state copy; adds a one-line pointer when the News
      * Provider is set to the keyless Google News chain but API keys ARE
-     * configured (v0.8.12 — the exact situation where a user sees an empty
+     * configured (v0.8.12 - the exact situation where a user sees an empty
      * card while a working keyed source sits one dropdown entry away).
      */
     newsEmptyMessage: function() {
-      var base = 'No stories right now — new stories arrive automatically';
+      var base = 'No stories right now - new stories arrive automatically';
       try {
         var api = global.ApiService;
         if (!api) return base;
@@ -8220,15 +8815,15 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         if (!hasKeys) return base;
         var sel = String(api.newsProvider || 'auto').toLowerCase();
         if (sel === 'google-news') {
-          return base + ' — tip: set News Provider to "Auto (API keys first)" in Customize';
+          return base + ' - tip: set News Provider to "Auto (API keys first)" in Customize';
         }
         // Keyed providers active: if a region tier is pending for this
-        // location, say so honestly (v0.8.15) — the card fills within the
+        // location, say so honestly (v0.8.15) - the card fills within the
         // next quota window instead of looking broken.
         var loc = (this.state && this.state.location) || {};
         if (typeof api.newsPendingSummary === 'function' &&
             api.newsPendingSummary(loc.city || '', loc.countryCode || '')) {
-          return 'No local stories yet — regional stories arrive within 15 minutes';
+          return 'No local stories yet - regional stories arrive within 15 minutes';
         }
       } catch (e) {}
       return base;
@@ -8317,7 +8912,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
 
       if (this.dom.hudNewsBlock) {
-        var sourceLabel = item.source ? (' — ' + item.source) : '';
+        var sourceLabel = item.source ? (' - ' + item.source) : '';
         this.dom.hudNewsBlock.setAttribute('aria-label', providerName + ' news');
         this.dom.hudNewsBlock.title = providerName + ': ' + (item.title || 'News') + sourceLabel + ' (Click to inspect stories)';
       }
@@ -8381,6 +8976,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     updateBackground: function(bg) {
       if (!bg || !bg.url || bg.url === this.lastBgUrl) return;
       var self = this;
+      this.currentWallpaper = bg;
       var incomingUrl = String(bg.url || '').replace(/["\\\n\r]/g, '');
 
       // Generation counter: only the newest desired wallpaper may touch the
@@ -8429,7 +9025,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           ) : 'Unsplash';
           var photographerName = (bg && bg.photographer) || '';
           // Provider-first, generic-photographer-aware label (v0.8.16):
-          // "Wallhaven" or "Pexels · Jane Doe" — never "Wallhaven Community".
+          // "Wallhaven" or "Pexels · Jane Doe" - never "Wallhaven Community".
           self.dom.unsplashCredit.textContent = self._wallpaperCreditLabel(providerLabel, photographerName) || 'Wallpaper';
           self.dom.unsplashCredit.classList.add('is-visible');
           self.positionWallpaperCredit();
@@ -8561,7 +9157,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
       // Dedicated news cadence: every 5 minutes. The quota firewall (and the
       // 5-minute provider windows) decide which attempts actually hit the
-      // network — nothing here bypasses it (LW06).
+      // network - nothing here bypasses it (LW06).
       if (!this.newsFetchTimer && this.showNewsFeed) {
         var newsFetchTick = function() {
           if (this.isPlaybackPaused || !this.showNewsFeed) return;
@@ -8682,7 +9278,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
 
       // Physics always receive the ACTUAL elapsed time since the previous
-      // RENDERED frame — never the pacing remainder or a fixed step (LW07).
+      // RENDERED frame - never the pacing remainder or a fixed step (LW07).
       var elapsed = this.lastFrameTime ? (currentTime - this.lastFrameTime) : FRAME_MS;
       if (!Number.isFinite(elapsed) || elapsed < 0) elapsed = FRAME_MS;
       if (elapsed > 250) elapsed = 250; // long-frame-gap safety clamp (tab wake / GC pause)
@@ -8756,5 +9352,6 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
   global.MediaVisualizerEngine = MediaVisualizerEngine;
   global.PomodoroEngine = PomodoroEngine;
   global.SolarLightingEngine = SolarLightingEngine;
+  App.prototype = App;
   global.App = App;
 })(typeof window !== 'undefined' ? window : this);

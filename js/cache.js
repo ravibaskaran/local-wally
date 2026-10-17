@@ -104,14 +104,22 @@
      * @param {Object} [context] Optional provider/location context to enforce identity match
      * @returns {Object|null} Cached data payload or null on miss/expired
      */
-    get: function(context) {
+    get: function(context, allowStale) {
       this._ensureMemory();
       var envelope = this._cachedEnvelope;
       if (!envelope) return null;
 
       var age = Date.now() - envelope.timestamp;
       // Strict boundary: negative age indicates backward clock skew; expire immediately
-      if (!(age >= 0) || age >= this.TTL_MS || !Number.isFinite(age)) {
+      if (!(age >= 0) || !Number.isFinite(age)) {
+        return null;
+      }
+
+      var effectiveTtl = (typeof this.ttlMs === 'number' && this.ttlMs > 0) ? this.ttlMs : this.TTL_MS;
+      var isStale = (age >= effectiveTtl);
+      var permitStale = Boolean(allowStale || (context && context.allowStale) || (typeof this.ttlMs === 'number'));
+
+      if (isStale && !permitStale) {
         return null;
       }
 
@@ -130,6 +138,23 @@
         }
       }
 
+      if (envelope.data && envelope.data.weather) {
+        var w = envelope.data.weather;
+        if (!w.provenance) {
+          w.provenance = {
+            sourceRequested: envelope.weatherProvider || 'auto',
+            sourceActual: envelope.weatherProvider || 'auto',
+            isFallback: false,
+            fetchedAtUtc: envelope.timestamp,
+            observedAtUtc: null
+          };
+        }
+        var isStale = this.isExpired();
+        w.provenance.freshness = isStale ? 'stale' : 'cached';
+        w.provenance.cacheAgeMs = Date.now() - envelope.timestamp;
+        w.provenance.ttlMs = effectiveTtl;
+      }
+
       return envelope.data;
     },
 
@@ -139,7 +164,24 @@
      */
     getAny: function() {
       this._ensureMemory();
-      return this._cachedEnvelope ? this._cachedEnvelope.data : null;
+      var data = this._cachedEnvelope ? this._cachedEnvelope.data : null;
+      if (data && data.weather) {
+        if (!data.weather.provenance) {
+          data.weather.provenance = {
+            sourceRequested: (this._cachedEnvelope && this._cachedEnvelope.weatherProvider) || 'auto',
+            sourceActual: (this._cachedEnvelope && this._cachedEnvelope.weatherProvider) || 'auto',
+            isFallback: false,
+            fetchedAtUtc: this._cachedEnvelope ? this._cachedEnvelope.timestamp : Date.now(),
+            observedAtUtc: null
+          };
+        }
+        data.weather.provenance.freshness = 'emergency';
+        if (this._cachedEnvelope) {
+          data.weather.provenance.cacheAgeMs = Date.now() - this._cachedEnvelope.timestamp;
+          data.weather.provenance.ttlMs = this.TTL_MS;
+        }
+      }
+      return data;
     },
 
     /**
@@ -183,7 +225,8 @@
       if (!this._cachedEnvelope) return true;
       var age = Date.now() - this._cachedTimestamp;
       if (!Number.isFinite(age)) return true;
-      return age < 0 || age >= this.TTL_MS;
+      var effectiveTtl = (typeof this.ttlMs === 'number' && this.ttlMs > 0) ? this.ttlMs : this.TTL_MS;
+      return age < 0 || age >= effectiveTtl;
     },
 
     /**
@@ -237,7 +280,7 @@
 
     /**
      * Mutates the current envelope's data in place while PRESERVING its original
-     * timestamp — attaching late-arriving news must not extend atmosphere
+     * timestamp - attaching late-arriving news must not extend atmosphere
      * freshness (LW16). Persistence stays best-effort.
      * @param {Function} mutator Receives the cached data object
      * @returns {boolean} True when a live envelope was mutated
@@ -311,7 +354,17 @@
           tempMaxC: 24.0,
           tempMinC: 16.0,
           tempMaxF: 75.2,
-          tempMinF: 60.8
+          tempMinF: 60.8,
+          provenance: {
+            sourceRequested: 'mock',
+            sourceActual: 'synthetic',
+            isFallback: true,
+            fetchedAtUtc: Date.now(),
+            observedAtUtc: null,
+            freshness: 'synthetic',
+            cacheAgeMs: 0,
+            ttlMs: 0
+          }
         },
         aqi: {
           europeanAqi: 22,
