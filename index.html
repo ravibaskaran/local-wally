@@ -461,11 +461,19 @@
 
         <!-- HUD Footer: Cache & Synchronization Status -->
         <footer class="hud-footer">
-          <div class="hud-sync-indicator">
-            <div id="sync-dot" class="sync-pulse"></div>
-            <span id="sync-status">Initializing...</span>
+          <div class="hud-footer-left">
+            <div class="hud-sync-indicator">
+              <div id="sync-dot" class="sync-pulse"></div>
+              <span id="sync-status">Initializing...</span>
+            </div>
+            <button id="hud-onedrive-btn" class="hud-onedrive-btn" type="button" title="OneDrive Cloud Sync (Click to connect account or sync settings)" aria-label="OneDrive Cloud Sync">
+              <svg class="onedrive-hud-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
+              </svg>
+              <span id="hud-onedrive-btn-text">OneDrive</span>
+            </button>
           </div>
-          <span id="hud-version" class="hud-version" title="Local Wally HUD version">v0.15.0</span>
+          <span id="hud-version" class="hud-version" title="Local Wally HUD version">v0.17.0</span>
         </footer>
       </div>
 

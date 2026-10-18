@@ -296,11 +296,6 @@
     "value": "Import Settings",
     "text": ""
   },
-  "onedriveFolder": {
-    "type": "textbox",
-    "value": "Apps/Local Wally",
-    "text": "OneDrive Backup Folder (Default: Apps/Local Wally)"
-  },
   "onedriveConnect": {
     "type": "button",
     "value": "Connect OneDrive (Browser Login)",
@@ -315,6 +310,11 @@
     "type": "button",
     "value": "Disconnect Account",
     "text": ""
+  },
+  "onedriveFolder": {
+    "type": "textbox",
+    "value": "Apps/Local Wally",
+    "text": "OneDrive Backup Folder (Default: Apps/Local Wally)"
   },
   "settingsHelp": {
     "type": "label",

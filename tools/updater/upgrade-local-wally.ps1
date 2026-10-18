@@ -118,6 +118,50 @@ try {
         try {
             Copy-Item -Path (Join-Path $extract '*') -Destination $t -Recurse -Force
             $updated++
+
+            # Reconcile Lively's cached properties in SaveData so new settings appear in Customise
+            $wpId = Split-Path $t -Leaf
+            $newPropsFile = Join-Path $t 'LivelyProperties.json'
+            if (Test-Path $newPropsFile) {
+                $saveDataRoots = @()
+                $libraryDir = Split-Path $t -Parent
+                $parentDir = Split-Path $libraryDir -Parent
+                if ($parentDir) {
+                    $saveDataRoots += (Join-Path $parentDir 'SaveData\wpdata')
+                }
+                $saveDataRoots += (Join-Path $env:LOCALAPPDATA 'Lively Wallpaper\SaveData\wpdata')
+                $pkgsDir = Join-Path $env:LOCALAPPDATA 'Packages'
+                if (Test-Path $pkgsDir) {
+                    Get-ChildItem $pkgsDir -Directory -Filter '12030rocksdanister.LivelyWallpaper*' -ErrorAction SilentlyContinue | ForEach-Object {
+                        $saveDataRoots += (Join-Path $_.FullName 'LocalCache\Local\Lively Wallpaper\SaveData\wpdata')
+                    }
+                }
+                foreach ($sRoot in ($saveDataRoots | Select-Object -Unique)) {
+                    $wpDataDir = Join-Path $sRoot $wpId
+                    if (Test-Path $wpDataDir) {
+                        Get-ChildItem $wpDataDir -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+                            $savedPropsPath = Join-Path $_.FullName 'LivelyProperties.json'
+                            if (Test-Path $savedPropsPath) {
+                                try {
+                                    $newJson = Get-Content $newPropsFile -Raw | ConvertFrom-Json
+                                    $savedJson = Get-Content $savedPropsPath -Raw | ConvertFrom-Json
+                                    $modified = $false
+                                    foreach ($prop in $newJson.PSObject.Properties) {
+                                        if (-not $savedJson.PSObject.Properties[$prop.Name]) {
+                                            $savedJson | Add-Member -MemberType NoteProperty -Name $prop.Name -Value $prop.Value
+                                            $modified = $true
+                                        }
+                                    }
+                                    if ($modified) {
+                                        $savedJson | ConvertTo-Json -Depth 10 | Set-Content $savedPropsPath -Encoding UTF8
+                                        Write-Step ("  Synchronized new settings schema to Lively SaveData: " + $_.FullName)
+                                    }
+                                } catch {}
+                            }
+                        }
+                    }
+                }
+            }
         } catch {
             Write-Warn2 ("  Could not update this copy: " + $_.Exception.Message)
             Write-Warn2 '  Tip: switch Lively to another wallpaper (or exit Lively), then run again.'

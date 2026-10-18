@@ -2705,6 +2705,26 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       this.dom.onedriveAuthUrl = document.getElementById('onedrive-auth-url');
       this.dom.onedriveAuthStatus = document.getElementById('onedrive-auth-status');
       this.dom.diagOnedriveFolder = document.getElementById('diag-onedrive-folder');
+      this.dom.hudOneDriveBtn = document.getElementById('hud-onedrive-btn');
+      this.dom.hudOneDriveBtnText = document.getElementById('hud-onedrive-btn-text');
+
+      if (this.dom.hudOneDriveBtn) {
+        this.dom.hudOneDriveBtn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          if (!global.OneDriveSync) return;
+          if (global.OneDriveSync.isConnected && global.OneDriveSync.isConnected()) {
+            if (self.dom.hudOneDriveBtnText) self.dom.hudOneDriveBtnText.textContent = 'Syncing...';
+            self.dom.hudOneDriveBtn.className = 'hud-onedrive-btn is-syncing';
+            global.OneDriveSync.sync(true).then(function() {
+              self.updateOneDriveUI();
+            }).catch(function() {
+              self.updateOneDriveUI();
+            });
+          } else {
+            self.openOneDriveAuthModal();
+          }
+        });
+      }
 
       if (this.dom.diagOnedriveFolder) {
         if (global.OneDriveSync && global.OneDriveSync.folderPath) {
@@ -2870,6 +2890,22 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (this.dom.onedriveDisconnectBtn) {
         this.dom.onedriveDisconnectBtn.style.display = isConnected ? 'inline-flex' : 'none';
       }
+
+      if (this.dom.hudOneDriveBtn && this.dom.hudOneDriveBtnText) {
+        if (state === 'auth_pending') {
+          this.dom.hudOneDriveBtn.className = 'hud-onedrive-btn is-syncing';
+          this.setDomText(this.dom.hudOneDriveBtnText, 'Sign-in...');
+        } else if (state === 'syncing') {
+          this.dom.hudOneDriveBtn.className = 'hud-onedrive-btn is-syncing';
+          this.setDomText(this.dom.hudOneDriveBtnText, 'Syncing...');
+        } else if (isConnected) {
+          this.dom.hudOneDriveBtn.className = 'hud-onedrive-btn is-connected';
+          this.setDomText(this.dom.hudOneDriveBtnText, 'OneDrive · Synced');
+        } else {
+          this.dom.hudOneDriveBtn.className = 'hud-onedrive-btn';
+          this.setDomText(this.dom.hudOneDriveBtnText, 'OneDrive');
+        }
+      }
     },
 
     cacheDom: function() {
@@ -2889,6 +2925,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         hudLocationText: document.getElementById('hud-location-text'),
         hudWeatherFreshness: document.getElementById('hud-weather-freshness'),
         hudWeatherNextUpdate: document.getElementById('hud-weather-next-update'),
+        hudOneDriveBtn: document.getElementById('hud-onedrive-btn'),
+        hudOneDriveBtnText: document.getElementById('hud-onedrive-btn-text'),
         diagOnedriveFolder: document.getElementById('diag-onedrive-folder'),
         wpActionFav: document.getElementById('wp-action-fav'),
         wpActionAvoid: document.getElementById('wp-action-avoid'),
