@@ -8,6 +8,25 @@ For downloadable packages, installers, and release tags, visit [GitHub Releases]
 
 ## Release History
 
+### Version 0.18.1 - Location Aliases, Updater Key Preservation & OneDrive Guidance
+- **Location Geocoding & City Aliases (Root-Cause Fix)**:
+  - Fixed Open-Meteo geocoding failure on comma-delimited strings (e.g., "bangalore, india"). Open-Meteo's `?name=` query returns zero matches for composite strings containing commas or country qualifiers.
+  - Added smart query parsing in `_geocodeCity` that extracts the primary city name and country hint.
+  - Added `_CITY_ALIASES` mapping table for canonical city names (e.g., "bangalore" -> "bengaluru", "bombay" -> "mumbai", "calcutta" -> "kolkata", "madras" -> "chennai", "peking" -> "beijing").
+  - Added automatic fallback to OpenStreetMap Nominatim (`_geocodeNominatim`) when Open-Meteo yields no matches.
+  - Resolves "bangalore, india" accurately to Bengaluru, Karnataka, India instead of falling back to IP or incorrect locations.
+- **Updater Script Settings & API Key Preservation**:
+  - Enhanced `tools/updater/upgrade-local-wally.ps1` to automatically inspect and reconcile user settings from Lively's runtime `SaveData\wpdata` folder back into the wallpaper directory.
+  - Preserved all user-configured API keys (`wallhavenApiKey`, `pexelsApiKey`, `newsApiKey`, `currentsApiKey`, `weatherapiKey`) and settings (`customLocation`, `tempUnit`, etc.) across script runs.
+  - Preserved `config.js` keys and `onedrive_tokens.json` across upgrades.
+  - Fixed PowerShell 5.1 ANSI encoding bug where `Get-Content` corrupted degree symbols (`°C` to `Â°C`) by adopting .NET `[System.IO.File]` APIs with UTF-8 without BOM.
+  - Added automatic repair routine for any pre-existing corrupted `Â°` artifacts.
+- **OneDrive Modal Guidance & Microsoft "Wrongplace" Handling**:
+  - Added detection and user guidance for Microsoft Entra ID redirecting to `https://login.microsoftonline.com/common/wrongplace`.
+  - Added clear instructions in `#onedrive-auth-modal` explaining that clicking the browser Back button reveals the redirect URL containing the authorization code in the browser address bar.
+  - Added a dedicated helper card highlighting `tools/onedrive-login.bat` for automated 1-click device code sign-in via `microsoft.com/devicelogin`.
+  - Added validation guard in `extractAuthCode()` alerting users immediately if a `wrongplace` URL is pasted without the required code.
+
 ### Version 0.18.0 - OneDrive Interactive Browser OAuth, Direct Token Exchange & Customization Cloud Branding
 - **Interactive Browser OAuth Flow (Root-Cause Fix)**:
   - Replaced device code flow with official interactive OAuth 2.0 Authorization Code flow for Microsoft Personal Accounts.

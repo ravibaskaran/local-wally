@@ -2324,10 +2324,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     showBatteryInfo: true,
 
     /**
-     * Product version (v0.18.0). Rendered into #hud-version (bottom-right of
+     * Product version (v0.18.1). Rendered into #hud-version (bottom-right of
      * the card) so the running build is identifiable at a glance.
      */
-    VERSION: '0.18.0',
+    VERSION: '0.18.1',
     showCelestial: true,
     showAqi: true,
     showEnvironmentalMetrics: true,
@@ -2845,7 +2845,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             this.href = global.OneDriveSync.getOAuthUrl();
           }
           if (self.dom.onedriveAuthStatus) {
-            self.dom.onedriveAuthStatus.textContent = 'Sign-in opened in browser. After approving, paste the code or redirect URL below.';
+            self.dom.onedriveAuthStatus.textContent = 'Sign-in opened. If Microsoft displays "This is not the right page", click Back in browser to copy the URL, then paste below.';
             self.dom.onedriveAuthStatus.className = 'onedrive-auth-status';
           }
         });
@@ -2874,6 +2874,15 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         if (!val) {
           if (self.dom.onedriveAuthStatus) {
             self.dom.onedriveAuthStatus.textContent = 'Please paste the code or URL from your browser.';
+            self.dom.onedriveAuthStatus.className = 'onedrive-auth-status is-error';
+          }
+          self.dom.onedriveAuthCodeInput.focus();
+          return;
+        }
+
+        if (val.indexOf('wrongplace') !== -1) {
+          if (self.dom.onedriveAuthStatus) {
+            self.dom.onedriveAuthStatus.textContent = "You reached the Microsoft 'wrongplace' page. Click your browser's Back button once to reveal the URL containing your code, or run tools/onedrive-login.bat.";
             self.dom.onedriveAuthStatus.className = 'onedrive-auth-status is-error';
           }
           self.dom.onedriveAuthCodeInput.focus();

@@ -1,6 +1,6 @@
 {
   "name": "local-wally",
-  "version": "0.19.0",
+  "version": "0.18.1",
   "description": "Local Wally: Intelligent Ambient Desktop HUD Wallpaper for Lively Wallpaper",
   "scripts": {
     "test": "node tests/run_tests.js"

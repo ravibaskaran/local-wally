@@ -134,6 +134,17 @@
     _LOCATION_AUTO_STORE_KEY: 'LIVELY_HUD_LOCATION_AUTO',
     _LOCATION_MANUAL_CACHE_KEY: 'LIVELY_HUD_LOCATION_MANUAL',
     _GEODING_BASE: 'https://geocoding-api.open-meteo.com/v1/search',
+    _NOMINATIM_BASE: 'https://nominatim.openstreetmap.org/search',
+    _CITY_ALIASES: {
+      'bangalore': 'bengaluru',
+      'bombay': 'mumbai',
+      'madras': 'chennai',
+      'calcutta': 'kolkata',
+      'peking': 'beijing',
+      'saigon': 'ho chi minh city',
+      'canton': 'guangzhou',
+      'kiev': 'kyiv'
+    },
 
     _locationChangedListeners: [],
     _locationBgRefreshInFlight: false,
@@ -725,7 +736,7 @@
         return Promise.resolve(rec.resolved);
       }
       // Cache miss (first boot after import without resolved payload): re-geocode once.
-      return this._geocodeCity(rec.entry.name, 1).then(function(list) {
+      return this._geocodeCity(rec.entry.alias || rec.entry.name, 1).then(function(list) {
         // A newer user intent (typed entry, clear, property delivery) during
         // the boot re-geocode invalidates this write (R02).
         if (gen !== self._manualIntentGeneration) {
@@ -781,13 +792,26 @@
      * country, country_code}].
      */
     _geocodeCity: function(name, count) {
-      var safeName = this._toWellFormedSafe ? this._toWellFormedSafe(name) : String(name || '');
-      var url = this._GEODING_BASE + '?name=' + encodeURIComponent(safeName) +
-        '&count=' + (count || 6) + '&language=en&format=json';
-      return this._fetchJsonWithTimeout(url, 5000).then(function(data) {
+      var self = this;
+      var rawName = this._toWellFormedSafe ? this._toWellFormedSafe(name) : String(name || '');
+      rawName = rawName.trim();
+      if (!rawName) return Promise.resolve([]);
+
+      // Split comma-separated city and country/state (e.g. "bangalore, india")
+      var parts = rawName.split(',');
+      var cityPart = parts[0].trim();
+      var countryHint = parts.length > 1 ? parts.slice(1).join(',').trim().toLowerCase() : '';
+
+      var lowerCity = cityPart.toLowerCase();
+      var aliasCity = (this._CITY_ALIASES && this._CITY_ALIASES[lowerCity]) || cityPart;
+
+      var url = this._GEODING_BASE + '?name=' + encodeURIComponent(aliasCity) +
+        '&count=' + Math.max(count || 6, 10) + '&language=en&format=json';
+
+      return this._fetchJsonWithTimeout(url, 4500).then(function(data) {
         var out = [];
         var results = (data && data.results) || [];
-        for (var i = 0; i < results.length && out.length < (count || 6); i++) {
+        for (var i = 0; i < results.length; i++) {
           var r = results[i];
           if (typeof r.latitude !== 'number' || typeof r.longitude !== 'number' || !r.name) continue;
           out.push({
@@ -796,10 +820,69 @@
             name: String(r.name),
             admin1: r.admin1 ? String(r.admin1) : '',
             country: r.country ? String(r.country) : '',
-            country_code: r.country_code ? String(r.country_code) : ''
+            country_code: r.country_code ? String(r.country_code).toUpperCase() : ''
+          });
+        }
+
+        // If countryHint was specified (e.g. "india" or "in"), prioritize matching country
+        if (countryHint && out.length > 1) {
+          var matched = [];
+          var others = [];
+          for (var j = 0; j < out.length; j++) {
+            var item = out[j];
+            var cName = (item.country || '').toLowerCase();
+            var cCode = (item.country_code || '').toLowerCase();
+            if (cName.indexOf(countryHint) !== -1 || countryHint.indexOf(cName) !== -1 || cCode === countryHint) {
+              matched.push(item);
+            } else {
+              others.push(item);
+            }
+          }
+          if (matched.length > 0) {
+            out = matched.concat(others);
+          }
+        }
+
+        if (out.length > 0) {
+          return out.slice(0, count || 6);
+        }
+
+        // Fallback to OpenStreetMap Nominatim if Open-Meteo returns 0 results
+        return self._geocodeNominatim(rawName, count || 6);
+      }).catch(function() {
+        return self._geocodeNominatim(rawName, count || 6);
+      });
+    },
+
+    _geocodeNominatim: function(query, count) {
+      var url = (this._NOMINATIM_BASE || 'https://nominatim.openstreetmap.org/search') +
+        '?q=' + encodeURIComponent(query) +
+        '&format=json&limit=' + (count || 6) + '&addressdetails=1';
+
+      return this._fetchJsonWithTimeout(url, 5000, {
+        headers: { 'Accept': 'application/json' }
+      }).then(function(results) {
+        var out = [];
+        if (!Array.isArray(results)) return out;
+        for (var i = 0; i < results.length && out.length < (count || 6); i++) {
+          var r = results[i];
+          var lat = parseFloat(r.lat);
+          var lon = parseFloat(r.lon);
+          if (isNaN(lat) || isNaN(lon)) continue;
+          var addr = r.address || {};
+          var name = r.name || addr.city || addr.town || addr.municipality || addr.village || addr.county || 'Local Area';
+          out.push({
+            latitude: lat,
+            longitude: lon,
+            name: String(name),
+            admin1: addr.state || addr.region || '',
+            country: addr.country || '',
+            country_code: (addr.country_code || '').toUpperCase()
           });
         }
         return out;
+      }).catch(function() {
+        return [];
       });
     },
 

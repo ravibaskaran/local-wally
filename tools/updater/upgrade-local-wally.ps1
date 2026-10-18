@@ -133,9 +133,10 @@ try {
 
             $updated++
 
-            # Reconcile Lively's cached properties in SaveData so new settings appear in Customise
+            # Reconcile Lively's cached properties in SaveData and synchronize user settings
             $newPropsFile = Join-Path $t 'LivelyProperties.json'
             if (Test-Path $newPropsFile) {
+                $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
                 $saveDataRoots = @()
                 $libraryDir = Split-Path $t -Parent
                 $parentDir = Split-Path $libraryDir -Parent
@@ -156,9 +157,15 @@ try {
                             $savedPropsPath = Join-Path $_.FullName 'LivelyProperties.json'
                             if (Test-Path $savedPropsPath) {
                                 try {
-                                    $newJson = Get-Content $newPropsFile -Raw | ConvertFrom-Json
-                                    $savedJson = Get-Content $savedPropsPath -Raw | ConvertFrom-Json
+                                    $newRaw = [System.IO.File]::ReadAllText($newPropsFile, [System.Text.Encoding]::UTF8)
+                                    $savedRaw = [System.IO.File]::ReadAllText($savedPropsPath, [System.Text.Encoding]::UTF8)
+                                    # Fix any prior ANSI encoding corruption of degree symbol
+                                    $degCh = [string][char]0x00B0; $badCh = [string][char]0x00C2 + $degCh; $savedRaw = $savedRaw.Replace($badCh, $degCh)
+                                    $newJson = $newRaw | ConvertFrom-Json
+                                    $savedJson = $savedRaw | ConvertFrom-Json
                                     $modified = $false
+                                    $targetModified = $false
+
                                     foreach ($prop in $newJson.PSObject.Properties) {
                                         if (-not $savedJson.PSObject.Properties[$prop.Name]) {
                                             $savedJson | Add-Member -MemberType NoteProperty -Name $prop.Name -Value $prop.Value
@@ -175,16 +182,65 @@ try {
                                                 }
                                             }
                                         }
+
+                                        # Synchronize saved user values into target LivelyProperties.json
+                                        if ($savedJson.PSObject.Properties[$prop.Name] -and $prop.Value.type -ne 'button') {
+                                            $savedVal = $savedJson.PSObject.Properties[$prop.Name].Value.value
+                                            if ($null -ne $savedVal -and $savedVal -ne '' -and $prop.Value.value -ne $savedVal) {
+                                                $prop.Value.value = $savedVal
+                                                $targetModified = $true
+                                            }
+                                        }
                                     }
+
                                     if ($modified) {
-                                        $savedJson | ConvertTo-Json -Depth 10 | Set-Content $savedPropsPath -Encoding UTF8
+                                        $outJson = $savedJson | ConvertTo-Json -Depth 10
+                                        [System.IO.File]::WriteAllText($savedPropsPath, $outJson, $utf8NoBom)
                                         Write-Step ("  Synchronized new settings schema to Lively SaveData: " + $_.FullName)
+                                    }
+                                    if ($targetModified) {
+                                        $outTargetJson = $newJson | ConvertTo-Json -Depth 10
+                                        [System.IO.File]::WriteAllText($newPropsFile, $outTargetJson, $utf8NoBom)
+                                        Write-Step ("  Preserved user keys and settings in wallpaper folder: " + $newPropsFile)
                                     }
                                 } catch {}
                             }
                         }
                     }
                 }
+            }
+
+            # Preserve onedrive_tokens.json if present in backup
+            $backupTokens = Join-Path $backupDir 'onedrive_tokens.json'
+            $targetTokens = Join-Path $t 'onedrive_tokens.json'
+            if ((Test-Path $backupTokens) -and (-not (Test-Path $targetTokens))) {
+                Copy-Item -Path $backupTokens -Destination $targetTokens -Force -ErrorAction SilentlyContinue
+                Write-Step "  Preserved OneDrive token cache in wallpaper directory."
+            }
+
+            # If user customized config.js in installed wallpaper, preserve their custom keys
+            $backupConfig = Join-Path $backupDir 'config.js'
+            $targetConfig = Join-Path $t 'config.js'
+            if (Test-Path $backupConfig) {
+                try {
+                    $bCfgText = [System.IO.File]::ReadAllText($backupConfig, [System.Text.Encoding]::UTF8)
+                    $customMatches = @(
+                        'unsplashApiKey', 'wallhavenApiKey', 'pexelsApiKey', 'pixabayApiKey',
+                        'newsApiKey', 'currentsApiKey', 'weatherapiKey', 'openweathermapApiKey',
+                        'waqiApiKey'
+                    )
+                    $hasCustomKeys = $false
+                    foreach ($k in $customMatches) {
+                        if ($bCfgText -match "$k:\s*['"][^'"]+['"]") {
+                            $hasCustomKeys = $true
+                            break
+                        }
+                    }
+                    if ($hasCustomKeys) {
+                        Copy-Item -Path $backupConfig -Destination $targetConfig -Force
+                        Write-Step "  Preserved user-configured API keys in config.js."
+                    }
+                } catch {}
             }
 
             # Transaction committed successfully: purge backup

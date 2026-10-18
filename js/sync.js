@@ -363,6 +363,9 @@
 
     exchangeAuthCode: function(codeOrUrl) {
       var self = this;
+      if (codeOrUrl && typeof codeOrUrl === 'string' && codeOrUrl.indexOf('wrongplace') !== -1) {
+        return Promise.reject(new Error("You reached the 'wrongplace' page. Click your browser's Back button once to reveal the URL with your code, or run tools/onedrive-login.bat."));
+      }
       var code = self.extractAuthCode(codeOrUrl);
       if (!code) {
         return Promise.reject(new Error('Please paste a valid authorization code or redirect URL.'));

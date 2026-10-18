@@ -443,6 +443,40 @@ async function runAll() {
     assert.ok(readme.includes('5 minutes for keyless Google News'), 'README specifies 5m keyless');
   });
 
+  // --- Hotfix 0.18.1: Location Resolution with Comma and Alias ---
+  await test('0.18.1: Location geocoding resolves "bangalore, india" to Bengaluru, India', async () => {
+    const res = await ApiService.setManualLocation('bangalore, india');
+    assert.strictEqual(res.ok, true, 'setManualLocation succeeded');
+    assert.strictEqual(res.location.city, 'Bengaluru', 'Resolved to Bengaluru');
+    assert.strictEqual(res.location.country, 'India', 'Resolved country India');
+    assert.ok(Math.abs(res.location.latitude - 12.97) < 0.1, 'Latitude ~12.97');
+    assert.ok(Math.abs(res.location.longitude - 77.59) < 0.1, 'Longitude ~77.59');
+    assert.strictEqual(ApiService.manualLocationMatches('bangalore, india'), true, 'Manual location matches alias');
+  });
+
+  // --- Hotfix 0.18.1: Updater Script Settings & Key Preservation ---
+  await test('0.18.1: Updater script reconciles user settings and preserves keys', () => {
+    const script = fs.readFileSync(path.join(__dirname, '..', 'tools', 'updater', 'upgrade-local-wally.ps1'), 'utf8');
+    assert.ok(script.includes('Synchronize saved user values into target LivelyProperties.json'), 'Script syncs saved values into target');
+    assert.ok(script.includes('Preserved user keys and settings in wallpaper folder'), 'Script logs user key preservation');
+    assert.ok(script.includes('System.Text.UTF8Encoding($false)'), 'Script writes UTF-8 without BOM');
+  });
+
+  // --- Hotfix 0.18.1: OneDrive wrongplace Protection and URL Extraction ---
+  await test('0.18.1: OneDrive auth code extraction detects wrongplace and parses codes', async () => {
+    let wrongplaceRejected = false;
+    try {
+      await OneDriveSync.exchangeAuthCode('https://login.microsoftonline.com/common/wrongplace');
+    } catch (e) {
+      wrongplaceRejected = true;
+      assert.ok(e.message.includes('wrongplace'), 'Error mentions wrongplace');
+    }
+    assert.strictEqual(wrongplaceRejected, true, 'exchangeAuthCode rejected wrongplace URL');
+
+    const extracted = OneDriveSync.extractAuthCode('https://login.microsoftonline.com/common/oauth2/nativeclient?code=M.R3_TEST12345&state=abc');
+    assert.strictEqual(extracted, 'M.R3_TEST12345', 'Valid auth code correctly extracted from URL');
+  });
+
   console.log('\n===============================================================');
   console.log(`Results: ${passCount} passed, ${failCount} failed.`);
   console.log('===============================================================');

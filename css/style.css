@@ -4083,6 +4083,43 @@ html, body {
   border-color: rgba(255, 255, 255, 0.25);
 }
 
+.onedrive-helper-card {
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+.onedrive-helper-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: #38bdf8;
+  margin-bottom: 4px;
+}
+
+.onedrive-helper-icon {
+  font-size: 0.9rem;
+}
+
+.onedrive-helper-text {
+  font-size: 0.74rem;
+  line-height: 1.4;
+  color: #cbd5e1;
+  margin: 0;
+}
+
+.onedrive-helper-text code {
+  background: rgba(0, 0, 0, 0.35);
+  padding: 2px 5px;
+  border-radius: 4px;
+  color: #7dd3fc;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
 .onedrive-auth-status {
   font-size: 0.8rem;
   line-height: 1.4;
