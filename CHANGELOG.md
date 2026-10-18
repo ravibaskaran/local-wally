@@ -8,6 +8,25 @@ For downloadable packages, installers, and release tags, visit [GitHub Releases]
 
 ## Release History
 
+### Version 0.18.0 - OneDrive Interactive Browser OAuth, Direct Token Exchange & Customization Cloud Branding
+- **Interactive Browser OAuth Flow (Root-Cause Fix)**:
+  - Replaced device code flow with official interactive OAuth 2.0 Authorization Code flow for Microsoft Personal Accounts.
+  - Resolved "Failed to fetch" error caused by missing CORS headers on Microsoft Entra device code endpoints.
+  - Public Client ID updated to standard multi-tenant registration `d50ca740-c83f-4d1b-b616-12c519384f0c` configured for consumer OneDrive accounts.
+  - Direct token exchange via Microsoft's CORS-enabled `/token` endpoint with nativeclient redirect URI (`https://login.microsoftonline.com/common/oauth2/nativeclient`).
+  - Added `extractAuthCode()` supporting raw authorization codes, query strings, and complete redirect URLs with automatic URL decoding.
+- **Three-Step Interactive Connection Modal**:
+  - Step 1: Direct link (`#onedrive-browser-launch-btn`) opens Microsoft secure sign-in in the default system browser via user-initiated desktop activation.
+  - Step 2: Clear guidance for approving access and obtaining the redirect authorization code.
+  - Step 3: Fast paste input with clipboard button (`#onedrive-auth-paste-btn`) and keyboard Enter support.
+  - Clear real-time status feedback (`#onedrive-auth-status`) during validation and token exchange.
+- **Lively Customization Dialog Cloud Branding**:
+  - Added visual cloud symbols to action buttons: `☁ Connect OneDrive (Sign In)`, `☁ Backup / Sync Settings Now`, and `✕ Disconnect Account`.
+  - Reconciled SaveData updater schema to guarantee cloud buttons appear in Lively's customize window across updates.
+- **Standalone Terminal Login Helper**:
+  - Added `tools/onedrive-login.bat` and `tools/onedrive-login.ps1` for users preferring an automated CLI-based device login.
+  - Automatically polls for tokens and syncs credentials into Local Wally storage.
+
 ### Version 0.17.0 - Relative Weather Layout, Scheduled Next Update & OneDrive Customization
 - **Relative Weather Card Layout & Zero-Overlap Flow**:
   - Restructured `#hud-weather-card` into a clean two-row relative flex layout: `.hud-weather-status-bar` above `.hud-weather-main-row`.

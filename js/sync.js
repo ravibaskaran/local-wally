@@ -10,7 +10,7 @@
 (function(global) {
   'use strict';
 
-  var DEFAULT_CLIENT_ID = '38977a41-21c6-430c-8d1e-e274a496b864';
+  var DEFAULT_CLIENT_ID = 'd50ca740-c83f-4d1b-b616-12c519384f0c';
   var AUTH_STORAGE_KEY = 'local_wally_onedrive_auth';
   var SYNC_META_STORAGE_KEY = 'local_wally_onedrive_sync_meta';
   var SETTINGS_FILENAME = 'local-wally-settings.json';
@@ -37,6 +37,7 @@
   var OneDriveSync = {
     DEFAULT_CLIENT_ID: DEFAULT_CLIENT_ID,
     CLIENT_ID: DEFAULT_CLIENT_ID,
+    REDIRECT_URI: 'https://login.microsoftonline.com/common/oauth2/nativeclient',
     SCOPE: SCOPE,
     TIMEOUT_MS: REQUEST_TIMEOUT_MS,
     clientId: DEFAULT_CLIENT_ID,
@@ -101,6 +102,22 @@
         });
       } else {
         this.state = 'not_connected';
+        var self = this;
+        if (typeof global.fetch === 'function') {
+          try {
+            global.fetch('onedrive_tokens.json').then(function(res) {
+              if (res && res.ok) return res.json();
+            }).then(function(tokens) {
+              if (tokens && tokens.refreshToken && !self.isConnected()) {
+                self.setStoredAuth(tokens);
+                self.state = 'up_to_date';
+                var meta = self.getStoredSyncMeta();
+                self.lastSyncTime = meta ? (meta.lastSyncTime || 0) : 0;
+                self.sync(false);
+              }
+            }).catch(function() {});
+          } catch (e) {}
+        }
       }
       return this;
     },
@@ -313,6 +330,89 @@
       }
     },
 
+    getOAuthUrl: function() {
+      var endpoint = 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize';
+      return endpoint + '?client_id=' + encodeURIComponent(this.clientId || DEFAULT_CLIENT_ID) +
+        '&response_type=code' +
+        '&redirect_uri=' + encodeURIComponent(this.REDIRECT_URI) +
+        '&scope=' + encodeURIComponent(SCOPE) +
+        '&response_mode=query';
+    },
+
+    extractAuthCode: function(codeOrUrl) {
+      if (!codeOrUrl || typeof codeOrUrl !== 'string') return null;
+      var str = codeOrUrl.trim();
+      if (!str) return null;
+
+      var codeIdx = str.indexOf('code=');
+      if (codeIdx !== -1) {
+        var sub = str.substring(codeIdx + 5);
+        var ampIdx = sub.indexOf('&');
+        var hashIdx = sub.indexOf('#');
+        var endPos = sub.length;
+        if (ampIdx !== -1 && ampIdx < endPos) endPos = ampIdx;
+        if (hashIdx !== -1 && hashIdx < endPos) endPos = hashIdx;
+        var rawCode = sub.substring(0, endPos);
+        try {
+          return decodeURIComponent(rawCode).trim();
+        } catch (e) {
+          return rawCode.trim();
+        }
+      }
+
+      var cleaned = str.replace(/^["']|["']$/g, '').trim();
+      return cleaned || null;
+    },
+
+    exchangeAuthCode: function(codeOrUrl) {
+      var self = this;
+      var code = self.extractAuthCode(codeOrUrl);
+      if (!code) {
+        return Promise.reject(new Error('Please paste a valid authorization code or redirect URL.'));
+      }
+
+      var endpoint = 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
+      var params = 'grant_type=authorization_code' +
+                   '&client_id=' + encodeURIComponent(self.clientId || DEFAULT_CLIENT_ID) +
+                   '&code=' + encodeURIComponent(code) +
+                   '&redirect_uri=' + encodeURIComponent(self.REDIRECT_URI);
+
+      return self._fetchWithTimeout(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params
+      }, 8000).then(function(res) {
+        return res.json().catch(function() {
+          throw new Error('Invalid JSON response from token endpoint');
+        }).then(function(data) {
+          if (!res.ok || (data && data.error)) {
+            var msg = (data && (data.error_description || data.error)) || ('Token exchange failed with HTTP ' + res.status);
+            throw new Error(msg);
+          }
+          return data;
+        });
+      }).then(function(data) {
+        if (!data || !data.access_token) {
+          throw new Error('No access token returned from Microsoft');
+        }
+        var authRecord = {
+          accessToken: data.access_token,
+          refreshToken: data.refresh_token,
+          expiresAt: Date.now() + ((data.expires_in || 3600) * 1000),
+          tokenType: data.token_type || 'Bearer',
+          scope: data.scope || SCOPE
+        };
+        self.setStoredAuth(authRecord);
+        self.state = 'up_to_date';
+        self.lastError = null;
+
+        // Trigger sync to upload or restore settings immediately
+        self.sync(true);
+
+        return data;
+      });
+    },
+
     refreshToken: function() {
       var self = this;
       var auth = self.getStoredAuth();
@@ -321,17 +421,16 @@
         return Promise.reject(new Error('No refresh token available'));
       }
 
-      var endpoint = 'https://login.microsoftonline.com/consumers/oauth2/v2.0/token';
+      var endpoint = 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
       var params = 'grant_type=refresh_token' +
-                   '&client_id=' + encodeURIComponent(self.clientId) +
-                   '&refresh_token=' + encodeURIComponent(auth.refreshToken) +
-                   '&scope=' + encodeURIComponent(SCOPE);
+                   '&client_id=' + encodeURIComponent(self.clientId || DEFAULT_CLIENT_ID) +
+                   '&refresh_token=' + encodeURIComponent(auth.refreshToken);
 
       return self._fetchWithTimeout(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: params
-      }, 5000).then(function(res) {
+      }, 8000).then(function(res) {
         if (!res.ok) {
           if (res.status === 400 || res.status === 401) {
             self.state = 'sign_in_needed';
@@ -348,7 +447,9 @@
         var updatedAuth = {
           accessToken: data.access_token,
           refreshToken: data.refresh_token || auth.refreshToken,
-          expiresAt: expiresAt
+          expiresAt: expiresAt,
+          tokenType: data.token_type || auth.tokenType || 'Bearer',
+          scope: data.scope || auth.scope || SCOPE
         };
         self.setStoredAuth(updatedAuth);
         return updatedAuth.accessToken;
@@ -818,7 +919,7 @@
 
     _fetchWithTimeout: function(url, options, timeoutMs) {
       timeoutMs = timeoutMs || REQUEST_TIMEOUT_MS;
-      var fetchFn = global.fetch;
+      var fetchFn = (typeof window !== 'undefined' && window.fetch) || global.fetch || (typeof globalThis !== 'undefined' && globalThis.fetch);
       if (!fetchFn) {
         return Promise.reject(new Error('Global fetch unavailable in environment'));
       }
@@ -848,6 +949,7 @@
 
   OneDriveSync.signOut = OneDriveSync.disconnect;
   OneDriveSync.isAuthenticated = OneDriveSync.isConnected;
+  OneDriveSync.REDIRECT_URI = 'https://login.microsoftonline.com/common/oauth2/nativeclient';
 
   global.OneDriveSync = OneDriveSync;
   if (typeof window !== 'undefined') window.OneDriveSync = OneDriveSync;

@@ -695,21 +695,61 @@
   </div>
 
   <!-- OneDrive Auth Modal -->
-  <div id="onedrive-auth-modal" class="onedrive-modal is-hidden" role="dialog" aria-modal="true" aria-label="OneDrive Device Authentication">
+  <div id="onedrive-auth-modal" class="onedrive-modal is-hidden" role="dialog" aria-modal="true" aria-labelledby="onedrive-modal-title" aria-hidden="true">
+    <div class="onedrive-modal-backdrop"></div>
     <div class="onedrive-modal-card">
       <div class="onedrive-modal-header">
-        <h3>Connect Microsoft OneDrive</h3>
-        <button id="onedrive-modal-close" class="onedrive-modal-close" type="button" title="Close" aria-label="Close">&times;</button>
+        <div class="onedrive-modal-title-row">
+          <svg class="onedrive-logo-svg" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+            <path fill="#0078D4" d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/>
+          </svg>
+          <h3 id="onedrive-modal-title" class="onedrive-modal-title">Connect Microsoft OneDrive</h3>
+        </div>
+        <button type="button" id="onedrive-modal-close" class="onedrive-modal-close-btn" aria-label="Close dialog">&times;</button>
       </div>
-      <p style="font-size: 0.88rem; margin: 0; color: #cbd5e1;">Sign in to sync your Local Wally settings and wallpaper favorites across your devices.</p>
-      <div class="onedrive-code-box">
-        <span id="onedrive-user-code" class="onedrive-code-text">--------</span>
-        <button id="onedrive-copy-code-btn" class="diag-btn" type="button">Copy Code</button>
+
+      <div class="onedrive-modal-body">
+        <p class="onedrive-modal-desc">
+          Sync your Local Wally settings and wallpaper favorites across your devices using your personal OneDrive account.
+        </p>
+
+        <div class="onedrive-step-box">
+          <div class="onedrive-step-num">1</div>
+          <div class="onedrive-step-content">
+            <div class="onedrive-step-title">Open Microsoft Secure Sign-In</div>
+            <a id="onedrive-browser-launch-btn" href="#" target="_blank" rel="noopener noreferrer" class="onedrive-launch-btn">
+              <span>☁ Open Microsoft Sign-In in Browser</span>
+            </a>
+          </div>
+        </div>
+
+        <div class="onedrive-step-box">
+          <div class="onedrive-step-num">2</div>
+          <div class="onedrive-step-content">
+            <div class="onedrive-step-title">Approve Access in Browser</div>
+            <p class="onedrive-step-hint">Sign in and allow Local Wally to sync settings. Microsoft will redirect to a page showing your authorization code.</p>
+          </div>
+        </div>
+
+        <div class="onedrive-step-box">
+          <div class="onedrive-step-num">3</div>
+          <div class="onedrive-step-content">
+            <div class="onedrive-step-title">Paste Code or Redirect URL</div>
+            <div class="onedrive-input-row">
+              <input type="text" id="onedrive-auth-code-input" class="onedrive-code-input" placeholder="Paste code or full redirect URL here..." autocomplete="off" spellcheck="false" />
+              <button type="button" id="onedrive-auth-paste-btn" class="onedrive-paste-btn" title="Paste from clipboard">Paste</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="onedrive-auth-status" class="onedrive-auth-status" aria-live="polite">Ready to connect.</div>
       </div>
-      <a id="onedrive-auth-url" class="onedrive-portal-link" href="https://microsoft.com/devicelogin" target="_blank" rel="noopener noreferrer">Open microsoft.com/devicelogin</a>
-      <div id="onedrive-auth-status" class="onedrive-auth-status" role="status" aria-live="polite">Waiting for sign-in...</div>
+
       <div class="onedrive-modal-footer">
-        <button id="onedrive-modal-cancel" class="diag-btn" type="button">Cancel</button>
+        <button type="button" id="onedrive-modal-cancel" class="onedrive-footer-btn onedrive-cancel-btn">Cancel</button>
+        <button type="button" id="onedrive-auth-submit-btn" class="onedrive-footer-btn onedrive-submit-btn">
+          <span>Connect Account</span>
+        </button>
       </div>
     </div>
   </div>

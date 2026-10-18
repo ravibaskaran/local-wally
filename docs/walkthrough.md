@@ -185,8 +185,8 @@ Local Wally includes a native wallpaper personalization engine that operates ent
 
 Local Wally features optional, cross-device synchronization with personal Microsoft OneDrive accounts:
 
-- **Integrated Lively Wallpaper Controls**: Connect, sync, or disconnect directly from Lively Wallpaper's **Customise Wallpaper** dialog using dedicated action buttons, or from the in-wallpaper Diagnostics panel (press <kbd>D</kbd>).
-- **Browser-Launched OAuth (Device Code Flow)**: Uses standard OAuth 2.0 Device Code Flow (RFC 8628). Clicking **Connect OneDrive** automatically launches your default system browser to `https://microsoft.com/devicelogin` and copies your 8-character user code directly to the clipboard.
+- **Integrated Lively Wallpaper Controls**: Connect, sync, or disconnect directly from Lively Wallpaper's **Customise Wallpaper** dialog using dedicated action buttons (with cloud icons), from the HUD footer button (`☁ OneDrive`), or from the in-wallpaper Diagnostics panel (press <kbd>D</kbd>).
+- **Direct Browser OAuth (Interactive Flow)**: Clicking **Connect OneDrive** opens the modal and launches your default browser to Microsoft's secure sign-in page (`login.microsoftonline.com`). Sign in with your personal Microsoft account, copy the authorization code from the redirect URL, paste it into the modal, and click **Connect Account**. Local Wally directly exchanges the code via Microsoft's CORS-enabled token endpoint. Alternatively, users can run `tools/onedrive-login.bat` for an automated command-line device code login.
 - **Any-Folder Backup Capability**: Save your settings to any OneDrive directory by customizing the **OneDrive Backup Folder** property (default: `Apps/Local Wally`). You can specify any personal folder path (e.g. `Backups/MyPC` or `Configs/LocalWally`). Local Wally automatically routes between the private AppFolder (`me/drive/special/approot`) and custom folder hierarchies (`me/drive/root:/<path>`).
 - **Strict Privacy Firewall (Zero Location in Cloud)**: All GPS coordinates, manual city names, location history, cached weather, news snapshots, and OAuth tokens are strictly stripped before uploading. Personal location data stays 100% on your local PC.
 - **Local-First Architecture**: Your wallpaper and HUD boot instantly from local storage in under 50ms. Background sync checks are non-blocking and automatically park during games or screen lock.
@@ -270,10 +270,10 @@ The following table lists every property defined in `LivelyProperties.json`:
 | `defaultForecastTab` | Default Forecast Tab | dropdown | `Temperature` | Temperature, Feels Like, Precipitation, Wind, Humidity, AQI |
 | `settingsExport` | Export Settings (incl. API keys) | button | - | Exports all settings to JSON file |
 | `settingsImport` | Import Settings | button | - | Restores settings from JSON file |
+| `onedriveConnect` | ☁ Connect OneDrive (Sign In) | button | - | Launches browser authentication modal |
+| `onedriveSync` | ☁ Backup / Sync Settings Now | button | - | Triggers immediate two-way synchronization |
+| `onedriveDisconnect` | ✕ Disconnect Account | button | - | Clears tokens and resets synchronization |
 | `onedriveFolder` | OneDrive Backup Folder | textbox | `"Apps/Local Wally"` | Custom folder path or default AppFolder |
-| `onedriveConnect` | Connect OneDrive (Browser Login) | button | - | Launches browser authentication and copies code |
-| `onedriveSync` | Sync Settings Now | button | - | Triggers immediate two-way synchronization |
-| `onedriveDisconnect` | Disconnect OneDrive | button | - | Clears tokens and resets synchronization |
 
 ---
 

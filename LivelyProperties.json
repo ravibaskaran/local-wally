@@ -298,17 +298,17 @@
   },
   "onedriveConnect": {
     "type": "button",
-    "value": "Connect OneDrive (Browser Login)",
+    "value": "☁ Connect OneDrive (Sign In)",
     "text": "OneDrive Cloud Synchronization"
   },
   "onedriveSync": {
     "type": "button",
-    "value": "Backup / Sync Settings Now",
+    "value": "☁ Backup / Sync Settings Now",
     "text": ""
   },
   "onedriveDisconnect": {
     "type": "button",
-    "value": "Disconnect Account",
+    "value": "✕ Disconnect Account",
     "text": ""
   },
   "onedriveFolder": {

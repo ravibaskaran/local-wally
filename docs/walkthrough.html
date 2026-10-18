@@ -405,8 +405,8 @@
 <h2 id="8-onedrive-personal-settings-synchronization">8. OneDrive Personal Settings Synchronization</h2>
 <p>Local Wally features optional, cross-device synchronization with personal Microsoft OneDrive accounts:</p>
 <ul>
-<li><strong>Integrated Lively Wallpaper Controls</strong>: Connect, sync, or disconnect directly from Lively Wallpaper's <strong>Customise Wallpaper</strong> dialog using dedicated action buttons, or from the in-wallpaper Diagnostics panel (press <kbd>D</kbd>).</li>
-<li><strong>Browser-Launched OAuth (Device Code Flow)</strong>: Uses standard OAuth 2.0 Device Code Flow (RFC 8628). Clicking <strong>Connect OneDrive</strong> automatically launches your default system browser to <code>https://microsoft.com/devicelogin</code> and copies your 8-character user code directly to the clipboard.</li>
+<li><strong>Integrated Lively Wallpaper Controls</strong>: Connect, sync, or disconnect directly from Lively Wallpaper's <strong>Customise Wallpaper</strong> dialog using dedicated action buttons (with cloud icons), from the HUD footer button (<code>☁ OneDrive</code>), or from the in-wallpaper Diagnostics panel (press <kbd>D</kbd>).</li>
+<li><strong>Direct Browser OAuth (Interactive Flow)</strong>: Clicking <strong>Connect OneDrive</strong> opens the modal and launches your default browser to Microsoft's secure sign-in page (<code>login.microsoftonline.com</code>). Sign in with your personal Microsoft account, copy the authorization code from the redirect URL, paste it into the modal, and click <strong>Connect Account</strong>. Local Wally directly exchanges the code via Microsoft's CORS-enabled token endpoint. Alternatively, users can run <code>tools/onedrive-login.bat</code> for an automated command-line device code login.</li>
 <li><strong>Any-Folder Backup Capability</strong>: Save your settings to any OneDrive directory by customizing the <strong>OneDrive Backup Folder</strong> property (default: <code>Apps/Local Wally</code>). You can specify any personal folder path (e.g. <code>Backups/MyPC</code> or <code>Configs/LocalWally</code>). Local Wally automatically routes between the private AppFolder (<code>me/drive/special/approot</code>) and custom folder hierarchies (<code>me/drive/root:/&lt;path&gt;</code>).</li>
 <li><strong>Strict Privacy Firewall (Zero Location in Cloud)</strong>: All GPS coordinates, manual city names, location history, cached weather, news snapshots, and OAuth tokens are strictly stripped before uploading. Personal location data stays 100% on your local PC.</li>
 <li><strong>Local-First Architecture</strong>: Your wallpaper and HUD boot instantly from local storage in under 50ms. Background sync checks are non-blocking and automatically park during games or screen lock.</li>
@@ -486,10 +486,10 @@
 <tr><td><code>defaultForecastTab</code></td><td>Default Forecast Tab</td><td>dropdown</td><td><code>Temperature</code></td><td>Temperature, Feels Like, Precipitation, Wind, Humidity, AQI</td></tr>
 <tr><td><code>settingsExport</code></td><td>Export Settings (incl. API keys)</td><td>button</td><td>-</td><td>Exports all settings to JSON file</td></tr>
 <tr><td><code>settingsImport</code></td><td>Import Settings</td><td>button</td><td>-</td><td>Restores settings from JSON file</td></tr>
+<tr><td><code>onedriveConnect</code></td><td>☁ Connect OneDrive (Sign In)</td><td>button</td><td>-</td><td>Launches browser authentication modal</td></tr>
+<tr><td><code>onedriveSync</code></td><td>☁ Backup / Sync Settings Now</td><td>button</td><td>-</td><td>Triggers immediate two-way synchronization</td></tr>
+<tr><td><code>onedriveDisconnect</code></td><td>✕ Disconnect Account</td><td>button</td><td>-</td><td>Clears tokens and resets synchronization</td></tr>
 <tr><td><code>onedriveFolder</code></td><td>OneDrive Backup Folder</td><td>textbox</td><td><code>"Apps/Local Wally"</code></td><td>Custom folder path or default AppFolder</td></tr>
-<tr><td><code>onedriveConnect</code></td><td>Connect OneDrive (Browser Login)</td><td>button</td><td>-</td><td>Launches browser authentication and copies code</td></tr>
-<tr><td><code>onedriveSync</code></td><td>Sync Settings Now</td><td>button</td><td>-</td><td>Triggers immediate two-way synchronization</td></tr>
-<tr><td><code>onedriveDisconnect</code></td><td>Disconnect OneDrive</td><td>button</td><td>-</td><td>Clears tokens and resets synchronization</td></tr>
 </tbody></table>
 </div>
 <hr />

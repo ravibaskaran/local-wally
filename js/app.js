@@ -2316,10 +2316,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     showBatteryInfo: true,
 
     /**
-     * Product version (v0.17.0). Rendered into #hud-version (bottom-right of
+     * Product version (v0.18.0). Rendered into #hud-version (bottom-right of
      * the card) so the running build is identifiable at a glance.
      */
-    VERSION: '0.17.0',
+    VERSION: '0.18.0',
     showCelestial: true,
     showAqi: true,
     showEnvironmentalMetrics: true,
@@ -2700,13 +2700,19 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       this.dom.onedriveAuthModal = document.getElementById('onedrive-auth-modal');
       this.dom.onedriveModalClose = document.getElementById('onedrive-modal-close');
       this.dom.onedriveModalCancel = document.getElementById('onedrive-modal-cancel');
-      this.dom.onedriveUserCode = document.getElementById('onedrive-user-code');
-      this.dom.onedriveCopyCodeBtn = document.getElementById('onedrive-copy-code-btn');
-      this.dom.onedriveAuthUrl = document.getElementById('onedrive-auth-url');
+      this.dom.onedriveBrowserLaunchBtn = document.getElementById('onedrive-browser-launch-btn');
+      this.dom.onedriveAuthCodeInput = document.getElementById('onedrive-auth-code-input');
+      this.dom.onedriveAuthPasteBtn = document.getElementById('onedrive-auth-paste-btn');
+      this.dom.onedriveAuthSubmitBtn = document.getElementById('onedrive-auth-submit-btn');
       this.dom.onedriveAuthStatus = document.getElementById('onedrive-auth-status');
       this.dom.diagOnedriveFolder = document.getElementById('diag-onedrive-folder');
       this.dom.hudOneDriveBtn = document.getElementById('hud-onedrive-btn');
       this.dom.hudOneDriveBtnText = document.getElementById('hud-onedrive-btn-text');
+
+      // Legacy fallback bindings
+      this.dom.onedriveUserCode = document.getElementById('onedrive-user-code');
+      this.dom.onedriveCopyCodeBtn = document.getElementById('onedrive-copy-code-btn');
+      this.dom.onedriveAuthUrl = document.getElementById('onedrive-auth-url');
 
       if (this.dom.hudOneDriveBtn) {
         this.dom.hudOneDriveBtn.addEventListener('click', function(e) {
@@ -2765,6 +2771,100 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         });
       }
 
+      if (this.dom.onedriveBrowserLaunchBtn) {
+        this.dom.onedriveBrowserLaunchBtn.addEventListener('click', function() {
+          if (global.OneDriveSync && typeof global.OneDriveSync.getOAuthUrl === 'function') {
+            this.href = global.OneDriveSync.getOAuthUrl();
+          }
+          if (self.dom.onedriveAuthStatus) {
+            self.dom.onedriveAuthStatus.textContent = 'Sign-in opened in browser. After approving, paste the code or redirect URL below.';
+            self.dom.onedriveAuthStatus.className = 'onedrive-auth-status';
+          }
+        });
+      }
+
+      if (this.dom.onedriveAuthPasteBtn) {
+        this.dom.onedriveAuthPasteBtn.addEventListener('click', function() {
+          if (navigator.clipboard && navigator.clipboard.readText) {
+            navigator.clipboard.readText().then(function(text) {
+              if (text && self.dom.onedriveAuthCodeInput) {
+                self.dom.onedriveAuthCodeInput.value = text.trim();
+                self.dom.onedriveAuthCodeInput.focus();
+              }
+            }).catch(function() {
+              if (self.dom.onedriveAuthCodeInput) self.dom.onedriveAuthCodeInput.focus();
+            });
+          } else if (self.dom.onedriveAuthCodeInput) {
+            self.dom.onedriveAuthCodeInput.focus();
+          }
+        });
+      }
+
+      function submitAuthCode() {
+        if (!self.dom.onedriveAuthCodeInput) return;
+        var val = self.dom.onedriveAuthCodeInput.value ? self.dom.onedriveAuthCodeInput.value.trim() : '';
+        if (!val) {
+          if (self.dom.onedriveAuthStatus) {
+            self.dom.onedriveAuthStatus.textContent = 'Please paste the code or URL from your browser.';
+            self.dom.onedriveAuthStatus.className = 'onedrive-auth-status is-error';
+          }
+          self.dom.onedriveAuthCodeInput.focus();
+          return;
+        }
+
+        if (self.dom.onedriveAuthStatus) {
+          self.dom.onedriveAuthStatus.textContent = 'Connecting to OneDrive and verifying settings...';
+          self.dom.onedriveAuthStatus.className = 'onedrive-auth-status';
+        }
+        if (self.dom.onedriveAuthSubmitBtn) {
+          self.dom.onedriveAuthSubmitBtn.disabled = true;
+        }
+
+        if (global.OneDriveSync && typeof global.OneDriveSync.exchangeAuthCode === 'function') {
+          global.OneDriveSync.exchangeAuthCode(val).then(function() {
+            if (self.dom.onedriveAuthStatus) {
+              self.dom.onedriveAuthStatus.textContent = 'Connected! Settings synchronized with OneDrive.';
+              self.dom.onedriveAuthStatus.className = 'onedrive-auth-status is-success';
+            }
+            if (self.dom.hudOneDriveBtnText) {
+              self.setDomText(self.dom.hudOneDriveBtnText, 'OneDrive · Synced');
+            }
+            if (self.dom.hudOneDriveBtn) {
+              self.dom.hudOneDriveBtn.className = 'hud-onedrive-btn is-connected';
+            }
+            self.updateOneDriveUI();
+            setTimeout(function() {
+              self.closeOneDriveAuthModal();
+              if (self.dom.onedriveAuthSubmitBtn) self.dom.onedriveAuthSubmitBtn.disabled = false;
+            }, 1500);
+          }).catch(function(err) {
+            if (self.dom.onedriveAuthStatus) {
+              self.dom.onedriveAuthStatus.textContent = 'Connection failed: ' + (err && err.message);
+              self.dom.onedriveAuthStatus.className = 'onedrive-auth-status is-error';
+            }
+            if (self.dom.onedriveAuthSubmitBtn) {
+              self.dom.onedriveAuthSubmitBtn.disabled = false;
+            }
+            self.updateOneDriveUI();
+          });
+        }
+      }
+
+      if (this.dom.onedriveAuthSubmitBtn) {
+        this.dom.onedriveAuthSubmitBtn.addEventListener('click', function() {
+          submitAuthCode();
+        });
+      }
+
+      if (this.dom.onedriveAuthCodeInput) {
+        this.dom.onedriveAuthCodeInput.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            submitAuthCode();
+          }
+        });
+      }
+
       if (this.dom.onedriveCopyCodeBtn) {
         this.dom.onedriveCopyCodeBtn.addEventListener('click', function() {
           var code = self.dom.onedriveUserCode ? self.dom.onedriveUserCode.textContent.trim() : '';
@@ -2802,39 +2902,48 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
     openOneDriveAuthModal: function() {
       var self = this;
+      if (!this.dom.onedriveAuthModal) {
+        this.dom.onedriveAuthModal = document.getElementById('onedrive-auth-modal');
+      }
       if (!this.dom.onedriveAuthModal) return;
+
+      this.dom.onedriveBrowserLaunchBtn = document.getElementById('onedrive-browser-launch-btn');
+      this.dom.onedriveAuthCodeInput = document.getElementById('onedrive-auth-code-input');
+      this.dom.onedriveAuthPasteBtn = document.getElementById('onedrive-auth-paste-btn');
+      this.dom.onedriveAuthSubmitBtn = document.getElementById('onedrive-auth-submit-btn');
+      this.dom.onedriveAuthStatus = document.getElementById('onedrive-auth-status');
+
+      var authUrl = (global.OneDriveSync && typeof global.OneDriveSync.getOAuthUrl === 'function')
+        ? global.OneDriveSync.getOAuthUrl()
+        : 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize';
+
+      if (this.dom.onedriveBrowserLaunchBtn) {
+        this.dom.onedriveBrowserLaunchBtn.href = authUrl;
+      }
+      try {
+        if (typeof window !== 'undefined' && typeof window.open === 'function') {
+          window.open(authUrl, '_blank');
+        }
+      } catch (e) {}
+
+      if (this.dom.onedriveAuthCodeInput) {
+        this.dom.onedriveAuthCodeInput.value = '';
+      }
+      if (this.dom.onedriveAuthSubmitBtn) {
+        this.dom.onedriveAuthSubmitBtn.disabled = false;
+      }
+      if (this.dom.onedriveAuthStatus) {
+        this.dom.onedriveAuthStatus.textContent = 'Click the button above to sign in with Microsoft, then paste your code below.';
+        this.dom.onedriveAuthStatus.className = 'onedrive-auth-status';
+      }
+
       this.dom.onedriveAuthModal.classList.remove('is-hidden');
       this.dom.onedriveAuthModal.setAttribute('aria-hidden', 'false');
 
-      if (this.dom.onedriveAuthStatus) this.dom.onedriveAuthStatus.textContent = 'Generating device sign-in code...';
-      if (this.dom.onedriveUserCode) this.dom.onedriveUserCode.textContent = '--------';
-
-      if (global.OneDriveSync && typeof global.OneDriveSync.startDeviceAuth === 'function') {
-        global.OneDriveSync.startDeviceAuth().then(function(authData) {
-          if (self.dom.onedriveUserCode) self.dom.onedriveUserCode.textContent = authData.user_code;
-          if (self.dom.onedriveAuthUrl) {
-            self.dom.onedriveAuthUrl.href = authData.verification_uri || 'https://microsoft.com/devicelogin';
-            self.dom.onedriveAuthUrl.textContent = 'Open ' + (authData.verification_uri || 'microsoft.com/devicelogin');
-          }
-          if (self.dom.onedriveAuthStatus) {
-            self.dom.onedriveAuthStatus.textContent = 'Browser opened! Enter code ' + authData.user_code + ' (copied to clipboard) at Microsoft login.';
-          }
-          global.OneDriveSync.pollToken(authData.device_code, authData.interval, function(authSuccess) {
-            if (self.dom.onedriveAuthStatus) self.dom.onedriveAuthStatus.textContent = 'Connected successfully!';
-            setTimeout(function() {
-              self.closeOneDriveAuthModal();
-              self.updateOneDriveUI();
-            }, 1200);
-          }, function(authErr) {
-            if (self.dom.onedriveAuthStatus) {
-              self.dom.onedriveAuthStatus.textContent = (authErr && authErr.message) || 'Authentication failed';
-            }
-            self.updateOneDriveUI();
-          });
-        }).catch(function(err) {
-          if (self.dom.onedriveAuthStatus) self.dom.onedriveAuthStatus.textContent = 'Failed: ' + (err && err.message);
-          self.updateOneDriveUI();
-        });
+      if (this.dom.onedriveAuthCodeInput) {
+        setTimeout(function() {
+          if (self.dom.onedriveAuthCodeInput) self.dom.onedriveAuthCodeInput.focus();
+        }, 100);
       }
     },
 
@@ -2945,6 +3054,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         onedriveAuthModal: document.getElementById('onedrive-auth-modal'),
         onedriveModalClose: document.getElementById('onedrive-modal-close'),
         onedriveModalCancel: document.getElementById('onedrive-modal-cancel'),
+        onedriveBrowserLaunchBtn: document.getElementById('onedrive-browser-launch-btn'),
+        onedriveAuthCodeInput: document.getElementById('onedrive-auth-code-input'),
+        onedriveAuthPasteBtn: document.getElementById('onedrive-auth-paste-btn'),
+        onedriveAuthSubmitBtn: document.getElementById('onedrive-auth-submit-btn'),
         onedriveUserCode: document.getElementById('onedrive-user-code'),
         onedriveCopyCodeBtn: document.getElementById('onedrive-copy-code-btn'),
         onedriveAuthUrl: document.getElementById('onedrive-auth-url'),

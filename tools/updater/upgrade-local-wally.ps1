@@ -150,6 +150,17 @@ try {
                                         if (-not $savedJson.PSObject.Properties[$prop.Name]) {
                                             $savedJson | Add-Member -MemberType NoteProperty -Name $prop.Name -Value $prop.Value
                                             $modified = $true
+                                        } elseif ($prop.Value.type -eq 'button' -or $prop.Name -like 'onedrive*') {
+                                            if ($prop.Value.type -eq 'button') {
+                                                if ($savedJson.PSObject.Properties[$prop.Name].Value.value -ne $prop.Value.value) {
+                                                    $savedJson.PSObject.Properties[$prop.Name].Value.value = $prop.Value.value
+                                                    $modified = $true
+                                                }
+                                                if ($savedJson.PSObject.Properties[$prop.Name].Value.text -ne $prop.Value.text) {
+                                                    $savedJson.PSObject.Properties[$prop.Name].Value.text = $prop.Value.text
+                                                    $modified = $true
+                                                }
+                                            }
                                         }
                                     }
                                     if ($modified) {

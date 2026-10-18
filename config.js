@@ -222,7 +222,7 @@
     // 20c. ONEDRIVE CLOUD SETTINGS SYNC (OPTIONAL)
     // --------------------------------------------------------------------------
     oneDrive: {
-      clientId: '38977a41-21c6-430c-8d1e-e274a496b864',
+      clientId: 'd50ca740-c83f-4d1b-b616-12c519384f0c',
       folderPath: 'Apps/Local Wally'
     },
 
