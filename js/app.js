@@ -2324,10 +2324,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     showBatteryInfo: true,
 
     /**
-     * Product version (v0.18.1). Rendered into #hud-version (bottom-right of
+     * Product version (v0.18.2). Rendered into #hud-version (bottom-right of
      * the card) so the running build is identifiable at a glance.
      */
-    VERSION: '0.18.1',
+    VERSION: '0.18.2',
     showCelestial: true,
     showAqi: true,
     showEnvironmentalMetrics: true,

@@ -477,6 +477,19 @@ async function runAll() {
     assert.strictEqual(extracted, 'M.R3_TEST12345', 'Valid auth code correctly extracted from URL');
   });
 
+  // --- Hotfix 0.18.2: PowerShell Syntax Cleanliness ---
+  await test('0.18.2: Updater script parses cleanly in PowerShell without syntax errors', () => {
+    const { execSync } = require('child_process');
+    const psScript = path.join(__dirname, '..', 'tools', 'updater', 'upgrade-local-wally.ps1');
+    const command = `powershell -NoProfile -ExecutionPolicy Bypass -Command "$errs = $null; $toks = $null; [System.Management.Automation.Language.Parser]::ParseFile('${psScript.replace(/\\/g, '\\\\')}', [ref]$toks, [ref]$errs); if ($errs) { exit 1 } else { exit 0 }"`;
+    try {
+      execSync(command, { encoding: 'utf8' });
+      assert.ok(true, 'PowerShell script parses without syntax errors');
+    } catch (e) {
+      assert.fail('PowerShell syntax error detected in upgrade-local-wally.ps1');
+    }
+  });
+
   console.log('\n===============================================================');
   console.log(`Results: ${passCount} passed, ${failCount} failed.`);
   console.log('===============================================================');

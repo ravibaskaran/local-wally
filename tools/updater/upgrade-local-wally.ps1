@@ -231,7 +231,8 @@ try {
                     )
                     $hasCustomKeys = $false
                     foreach ($k in $customMatches) {
-                        if ($bCfgText -match "$k:\s*['"][^'"]+['"]") {
+                        $pattern = [regex]::Escape($k) + ':\s*[''"][^''"]+[''"]'
+                        if ($bCfgText -match $pattern) {
                             $hasCustomKeys = $true
                             break
                         }

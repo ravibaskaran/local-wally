@@ -8,6 +8,12 @@ For downloadable packages, installers, and release tags, visit [GitHub Releases]
 
 ## Release History
 
+### Version 0.18.2 - Updater Script PowerShell Syntax Fix
+- **PowerShell Regex Parser Hotfix (`upgrade-local-wally.ps1`)**:
+  - Fixed syntax error in PowerShell regex parsing on line 234 where `$k:` inside a double-quoted string was interpreted as an invalid scope/drive variable reference with mismatched quotes (`InvalidVariableReferenceWithDrive`).
+  - Switched to an escaped string pattern `[regex]::Escape($k) + ':\s*[''"][^''"]+[''"]'` that parses cleanly across Windows PowerShell 5.1 and PowerShell 7+.
+  - Added AST parser validation test in `tests/test_audit_remediation.js` to ensure the updater script remains 100% syntactically valid in PowerShell.
+
 ### Version 0.18.1 - Location Aliases, Updater Key Preservation & OneDrive Guidance
 - **Location Geocoding & City Aliases (Root-Cause Fix)**:
   - Fixed Open-Meteo geocoding failure on comma-delimited strings (e.g., "bangalore, india"). Open-Meteo's `?name=` query returns zero matches for composite strings containing commas or country qualifiers.
