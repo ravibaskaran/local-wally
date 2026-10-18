@@ -15,14 +15,14 @@
   var SYNC_META_STORAGE_KEY = 'local_wally_onedrive_sync_meta';
   var SETTINGS_FILENAME = 'local-wally-settings.json';
   var REQUEST_TIMEOUT_MS = 3500;
-  var SCOPE = 'Files.ReadWrite.AppFolder offline_access';
+  var SCOPE = 'Files.ReadWrite Files.ReadWrite.AppFolder offline_access';
 
   // Strict allowlist of setting keys that may enter the cloud profile
   var ALLOWED_SETTINGS_KEYS = [
     'hudPosition', 'glassBlur', 'particleDensity', 'tempUnit', 'refreshInterval',
     'wallpaperProvider', 'unsplashApiKey', 'wallhavenApiKey', 'pexelsApiKey',
     'pixabayApiKey', 'weatherSimulation', 'contrastMode', 'showMediaFocusDock',
-    'showNewsFeed', 'newsProvider', 'newsApiKey', 'currentsApiKey', 'newsFocus',
+    'showNewsFeed', 'newsProvider', 'newsApiKey', 'currentsApiKey', 'newsFocus', 'onedriveFolder',
     'showHardwareMonitor', 'showNetworkUsage', 'showBatteryInfo', 'showCelestial',
     'showAqi', 'showEnvironmentalMetrics', 'weatherProvider',
     'weatherapiKey', 'openweathermapApiKey', 'aqiProvider', 'waqiApiKey',
@@ -47,10 +47,48 @@
     _pollTimer: null,
     _syncInFlight: false,
 
+    folderPath: 'Apps/Local Wally',
+    FOLDER_STORAGE_KEY: 'local_wally_onedrive_folder',
+
+    setFolderPath: function(folder) {
+      var sanitized = (folder || '').trim().replace(/^[\/\\]+|[\/\\]+$/g, '').replace(/\\/g, '/');
+      this.folderPath = sanitized || 'Apps/Local Wally';
+      try {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem(this.FOLDER_STORAGE_KEY, this.folderPath);
+        }
+      } catch (e) {}
+      return this.folderPath;
+    },
+
+    getStoredFolderPath: function() {
+      try {
+        if (typeof localStorage !== 'undefined') {
+          var stored = localStorage.getItem(this.FOLDER_STORAGE_KEY);
+          if (stored) return stored.trim();
+        }
+      } catch (e) {}
+      return null;
+    },
+
+    getEndpoint: function(isContent) {
+      var folder = (this.folderPath || '').trim().replace(/^[\/\\]+|[\/\\]+$/g, '').replace(/\\/g, '/');
+      var base;
+      if (!folder || folder.toLowerCase() === 'apps/local wally' || folder.toLowerCase() === 'special/approot') {
+        base = 'https://graph.microsoft.com/v1.0/me/drive/special/approot:/' + SETTINGS_FILENAME;
+      } else {
+        var segments = folder.split('/').map(encodeURIComponent).join('/');
+        base = 'https://graph.microsoft.com/v1.0/me/drive/root:/' + segments + '/' + SETTINGS_FILENAME;
+      }
+      return isContent ? (base + ':/content') : base;
+    },
+
     init: function(options) {
       options = options || {};
       var cfg = (global.LOCAL_WALLY_CONFIG && global.LOCAL_WALLY_CONFIG.oneDrive) || {};
       this.clientId = options.clientId || cfg.clientId || DEFAULT_CLIENT_ID;
+      var storedFolder = this.getStoredFolderPath();
+      this.folderPath = options.folderPath || storedFolder || (cfg && cfg.folderPath) || 'Apps/Local Wally';
 
       var auth = this.getStoredAuth();
       if (auth && auth.refreshToken) {
@@ -159,6 +197,23 @@
         }
         self.activeDeviceAuth = data;
         self.state = 'auth_pending';
+
+        // Automatically launch default browser to verification portal
+        try {
+          if (typeof window !== 'undefined' && typeof window.open === 'function') {
+            window.open(data.verification_uri || 'https://microsoft.com/devicelogin', '_blank');
+          }
+        } catch (e) {
+          console.warn('[OneDriveSync] Browser launch:', e && e.message);
+        }
+
+        // Automatically copy user code to clipboard
+        try {
+          if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+            navigator.clipboard.writeText(data.user_code);
+          }
+        } catch (e) {}
+
         return data;
       });
     },
@@ -316,7 +371,7 @@
     checkRemoteMetadata: function() {
       var self = this;
       return self.getValidAccessToken().then(function(token) {
-        var endpoint = 'https://graph.microsoft.com/v1.0/me/drive/special/approot:/' + SETTINGS_FILENAME;
+        var endpoint = self.getEndpoint(false);
         return self._fetchWithTimeout(endpoint, {
           method: 'GET',
           headers: { 'Authorization': 'Bearer ' + token }
@@ -342,7 +397,7 @@
     downloadProfile: function() {
       var self = this;
       return self.getValidAccessToken().then(function(token) {
-        var endpoint = 'https://graph.microsoft.com/v1.0/me/drive/special/approot:/' + SETTINGS_FILENAME + ':/content';
+        var endpoint = self.getEndpoint(true);
         return self._fetchWithTimeout(endpoint, {
           method: 'GET',
           headers: { 'Authorization': 'Bearer ' + token }
@@ -365,7 +420,7 @@
       }
 
       return self.getValidAccessToken().then(function(token) {
-        var endpoint = 'https://graph.microsoft.com/v1.0/me/drive/special/approot:/' + SETTINGS_FILENAME + ':/content';
+        var endpoint = self.getEndpoint(true);
         var headers = {
           'Authorization': 'Bearer ' + token,
           'Content-Type': 'application/json; charset=utf-8'
@@ -795,4 +850,6 @@
   OneDriveSync.isAuthenticated = OneDriveSync.isConnected;
 
   global.OneDriveSync = OneDriveSync;
-})(typeof window !== 'undefined' ? window : this);
+  if (typeof window !== 'undefined') window.OneDriveSync = OneDriveSync;
+  if (typeof globalThis !== 'undefined') globalThis.OneDriveSync = OneDriveSync;
+})(typeof window !== 'undefined' ? window : (typeof global !== 'undefined' ? global : this));

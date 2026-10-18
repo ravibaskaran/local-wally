@@ -329,6 +329,7 @@ html, body {
   z-index: 10;
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
   gap: 14px;
   pointer-events: none;
   width: 580px;
@@ -1455,6 +1456,7 @@ html, body {
   position: relative;
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
   gap: 6px;
   border-radius: 12px;
   overflow: hidden;
@@ -1470,12 +1472,33 @@ html, body {
   position: relative;
   overflow: hidden;
   display: flex;
-  align-items: center;
+  flex-direction: column;
   justify-content: space-between;
-  gap: 16px;
-  padding: 4px 8px 8px;
+  gap: 6px;
+  padding: 6px 10px 8px;
   border-radius: 12px;
   border-bottom: 1px solid var(--divider-color);
+}
+
+.hud-weather-status-bar {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.hud-weather-main-row {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
 }
 
 .hud-wind-canvas {
@@ -3401,14 +3424,26 @@ html, body {
    ========================================================================== */
 
 .hud-weather-badge-wrap {
-  position: absolute;
-  top: 6px;
-  right: 8px;
-  z-index: 2;
+  position: relative;
   display: flex;
-  justify-content: flex-end;
-  pointer-events: none;
-  max-width: calc(100% - 16px);
+  align-items: center;
+}
+
+.weather-next-update-pill {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+  padding: 2px 7px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  white-space: nowrap;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  user-select: none;
 }
 
 .weather-freshness-badge {

@@ -130,8 +130,9 @@ Local Wally implements a two-tier progressive disclosure system so you can see q
 ### Tier 2: Contextual Telemetry Drawer
 - Click any card or press <kbd>Enter</kbd> to slide open a full-height acrylic drawer.
 - Shows complete meteorological parameters, barometric pressure, wind gusts, particulate measurements, and astronomical ephemeris.
-- **Truthful Weather Provenance**: The weather detail drawer provides an honest breakdown of your atmospheric data source, distinguishing between live network telemetry, cached entries, stale offline snapshots, and fallback routes. Displays provider name, exact station observation time (when reported by the provider), fetch time, and cache age.
-- **HUD Weather Freshness Badge**: A compact pill badge on the weather card displays real-time data status (`Live · Just now`, `Live · 4m ago`, `Cached · 12m old`, `Stale · 25m old`, or `Fallback`) without fabricating live claims for cached data.
+- **Relative Two-Row Weather Card Architecture**: The weather card uses a structured two-row relative flow layout. The top status bar contains the freshness badge and next update pill, directly above the temperature and condition row. Condition descriptions wrap cleanly without ever overlapping or colliding with status badges.
+- **Truthful Weather Provenance & Observation Time**: The weather detail drawer provides an honest breakdown of your atmospheric data source, distinguishing between live network telemetry, cached entries, stale offline snapshots, and fallback routes. Displays provider name, exact station observation time (when reported by the provider), fetch time, and cache age.
+- **HUD Weather Freshness & Next Update Indicators**: A compact status bar on the weather card displays real-time data status (`Live · @ 9:25 AM`, `Live · 4m ago`, `Cached · 12m old`, `Stale · 25m old`, or `Fallback`) paired with a dynamic next update schedule indicator (`Next: 9:40 AM`), continuously ticking with cache TTL.
 - Press <kbd>Esc</kbd> or click outside the drawer to close it.
 
 ---
@@ -184,8 +185,9 @@ Local Wally includes a native wallpaper personalization engine that operates ent
 
 Local Wally features optional, cross-device synchronization with personal Microsoft OneDrive accounts:
 
-- **Zero Helper Daemons or Registry Hacks**: Uses standard OAuth 2.0 Device Code Flow (RFC 8628). Click **Connect OneDrive** in the Diagnostics panel (press <kbd>D</kbd>), open `microsoft.com/devicelogin` in your browser, and enter the displayed 8-character code.
-- **Sandboxed Least-Privilege Access**: Uses Microsoft Graph delegated `Files.ReadWrite.AppFolder` scope, storing one small configuration file (`local-wally-settings.json`) in your private `OneDrive/Apps/Local Wally` folder. Local Wally cannot see or modify any other files in your OneDrive.
+- **Integrated Lively Wallpaper Controls**: Connect, sync, or disconnect directly from Lively Wallpaper's **Customise Wallpaper** dialog using dedicated action buttons, or from the in-wallpaper Diagnostics panel (press <kbd>D</kbd>).
+- **Browser-Launched OAuth (Device Code Flow)**: Uses standard OAuth 2.0 Device Code Flow (RFC 8628). Clicking **Connect OneDrive** automatically launches your default system browser to `https://microsoft.com/devicelogin` and copies your 8-character user code directly to the clipboard.
+- **Any-Folder Backup Capability**: Save your settings to any OneDrive directory by customizing the **OneDrive Backup Folder** property (default: `Apps/Local Wally`). You can specify any personal folder path (e.g. `Backups/MyPC` or `Configs/LocalWally`). Local Wally automatically routes between the private AppFolder (`me/drive/special/approot`) and custom folder hierarchies (`me/drive/root:/<path>`).
 - **Strict Privacy Firewall (Zero Location in Cloud)**: All GPS coordinates, manual city names, location history, cached weather, news snapshots, and OAuth tokens are strictly stripped before uploading. Personal location data stays 100% on your local PC.
 - **Local-First Architecture**: Your wallpaper and HUD boot instantly from local storage in under 50ms. Background sync checks are non-blocking and automatically park during games or screen lock.
 - **Deterministic 3-Way Merge**: Synchronizes your customized Lively settings, API keys, and wallpaper favorites across PCs while preserving whichever machine made the newest edits.
@@ -268,6 +270,10 @@ The following table lists every property defined in `LivelyProperties.json`:
 | `defaultForecastTab` | Default Forecast Tab | dropdown | `Temperature` | Temperature, Feels Like, Precipitation, Wind, Humidity, AQI |
 | `settingsExport` | Export Settings (incl. API keys) | button | - | Exports all settings to JSON file |
 | `settingsImport` | Import Settings | button | - | Restores settings from JSON file |
+| `onedriveFolder` | OneDrive Backup Folder | textbox | `"Apps/Local Wally"` | Custom folder path or default AppFolder |
+| `onedriveConnect` | Connect OneDrive (Browser Login) | button | - | Launches browser authentication and copies code |
+| `onedriveSync` | Sync Settings Now | button | - | Triggers immediate two-way synchronization |
+| `onedriveDisconnect` | Disconnect OneDrive | button | - | Clears tokens and resets synchronization |
 
 ---
 

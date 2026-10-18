@@ -2316,10 +2316,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
     showBatteryInfo: true,
 
     /**
-     * Product version (v0.15.0). Rendered into #hud-version (bottom-right of
+     * Product version (v0.17.0). Rendered into #hud-version (bottom-right of
      * the card) so the running build is identifiable at a glance.
      */
-    VERSION: '0.16.0',
+    VERSION: '0.17.0',
     showCelestial: true,
     showAqi: true,
     showEnvironmentalMetrics: true,
@@ -2330,6 +2330,24 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
     // DOM Elements Cache
     dom: {},
+
+    formatTimeOfDay: function(dateOrTs) {
+      if (!dateOrTs) return '--:--';
+      var d = (typeof dateOrTs === 'number') ? new Date(dateOrTs) : dateOrTs;
+      if (!(d instanceof Date) || isNaN(d.getTime())) return '--:--';
+      var hours = d.getHours();
+      var minutes = d.getMinutes();
+      var mStr = minutes < 10 ? '0' + minutes : '' + minutes;
+      if (this.clockFormat === '24h') {
+        var hStr = hours < 10 ? '0' + hours : '' + hours;
+        return hStr + ':' + mStr;
+      } else {
+        var period = hours >= 12 ? 'PM' : 'AM';
+        var h12 = hours % 12;
+        if (h12 === 0) h12 = 12;
+        return h12 + ':' + mStr + ' ' + period;
+      }
+    },
 
     init: function() {
       console.log('[App] Initializing Local Wally HUD...');
@@ -2686,6 +2704,19 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       this.dom.onedriveCopyCodeBtn = document.getElementById('onedrive-copy-code-btn');
       this.dom.onedriveAuthUrl = document.getElementById('onedrive-auth-url');
       this.dom.onedriveAuthStatus = document.getElementById('onedrive-auth-status');
+      this.dom.diagOnedriveFolder = document.getElementById('diag-onedrive-folder');
+
+      if (this.dom.diagOnedriveFolder) {
+        if (global.OneDriveSync && global.OneDriveSync.folderPath) {
+          this.dom.diagOnedriveFolder.value = global.OneDriveSync.folderPath;
+        }
+        this.dom.diagOnedriveFolder.addEventListener('change', function() {
+          var val = this.value ? this.value.trim() : '';
+          if (global.OneDriveSync && typeof global.OneDriveSync.setFolderPath === 'function') {
+            global.OneDriveSync.setFolderPath(val);
+          }
+        });
+      }
 
       if (this.dom.onedriveConnectBtn) {
         this.dom.onedriveConnectBtn.addEventListener('click', function() {
@@ -2766,7 +2797,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             self.dom.onedriveAuthUrl.textContent = 'Open ' + (authData.verification_uri || 'microsoft.com/devicelogin');
           }
           if (self.dom.onedriveAuthStatus) {
-            self.dom.onedriveAuthStatus.textContent = 'Enter code ' + authData.user_code + ' at the Microsoft login portal.';
+            self.dom.onedriveAuthStatus.textContent = 'Browser opened! Enter code ' + authData.user_code + ' (copied to clipboard) at Microsoft login.';
           }
           global.OneDriveSync.pollToken(authData.device_code, authData.interval, function(authSuccess) {
             if (self.dom.onedriveAuthStatus) self.dom.onedriveAuthStatus.textContent = 'Connected successfully!';
@@ -2857,6 +2888,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         hudDate: document.getElementById('hud-date'),
         hudLocationText: document.getElementById('hud-location-text'),
         hudWeatherFreshness: document.getElementById('hud-weather-freshness'),
+        hudWeatherNextUpdate: document.getElementById('hud-weather-next-update'),
+        diagOnedriveFolder: document.getElementById('diag-onedrive-folder'),
         wpActionFav: document.getElementById('wp-action-fav'),
         wpActionAvoid: document.getElementById('wp-action-avoid'),
         wpActionFavoritesDrawer: document.getElementById('wp-action-favorites-drawer'),
@@ -3753,6 +3786,33 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
               self.dom.diagImportFile.value = '';
               self.dom.diagImportFile.click();
             }
+            break;
+          case 'onedriveFolder':
+            self.onedriveFolder = val;
+            if (global.OneDriveSync && typeof global.OneDriveSync.setFolderPath === 'function') {
+              global.OneDriveSync.setFolderPath(val);
+            }
+            if (self.dom.diagOnedriveFolder) {
+              self.dom.diagOnedriveFolder.value = val || 'Apps/Local Wally';
+            }
+            break;
+          case 'onedriveConnect':
+            self.openOneDriveAuthModal();
+            break;
+          case 'onedriveSync':
+            if (global.OneDriveSync) {
+              if (global.OneDriveSync.isConnected && global.OneDriveSync.isConnected()) {
+                global.OneDriveSync.sync(true);
+              } else {
+                self.openOneDriveAuthModal();
+              }
+            }
+            break;
+          case 'onedriveDisconnect':
+            if (global.OneDriveSync && typeof global.OneDriveSync.disconnect === 'function') {
+              global.OneDriveSync.disconnect();
+            }
+            self.updateOneDriveUI();
             break;
         }
       });
@@ -5399,6 +5459,14 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
             ttlText += ' · RAM only';
           }
           this.setDomText(this.dom.diagCacheTtl, ttlText);
+        }
+
+        if (this.dom.hudWeatherNextUpdate && this.lastWeatherProvenance) {
+          if (remainingMs > 0) {
+            this.setDomText(this.dom.hudWeatherNextUpdate, 'Next: ' + this.formatTimeOfDay(Date.now() + remainingMs));
+          } else {
+            this.setDomText(this.dom.hudWeatherNextUpdate, 'Next: Syncing...');
+          }
         }
 
         if (this.dom.syncStatus) {
@@ -7769,41 +7837,61 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (this.dom.hudTempHigh) this.dom.hudTempHigh.textContent = (high !== '--') ? (high + '°') : '--';
       if (this.dom.hudTempLow) this.dom.hudTempLow.textContent = (low !== '--') ? (low + '°') : '--';
 
-      if (this.dom.hudWeatherFreshness) {
+      if (this.dom.hudWeatherFreshness || this.dom.hudWeatherNextUpdate) {
         var prov = w.provenance || {};
         var fetchedAt = prov.fetchedAtUtc || (this.state && this.state.timestamp) || Date.now();
         var ageMs = (prov.cacheAgeMs != null) ? prov.cacheAgeMs : Math.max(0, Date.now() - fetchedAt);
         var minAgo = Math.floor(ageMs / 60000);
+        var timeStr = this.formatTimeOfDay(fetchedAt);
+
+        var remainingMs = (global.CacheManager && typeof global.CacheManager.getRemainingTtlMs === 'function')
+          ? global.CacheManager.getRemainingTtlMs()
+          : (((this.settings && this.settings.refreshInterval) || 15) * 60000);
+        var nextUpdateTs = Date.now() + Math.max(0, remainingMs);
+        var nextTimeStr = this.formatTimeOfDay(nextUpdateTs);
 
         var badgeClass = 'freshness-live';
         var badgeText = 'Live';
 
         if (prov.isFallback) {
           badgeClass = 'freshness-fallback';
-          badgeText = 'Fallback';
+          badgeText = 'Fallback · @ ' + timeStr;
         } else if (prov.freshness === 'live') {
           badgeClass = 'freshness-live';
-          badgeText = 'Live · ' + (minAgo <= 0 ? 'Just now' : minAgo + 'm ago');
+          badgeText = (minAgo <= 0) ? ('Live · @ ' + timeStr) : ('Live · ' + minAgo + 'm ago');
         } else if (prov.freshness === 'cached') {
           badgeClass = 'freshness-cached';
-          badgeText = 'Cached · ' + (minAgo <= 0 ? 'Just now' : minAgo + 'm old');
+          badgeText = (minAgo <= 0) ? ('Cached · @ ' + timeStr) : ('Cached · ' + minAgo + 'm old');
         } else if (prov.freshness === 'stale') {
           badgeClass = 'freshness-stale';
-          badgeText = 'Stale · ' + minAgo + 'm old';
+          badgeText = 'Stale · @ ' + timeStr;
         } else if (prov.freshness === 'emergency') {
           badgeClass = 'freshness-emergency';
           badgeText = 'Emergency cache';
         } else if (prov.freshness === 'synthetic') {
           badgeClass = 'freshness-synthetic';
-          badgeText = 'Demo / estimated';
+          badgeText = 'Demo mode';
         }
 
-        this.dom.hudWeatherFreshness.className = 'weather-freshness-badge ' + badgeClass;
-        this.dom.hudWeatherFreshness.textContent = badgeText;
-        var pTitle = 'Weather source: ' + (prov.sourceActual || 'auto');
-        if (prov.isFallback) pTitle += ' (fallback from ' + (prov.sourceRequested || 'primary') + ')';
-        if (ageMs > 0) pTitle += ' - Age: ' + Math.round(ageMs / 1000) + 's';
-        this.dom.hudWeatherFreshness.title = pTitle;
+        if (this.dom.hudWeatherFreshness) {
+          this.dom.hudWeatherFreshness.className = 'weather-freshness-badge ' + badgeClass;
+          this.dom.hudWeatherFreshness.textContent = badgeText;
+          var pTitle = 'Weather source: ' + (prov.sourceActual || 'auto');
+          if (prov.isFallback) pTitle += ' (fallback from ' + (prov.sourceRequested || 'primary') + ')';
+          if (ageMs > 0) pTitle += ' - Age: ' + Math.round(ageMs / 1000) + 's';
+          pTitle += ' - Next refresh scheduled: ' + nextTimeStr;
+          this.dom.hudWeatherFreshness.title = pTitle;
+        }
+
+        if (this.dom.hudWeatherNextUpdate) {
+          if (remainingMs > 0) {
+            this.dom.hudWeatherNextUpdate.textContent = 'Next: ' + nextTimeStr;
+            this.dom.hudWeatherNextUpdate.title = 'Next scheduled refresh at ' + nextTimeStr + ' (in ' + Math.ceil(remainingMs / 60000) + 'm)';
+          } else {
+            this.dom.hudWeatherNextUpdate.textContent = 'Next: Syncing...';
+            this.dom.hudWeatherNextUpdate.title = 'Weather data refresh in progress';
+          }
+        }
       }
 
       // Animated Meteocon Icon Rendering

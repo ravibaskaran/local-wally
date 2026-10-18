@@ -30,9 +30,9 @@
   },
   "particleDensity": {
     "type": "slider",
-    "value": 1.0,
+    "value": 1,
     "min": 0.2,
-    "max": 2.0,
+    "max": 2,
     "step": 0.1,
     "text": "Particle Density Multiplier"
   },
@@ -40,7 +40,10 @@
     "type": "dropdown",
     "value": 0,
     "text": "Temperature Unit",
-    "items": ["Celsius (°C)", "Fahrenheit (°F)"]
+    "items": [
+      "Celsius (°C)",
+      "Fahrenheit (°F)"
+    ]
   },
   "refreshInterval": {
     "type": "slider",
@@ -86,13 +89,23 @@
     "type": "dropdown",
     "value": 0,
     "text": "Simulate Weather (Debug)",
-    "items": ["Live Weather (Auto)", "Clear Day", "Rain & Storm", "Snow", "Starry Night"]
+    "items": [
+      "Live Weather (Auto)",
+      "Clear Day",
+      "Rain & Storm",
+      "Snow",
+      "Starry Night"
+    ]
   },
   "contrastMode": {
     "type": "dropdown",
     "value": 0,
     "text": "Glass Contrast Theme",
-    "items": ["Auto (Wallpaper-Adaptive)", "Dark Glass (White Text)", "Light Glass (Dark Text)"]
+    "items": [
+      "Auto (Wallpaper-Adaptive)",
+      "Dark Glass (White Text)",
+      "Light Glass (Dark Text)"
+    ]
   },
   "showMediaFocusDock": {
     "type": "checkbox",
@@ -174,7 +187,11 @@
   "newsFocus": {
     "type": "dropdown",
     "value": 1,
-    "items": ["Nearby (City Only)", "Balanced (City with Region Fallback)", "Wider (Country & World)"],
+    "items": [
+      "Nearby (City Only)",
+      "Balanced (City with Region Fallback)",
+      "Wider (Country & World)"
+    ],
     "text": "News Focus"
   },
   "showHardwareMonitor": {
@@ -221,7 +238,11 @@
     "type": "dropdown",
     "value": 0,
     "text": "Weather Telemetry Provider",
-    "items": ["Open-Meteo (Keyless)", "WeatherAPI.com (Free Key)", "OpenWeatherMap (Key Optional)"]
+    "items": [
+      "Open-Meteo (Keyless)",
+      "WeatherAPI.com (Free Key)",
+      "OpenWeatherMap (Key Optional)"
+    ]
   },
   "weatherapiKey": {
     "type": "textbox",
@@ -237,7 +258,10 @@
     "type": "dropdown",
     "value": 0,
     "text": "Air Quality Provider",
-    "items": ["Open-Meteo AQI (Keyless)", "WAQI / AQICN (Token Optional)"]
+    "items": [
+      "Open-Meteo AQI (Keyless)",
+      "WAQI / AQICN (Token Optional)"
+    ]
   },
   "waqiApiKey": {
     "type": "textbox",
@@ -253,7 +277,14 @@
     "type": "dropdown",
     "value": 0,
     "text": "Default Forecast Tab",
-    "items": ["Temperature", "Feels Like", "Precipitation", "Wind", "Humidity", "AQI"]
+    "items": [
+      "Temperature",
+      "Feels Like",
+      "Precipitation",
+      "Wind",
+      "Humidity",
+      "AQI"
+    ]
   },
   "settingsExport": {
     "type": "button",
@@ -263,6 +294,26 @@
   "settingsImport": {
     "type": "button",
     "value": "Import Settings",
+    "text": ""
+  },
+  "onedriveFolder": {
+    "type": "textbox",
+    "value": "Apps/Local Wally",
+    "text": "OneDrive Backup Folder (Default: Apps/Local Wally)"
+  },
+  "onedriveConnect": {
+    "type": "button",
+    "value": "Connect OneDrive (Browser Login)",
+    "text": "OneDrive Cloud Synchronization"
+  },
+  "onedriveSync": {
+    "type": "button",
+    "value": "Backup / Sync Settings Now",
+    "text": ""
+  },
+  "onedriveDisconnect": {
+    "type": "button",
+    "value": "Disconnect Account",
     "text": ""
   },
   "settingsHelp": {

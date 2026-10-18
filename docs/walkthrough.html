@@ -356,8 +356,9 @@
 <ul>
 <li>Click any card or press <kbd>Enter</kbd> to slide open a full-height acrylic drawer.</li>
 <li>Shows complete meteorological parameters, barometric pressure, wind gusts, particulate measurements, and astronomical ephemeris.</li>
-<li><strong>Truthful Weather Provenance</strong>: The weather detail drawer provides an honest breakdown of your atmospheric data source, distinguishing between live network telemetry, cached entries, stale offline snapshots, and fallback routes. Displays provider name, exact station observation time (when reported by the provider), fetch time, and cache age.</li>
-<li><strong>HUD Weather Freshness Badge</strong>: A compact pill badge on the weather card displays real-time data status (<code>Live · Just now</code>, <code>Live · 4m ago</code>, <code>Cached · 12m old</code>, <code>Stale · 25m old</code>, or <code>Fallback</code>) without fabricating live claims for cached data.</li>
+<li><strong>Relative Two-Row Weather Card Architecture</strong>: The weather card uses a structured two-row relative flow layout. The top status bar contains the freshness badge and next update pill, directly above the temperature and condition row. Condition descriptions wrap cleanly without ever overlapping or colliding with status badges.</li>
+<li><strong>Truthful Weather Provenance & Observation Time</strong>: The weather detail drawer provides an honest breakdown of your atmospheric data source, distinguishing between live network telemetry, cached entries, stale offline snapshots, and fallback routes. Displays provider name, exact station observation time (when reported by the provider), fetch time, and cache age.</li>
+<li><strong>HUD Weather Freshness & Next Update Indicators</strong>: A compact status bar on the weather card displays real-time data status (<code>Live · @ 9:25 AM</code>, <code>Live · 4m ago</code>, <code>Cached · 12m old</code>, <code>Stale · 25m old</code>, or <code>Fallback</code>) paired with a dynamic next update schedule indicator (<code>Next: 9:40 AM</code>), continuously ticking with cache TTL.</li>
 <li>Press <kbd>Esc</kbd> or click outside the drawer to close it.</li>
 </ul>
 <hr />
@@ -404,8 +405,9 @@
 <h2 id="8-onedrive-personal-settings-synchronization">8. OneDrive Personal Settings Synchronization</h2>
 <p>Local Wally features optional, cross-device synchronization with personal Microsoft OneDrive accounts:</p>
 <ul>
-<li><strong>Zero Helper Daemons or Registry Hacks</strong>: Uses standard OAuth 2.0 Device Code Flow (RFC 8628). Click <strong>Connect OneDrive</strong> in the Diagnostics panel (press <kbd>D</kbd>), open <code>microsoft.com/devicelogin</code> in your browser, and enter the displayed 8-character code.</li>
-<li><strong>Sandboxed Least-Privilege Access</strong>: Uses Microsoft Graph delegated <code>Files.ReadWrite.AppFolder</code> scope, storing one small configuration file (<code>local-wally-settings.json</code>) in your private <code>OneDrive/Apps/Local Wally</code> folder. Local Wally cannot see or modify any other files in your OneDrive.</li>
+<li><strong>Integrated Lively Wallpaper Controls</strong>: Connect, sync, or disconnect directly from Lively Wallpaper's <strong>Customise Wallpaper</strong> dialog using dedicated action buttons, or from the in-wallpaper Diagnostics panel (press <kbd>D</kbd>).</li>
+<li><strong>Browser-Launched OAuth (Device Code Flow)</strong>: Uses standard OAuth 2.0 Device Code Flow (RFC 8628). Clicking <strong>Connect OneDrive</strong> automatically launches your default system browser to <code>https://microsoft.com/devicelogin</code> and copies your 8-character user code directly to the clipboard.</li>
+<li><strong>Any-Folder Backup Capability</strong>: Save your settings to any OneDrive directory by customizing the <strong>OneDrive Backup Folder</strong> property (default: <code>Apps/Local Wally</code>). You can specify any personal folder path (e.g. <code>Backups/MyPC</code> or <code>Configs/LocalWally</code>). Local Wally automatically routes between the private AppFolder (<code>me/drive/special/approot</code>) and custom folder hierarchies (<code>me/drive/root:/&lt;path&gt;</code>).</li>
 <li><strong>Strict Privacy Firewall (Zero Location in Cloud)</strong>: All GPS coordinates, manual city names, location history, cached weather, news snapshots, and OAuth tokens are strictly stripped before uploading. Personal location data stays 100% on your local PC.</li>
 <li><strong>Local-First Architecture</strong>: Your wallpaper and HUD boot instantly from local storage in under 50ms. Background sync checks are non-blocking and automatically park during games or screen lock.</li>
 <li><strong>Deterministic 3-Way Merge</strong>: Synchronizes your customized Lively settings, API keys, and wallpaper favorites across PCs while preserving whichever machine made the newest edits.</li>
@@ -484,6 +486,10 @@
 <tr><td><code>defaultForecastTab</code></td><td>Default Forecast Tab</td><td>dropdown</td><td><code>Temperature</code></td><td>Temperature, Feels Like, Precipitation, Wind, Humidity, AQI</td></tr>
 <tr><td><code>settingsExport</code></td><td>Export Settings (incl. API keys)</td><td>button</td><td>-</td><td>Exports all settings to JSON file</td></tr>
 <tr><td><code>settingsImport</code></td><td>Import Settings</td><td>button</td><td>-</td><td>Restores settings from JSON file</td></tr>
+<tr><td><code>onedriveFolder</code></td><td>OneDrive Backup Folder</td><td>textbox</td><td><code>"Apps/Local Wally"</code></td><td>Custom folder path or default AppFolder</td></tr>
+<tr><td><code>onedriveConnect</code></td><td>Connect OneDrive (Browser Login)</td><td>button</td><td>-</td><td>Launches browser authentication and copies code</td></tr>
+<tr><td><code>onedriveSync</code></td><td>Sync Settings Now</td><td>button</td><td>-</td><td>Triggers immediate two-way synchronization</td></tr>
+<tr><td><code>onedriveDisconnect</code></td><td>Disconnect OneDrive</td><td>button</td><td>-</td><td>Clears tokens and resets synchronization</td></tr>
 </tbody></table>
 </div>
 <hr />

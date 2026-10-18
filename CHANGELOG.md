@@ -8,6 +8,23 @@ For downloadable packages, installers, and release tags, visit [GitHub Releases]
 
 ## Release History
 
+### Version 0.17.0 - Relative Weather Layout, Scheduled Next Update & OneDrive Customization
+- **Relative Weather Card Layout & Zero-Overlap Flow**:
+  - Restructured `#hud-weather-card` into a clean two-row relative flex layout: `.hud-weather-status-bar` above `.hud-weather-main-row`.
+  - Removed absolute positioning from `#hud-weather-freshness`, placing it in normal document flow alongside `#hud-weather-next-update`.
+  - Guaranteed zero overlap between status badges and weather condition text across all viewports and text lengths.
+- **Weather Observation Time & Dynamic Next Update Schedule**:
+  - Freshness badge displays exact observation time (e.g., `Live · @ 9:25 AM` or `Live · 2m ago`) alongside cache and fallback indicators.
+  - Added dynamic next update schedule pill (`#hud-weather-next-update`, e.g., `Next: 9:40 AM`), continuously synchronized with cache TTL in `updateClock`.
+  - Formatted to respect user 12h and 24h clock format preferences via `formatTimeOfDay`.
+- **OneDrive Controls in Lively Customization Dialog**:
+  - Added native controls in Lively Wallpaper settings (`LivelyProperties.json`): `onedriveFolder` (textbox), `onedriveConnect` (button), `onedriveSync` (button), and `onedriveDisconnect` (button).
+  - Handled button events seamlessly via `livelyPropertyListener` IPC.
+- **Browser-Launched OAuth & Any-Folder Backup**:
+  - Initiating OneDrive connection automatically launches default web browser to Microsoft Device Login (`https://microsoft.com/devicelogin`) and copies code to clipboard.
+  - Expanded OAuth scope to support backing up settings into any user-specified OneDrive folder (`me/drive/root:/<path>`) or the default private AppFolder (`me/drive/special/approot`).
+  - Strict privacy firewall preserves zero location or coordinate data in cloud payloads.
+
 ### Version 0.16.0 - OneDrive Personal Settings Sync, Wallpaper Favorites, News Focus & Truthful Weather Provenance
 - **OneDrive Personal Settings Sync (RFC 8628 Device Authorization Grant)**:
  - Connects to personal Microsoft Accounts using OAuth 2.0 Device Code Flow (`microsoft.com/devicelogin`) without requiring native background daemons, local HTTP ports, or custom URI protocol schemes.

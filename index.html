@@ -69,22 +69,25 @@
 
           <!-- Main Temperature & Condition Summary -->
           <section id="hud-weather-card" class="hud-temp-block hud-card-interactive" tabindex="0" role="button" aria-haspopup="dialog" aria-label="Current Weather Conditions and Atmosphere Details" title="Current Weather & Atmosphere Conditions (Click to inspect detailed metrics)">
-            <div class="hud-weather-badge-wrap">
+            <div class="hud-weather-status-bar">
               <span id="hud-weather-freshness" class="weather-freshness-badge freshness-live" title="Weather data provenance and freshness">Live</span>
+              <span id="hud-weather-next-update" class="weather-next-update-pill" title="Next scheduled weather synchronization">Next: --:--</span>
             </div>
-            <div class="hud-temp-wrap">
-              <div id="hud-weather-icon" class="hud-weather-icon" aria-hidden="true"></div>
-              <div class="hud-temp-main">
-                <span id="hud-temp-val" class="hud-temp-val">--</span>
-                <span id="hud-temp-unit" class="hud-temp-unit">°C</span>
+            <div class="hud-weather-main-row">
+              <div class="hud-temp-wrap">
+                <div id="hud-weather-icon" class="hud-weather-icon" aria-hidden="true"></div>
+                <div class="hud-temp-main">
+                  <span id="hud-temp-val" class="hud-temp-val">--</span>
+                  <span id="hud-temp-unit" class="hud-temp-unit">°C</span>
+                </div>
               </div>
-            </div>
-            <div class="hud-condition-meta">
-              <span id="hud-condition" class="hud-condition-text">Loading...</span>
-              <span id="hud-feels-like" class="hud-feels-like">Feels like --°</span>
-              <div class="hud-high-low">
-                <span class="hud-high">H: <span id="hud-temp-high">--°</span></span>
-                <span class="hud-low">L: <span id="hud-temp-low">--°</span></span>
+              <div class="hud-condition-meta">
+                <span id="hud-condition" class="hud-condition-text">Loading...</span>
+                <span id="hud-feels-like" class="hud-feels-like">Feels like --°</span>
+                <div class="hud-high-low">
+                  <span class="hud-high">H: <span id="hud-temp-high">--°</span></span>
+                  <span class="hud-low">L: <span id="hud-temp-low">--°</span></span>
+                </div>
               </div>
             </div>
           </section>
@@ -628,6 +631,10 @@
       <div class="diag-onedrive-section">
         <div class="diag-backup-title">OneDrive Cloud Sync</div>
         <div id="onedrive-status-label" class="diag-sync-status" role="status" aria-live="polite">Not connected</div>
+        <div class="diag-folder-row" style="margin: 8px 0; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+          <label for="diag-onedrive-folder" style="font-size: 0.8rem; color: var(--text-secondary); white-space: nowrap;">Backup folder:</label>
+          <input id="diag-onedrive-folder" class="diag-input" type="text" placeholder="Apps/Local Wally" value="Apps/Local Wally" style="flex: 1; padding: 4px 8px; font-size: 0.8rem; background: rgba(0,0,0,0.3); border: 1px solid var(--glass-border); border-radius: 4px; color: var(--text-primary);" />
+        </div>
         <div class="diag-backup-actions">
           <button id="onedrive-connect-btn" class="diag-btn" type="button" title="Connect OneDrive via Device Code authentication">Connect OneDrive</button>
           <button id="onedrive-sync-btn" class="diag-btn" type="button" title="Synchronize settings now">Sync now</button>
