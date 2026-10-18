@@ -38,6 +38,13 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  const baseName = path.basename(reqPath).toLowerCase();
+  if (baseName.includes('token') || baseName.includes('secret') || baseName.endsWith('.env')) {
+    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('403 Forbidden: Sensitive file access denied');
+    return;
+  }
+
   if (reqPath === '/' || reqPath === '') reqPath = '/index.html';
 
   const safePath = path.resolve(__dirname, '.' + path.sep + reqPath.replace(/^[/\\]+/, ''));

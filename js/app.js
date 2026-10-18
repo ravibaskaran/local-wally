@@ -96,6 +96,7 @@
     this.isSleeping = false;
     // Cached media wrap width captured before layout writes (C-F02 reflow avoidance)
     this._wrapWidthSample = 0;
+    this.lastDpr = (typeof window !== 'undefined' && typeof window.devicePixelRatio === 'number' && window.devicePixelRatio > 0) ? window.devicePixelRatio : 1;
 
     // Demo / Preview Mode state
     this.demoMode = 0; // 0: Normal / SMTC, 1: Synthwave, 2: Lo-Fi, 3: Ambient
@@ -145,11 +146,13 @@
     // Prefer a fresh pre-write sample when present so this read does not force a reflow (C-F02)
     var wrapWidth = (this._wrapWidthSample > 0) ? this._wrapWidthSample : (wrap ? wrap.clientWidth : 0);
     this._wrapWidthSample = 0;
+    var dpr = (typeof window !== 'undefined' && typeof window.devicePixelRatio === 'number' && window.devicePixelRatio > 0) ? window.devicePixelRatio : 1;
     if (wrapWidth > 0) {
       var targetW = wrapWidth - 8;
-      var curW = this.logicalWidth || this.dom.canvas.width;
-      if (targetW > 60 && Math.abs(curW - targetW) > 2) {
-        var dpr = (typeof window !== 'undefined' && typeof window.devicePixelRatio === 'number' && window.devicePixelRatio > 1) ? window.devicePixelRatio : 1;
+      var curW = this.logicalWidth || 0;
+      var dprChanged = (this.lastDpr !== dpr);
+      if (targetW > 60 && (Math.abs(curW - targetW) > 2 || dprChanged)) {
+        this.lastDpr = dpr;
         this.logicalWidth = targetW;
         this.logicalHeight = 44;
         this.dom.canvas.width = Math.round(targetW * dpr);
@@ -158,7 +161,7 @@
           this.dom.canvas.style.width = targetW + 'px';
           this.dom.canvas.style.height = '44px';
         }
-        if (dpr > 1 && typeof this.ctx.setTransform === 'function') {
+        if (typeof this.ctx.setTransform === 'function') {
           this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         }
         this.initGradient();
@@ -1025,6 +1028,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       var offset = 226.195 * (1 - progress);
       this.dom.ringBar.style.strokeDashoffset = offset.toFixed(2);
       this.dom.ringBar.setAttribute('stroke', (this.mode === 'break' || this.mode === 'longBreak') ? 'url(#pomo-grad-break)' : 'url(#pomo-grad-focus)');
+      if (this.dom.canvas && (this.dom.canvas.style.display === 'none' || this.dom.canvas.hidden)) {
+        return;
+      }
     }
 
     if (!this.ctx || !this.dom.canvas) return;
@@ -1069,6 +1075,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       ctx.stroke();
     }
   };
+
+  PomodoroEngine.prototype.renderRing = PomodoroEngine.prototype.render;
 
   PomodoroEngine.prototype.initGradients = function() {
     if (!this.ctx) return;
@@ -2354,6 +2362,21 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       var docHidden = (typeof document !== 'undefined' && document.hidden) ? true : false;
       var livelyPaused = (global.LivelyBridge && global.LivelyBridge.isPaused) ? true : false;
       this.isPlaybackPaused = docHidden || livelyPaused;
+      this.isReducedMotion = (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) ? true : false;
+      if (typeof window !== 'undefined' && window.matchMedia) {
+        var mql = window.matchMedia('(prefers-reduced-motion: reduce)');
+        var motionSelf = this;
+        var onMotionChange = function(e) {
+          motionSelf.isReducedMotion = !!e.matches;
+          if (motionSelf.lastWeather) motionSelf.renderWeather(motionSelf.lastWeather, motionSelf.lastLocation);
+          if (motionSelf.lastEphemeris) motionSelf.renderCelestial(motionSelf.lastEphemeris);
+        };
+        if (typeof mql.addEventListener === 'function') {
+          mql.addEventListener('change', onMotionChange);
+        } else if (typeof mql.addListener === 'function') {
+          mql.addListener(onMotionChange);
+        }
+      }
 
       this.cacheDom();
       this.restoreCachedWallpaper();
@@ -2368,6 +2391,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         if (!purgeSelf.isPlaybackPaused) purgeSelf.purgeStaleArtifacts();
       }, 24 * 60 * 60 * 1000);
       this.initEngines();
+      this._isBooting = true;
       this.applyInitialConfig();
       this.updateGpuDiagnostics();
       this.bindEvents();
@@ -2563,6 +2587,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
     openWallpaperFavoritesDrawer: function() {
       if (!this.dom.wpFavoritesDrawer) return;
+      this._favInvoker = document.activeElement;
       this.dom.wpFavoritesDrawer.classList.remove('is-hidden');
       if (typeof this.dom.wpFavoritesDrawer.setAttribute === 'function') {
         this.dom.wpFavoritesDrawer.setAttribute('aria-hidden', 'false');
@@ -2571,6 +2596,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         this.dom.wpActionFavoritesDrawer.setAttribute('aria-expanded', 'true');
       }
       this.renderFavoritesDrawerList();
+      if (this.dom.wpDrawerClose && typeof this.dom.wpDrawerClose.focus === 'function') {
+        this.dom.wpDrawerClose.focus();
+      }
     },
 
     closeWallpaperFavoritesDrawer: function() {
@@ -2581,6 +2609,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
       if (this.dom.wpActionFavoritesDrawer && typeof this.dom.wpActionFavoritesDrawer.setAttribute === 'function') {
         this.dom.wpActionFavoritesDrawer.setAttribute('aria-expanded', 'false');
+      }
+      if (this._favInvoker && typeof this._favInvoker.focus === 'function') {
+        this._favInvoker.focus();
+        this._favInvoker = null;
       }
     },
 
@@ -2645,49 +2677,85 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
 
       if (this.dom.wpDrawerEmpty && this.dom.wpDrawerEmpty.classList) this.dom.wpDrawerEmpty.classList.add('is-hidden');
-      var html = '';
+      this.dom.wpDrawerList.innerHTML = '';
+
+      var isSafeHttpsUrl = function(u) {
+        return typeof u === 'string' && /^https:\/\/[^"'\s<>]+$/i.test(u) && u.length <= 2000;
+      };
+
       for (var i = 0; i < favs.length; i++) {
         var it = favs[i];
-        var thumb = it.url || '';
-        var author = it.photographer || 'Artist';
-        var prov = it.provider || 'wallpaper';
-        var key = it.assetKey || (prov + ':' + it.id);
+        if (!it) continue;
+        var thumb = (typeof it.url === 'string') ? it.url : '';
+        if (!isSafeHttpsUrl(thumb)) thumb = '';
+        var author = (typeof it.photographer === 'string') ? it.photographer.slice(0, 100) : 'Artist';
+        var prov = (typeof it.provider === 'string') ? it.provider.slice(0, 50) : 'wallpaper';
+        var key = it.assetKey || (prov + ':' + (it.id || thumb));
+        if (typeof key !== 'string') key = String(key || '');
+        key = key.slice(0, 250);
 
-        html += '<div class="wp-fav-item" data-key="' + key + '">' +
-          '<img class="wp-fav-thumb" src="' + thumb + '" alt="Wallpaper preview" loading="lazy" />' +
-          '<div class="wp-fav-info">' +
-            '<span class="wp-fav-author">' + author + '</span>' +
-            '<span class="wp-fav-provider">' + prov + '</span>' +
-          '</div>' +
-          '<div class="wp-fav-actions">' +
-            '<button class="wp-fav-apply-btn" data-key="' + key + '" title="Apply this wallpaper">Apply</button>' +
-            '<button class="wp-fav-remove-btn" data-key="' + key + '" title="Remove from favorites">&times;</button>' +
-          '</div>' +
-        '</div>';
-      }
-      this.dom.wpDrawerList.innerHTML = html;
+        var itemDiv = document.createElement('div');
+        itemDiv.className = 'wp-fav-item';
+        itemDiv.setAttribute('data-key', key);
 
-      var applyButtons = this.dom.wpDrawerList.querySelectorAll ? this.dom.wpDrawerList.querySelectorAll('.wp-fav-apply-btn') : [];
-      for (var a = 0; a < applyButtons.length; a++) {
-        applyButtons[a].addEventListener('click', function() {
-          var k = this.getAttribute('data-key');
-          var found = favs.find(function(f) { return (f.assetKey || (f.provider + ':' + f.id)) === k; });
-          if (found) {
-            self.setCustomWallpaper(found);
-          }
-        });
+        if (thumb) {
+          var img = document.createElement('img');
+          img.className = 'wp-fav-thumb';
+          img.src = thumb;
+          img.alt = 'Wallpaper preview';
+          img.loading = 'lazy';
+          itemDiv.appendChild(img);
+        }
+
+        var infoDiv = document.createElement('div');
+        infoDiv.className = 'wp-fav-info';
+
+        var authorSpan = document.createElement('span');
+        authorSpan.className = 'wp-fav-author';
+        authorSpan.textContent = author;
+        infoDiv.appendChild(authorSpan);
+
+        var provSpan = document.createElement('span');
+        provSpan.className = 'wp-fav-provider';
+        provSpan.textContent = prov;
+        infoDiv.appendChild(provSpan);
+
+        itemDiv.appendChild(infoDiv);
+
+        var actionsDiv = document.createElement('div');
+        actionsDiv.className = 'wp-fav-actions';
+
+        var applyBtn = document.createElement('button');
+        applyBtn.className = 'wp-fav-apply-btn';
+        applyBtn.setAttribute('data-key', key);
+        applyBtn.title = 'Apply this wallpaper';
+        applyBtn.textContent = 'Apply';
+        (function(favItem) {
+          applyBtn.addEventListener('click', function() {
+            if (favItem) self.setCustomWallpaper(favItem);
+          });
+        })(it);
+        actionsDiv.appendChild(applyBtn);
+
+        var removeBtn = document.createElement('button');
+        removeBtn.className = 'wp-fav-remove-btn';
+        removeBtn.setAttribute('data-key', key);
+        removeBtn.title = 'Remove from favorites';
+        removeBtn.textContent = '\u00D7';
+        (function(favKey) {
+          removeBtn.addEventListener('click', function() {
+            if (favKey && global.ApiService && typeof global.ApiService.removeWallpaperFavorite === 'function') {
+              global.ApiService.removeWallpaperFavorite(favKey);
+              self.updateWallpaperFeedbackUI();
+            }
+          });
+        })(key);
+        actionsDiv.appendChild(removeBtn);
+
+        itemDiv.appendChild(actionsDiv);
+        this.dom.wpDrawerList.appendChild(itemDiv);
       }
 
-      var removeButtons = this.dom.wpDrawerList.querySelectorAll ? this.dom.wpDrawerList.querySelectorAll('.wp-fav-remove-btn') : [];
-      for (var r = 0; r < removeButtons.length; r++) {
-        removeButtons[r].addEventListener('click', function() {
-          var k = this.getAttribute('data-key');
-          if (k && global.ApiService && typeof global.ApiService.removeWallpaperFavorite === 'function') {
-            global.ApiService.removeWallpaperFavorite(k);
-            self.updateWallpaperFeedbackUI();
-          }
-        });
-      }
     },
 
     initOneDriveSyncUI: function() {
@@ -2906,6 +2974,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         this.dom.onedriveAuthModal = document.getElementById('onedrive-auth-modal');
       }
       if (!this.dom.onedriveAuthModal) return;
+      this._onedriveInvoker = document.activeElement;
 
       this.dom.onedriveBrowserLaunchBtn = document.getElementById('onedrive-browser-launch-btn');
       this.dom.onedriveAuthCodeInput = document.getElementById('onedrive-auth-code-input');
@@ -2956,6 +3025,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         global.OneDriveSync.cancelDeviceAuth();
       }
       this.updateOneDriveUI();
+      if (this._onedriveInvoker && typeof this._onedriveInvoker.focus === 'function') {
+        this._onedriveInvoker.focus();
+        this._onedriveInvoker = null;
+      }
     },
 
     updateOneDriveUI: function() {
@@ -3406,6 +3479,23 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       }
     },
 
+    getActiveModal: function() {
+      if (this.dom.onedriveAuthModal && !this.dom.onedriveAuthModal.classList.contains('is-hidden')) {
+        return this.dom.onedriveAuthModal;
+      }
+      if (this.dom.wpFavoritesDrawer && !this.dom.wpFavoritesDrawer.classList.contains('is-hidden')) {
+        return this.dom.wpFavoritesDrawer;
+      }
+      if (this.isDetailOpen && this.dom.hudCardDetail) {
+        return this.dom.hudCardDetail;
+      }
+      return null;
+    },
+
+    isAnyModalOpen: function() {
+      return !!this.getActiveModal();
+    },
+
     bindEvents: function() {
       if (this._eventsBound) return;
       this._eventsBound = true;
@@ -3506,19 +3596,20 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
       // Keyboard shortcuts
       window.addEventListener('keydown', function(e) {
-        // Fix 12: Trap Tab focus inside open detail modal (even if focus is currently in an input)
-        if (e.key === 'Tab' && self.isDetailOpen && self.dom.hudCardDetail) {
-          var focusable = self.dom.hudCardDetail.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+        // Trap Tab focus inside ANY open modal dialog (LW08)
+        var activeModal = self.getActiveModal();
+        if (e.key === 'Tab' && activeModal) {
+          var focusable = activeModal.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
           if (focusable && focusable.length > 0) {
             var firstEl = focusable[0];
             var lastEl = focusable[focusable.length - 1];
             if (e.shiftKey) {
-              if (document.activeElement === firstEl || !self.dom.hudCardDetail.contains(document.activeElement)) {
+              if (document.activeElement === firstEl || !activeModal.contains(document.activeElement)) {
                 e.preventDefault();
                 lastEl.focus();
               }
             } else {
-              if (document.activeElement === lastEl || !self.dom.hudCardDetail.contains(document.activeElement)) {
+              if (document.activeElement === lastEl || !activeModal.contains(document.activeElement)) {
                 e.preventDefault();
                 firstEl.focus();
               }
@@ -3531,12 +3622,12 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           if (self.isHoverPopoverOpen) {
             if (e.preventDefault) e.preventDefault();
             self.hideHoverPopover();
-          } else if (self.dom.wpFavoritesDrawer && !self.dom.wpFavoritesDrawer.classList.contains('is-hidden')) {
-            if (e.preventDefault) e.preventDefault();
-            self.closeWallpaperFavoritesDrawer();
           } else if (self.dom.onedriveAuthModal && !self.dom.onedriveAuthModal.classList.contains('is-hidden')) {
             if (e.preventDefault) e.preventDefault();
             self.closeOneDriveAuthModal();
+          } else if (self.dom.wpFavoritesDrawer && !self.dom.wpFavoritesDrawer.classList.contains('is-hidden')) {
+            if (e.preventDefault) e.preventDefault();
+            self.closeWallpaperFavoritesDrawer();
           } else if (self.isDetailOpen) {
             if (e.preventDefault) e.preventDefault();
             self.closeCardDetail();
@@ -3547,8 +3638,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         // Ignore hotkeys when typing in text fields
         if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) return;
 
-        // Guard: Do not trigger background wallpaper hotkeys while modal is open (BETA-02)
-        if (self.isDetailOpen) return;
+        // Guard: Do not trigger background wallpaper hotkeys while ANY modal is open (LW08)
+        if (self.isAnyModalOpen()) return;
 
         if (e.key === 'd' || e.key === 'D') {
           self.toggleDiagnostics();
@@ -4123,7 +4214,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
               this.fetchNews();
             };
             this.newsFetchTimer = setInterval(newsFetchTick.bind(this), 300000);
-            this.fetchNews();
+            if (!this._isBooting) {
+              this.fetchNews();
+            }
           }
         } else {
           this.dom.hudNewsBlock.classList.add('is-hidden');
@@ -5057,11 +5150,12 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       'weatherapiKey', 'openweathermapApiKey', 'waqiApiKey', 'newsApiKey', 'currentsApiKey'],
     // Operational (non-user) storage state that must never ride backups (R09).
     // Extensible: any reservation/lock state added by multi-instance work joins here.
-    _OPERATIONAL_STORAGE_KEYS: ['LIVELY_HUD_NEWS_QUOTA', 'LIVELY_HUD_NEWS_TIER', 'LIVELY_HUD_NEWS_IMG_BUDGET'],
+    _OPERATIONAL_STORAGE_KEYS: ['LIVELY_HUD_NEWS_QUOTA', 'LIVELY_HUD_NEWS_TIER', 'LIVELY_HUD_NEWS_IMG_BUDGET',
+      'local_wally_onedrive_auth', 'local_wally_onedrive_sync_meta', 'local_wally_wallpaper_feedback_tombstones'],
 
     _buildSettingsPayload: function(options) {
       options = options || {};
-      var maskKeys = options.maskKeys !== false;
+      var maskKeys = (options.includeKeys === true) ? false : (options.maskKeys !== false);
       var props = {};
       var tracked = (global.LivelyBridge && global.LivelyBridge.properties) || {};
       for (var i = 0; i < this.SETTINGS_PROPNAMES.length; i++) {
@@ -5091,12 +5185,15 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       } catch (e) {
         return { ok: false, error: 'Storage unavailable: ' + (e && e.message) };
       }
+      var sec = maskKeys ? 'keys_masked_by_default' : 'keys_included';
       return {
         ok: true,
+        exportSecurity: sec,
         payload: {
           meta: {
             product: 'local-wally-hud',
             format: 1,
+            exportSecurity: sec,
             includesApiKeys: !maskKeys,
             maskedApiKeys: maskKeys,
             exportedAt: new Date().toISOString()
@@ -5116,10 +5213,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
      * line saying exactly which path was taken. Never claims success for
      * bytes that were not written.
      */
-    exportSettings: function() {
+    exportSettings: function(options) {
       var self = this;
       if (this.dom.diagBackupStatus) this.setDomText(this.dom.diagBackupStatus, 'Preparing export...');
-      var result = this._buildSettingsPayload();
+      var result = this._buildSettingsPayload(options);
       if (!result.ok) {
         if (this.dom.diagBackupStatus) this.setDomText(this.dom.diagBackupStatus, 'Export failed: ' + result.error);
         return;
@@ -5140,8 +5237,9 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       var nProps = Object.keys(result.payload.livelyProperties).length;
       var nKeys = Object.keys(result.payload.localStorage).length;
       var describe = function(target) {
+        var keyInfo = result.payload.meta.includesApiKeys ? '(incl. API keys)' : '(masked keys)';
         self.setDomText(self.dom.diagBackupStatus,
-          'Exported ' + nProps + ' properties (incl. keys) + ' + nKeys + ' storage entries → ' + target);
+          'Exported ' + nProps + ' properties ' + keyInfo + ' + ' + nKeys + ' storage entries -> ' + target);
       };
 
       var picker = (typeof global.showSaveFilePicker === 'function') ? global.showSaveFilePicker : null;
@@ -6131,7 +6229,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
       if (this.dom.ephemerisNightMoonGlyph) {
         var moonIcon = activePhase.icon || 'moon-full.svg';
-        this.dom.ephemerisNightMoonGlyph.innerHTML = '<img class="moon-svg-anim" src="assets/icons/moon/' + App.escapeHtml(moonIcon) + '" alt="' + App.escapeHtml(displayPhaseName) + '" width="18" height="18" loading="eager" draggable="false" />';
+        var moonFolder = this.isReducedMotion ? 'assets/icons/moon/static/' : 'assets/icons/moon/';
+        this.dom.ephemerisNightMoonGlyph.innerHTML = '<img class="moon-svg-anim' + (this.isReducedMotion ? ' is-reduced-motion' : '') + '" src="' + moonFolder + App.escapeHtml(moonIcon) + '" alt="' + App.escapeHtml(displayPhaseName) + '" width="18" height="18" loading="eager" draggable="false" />';
         if (this.dom.ephemerisNightMoonGlyph.textContent === '' && !this.dom.ephemerisNightMoonGlyph.childNodes) {
           this.dom.ephemerisNightMoonGlyph.textContent = activePhase.glyph || '🌕';
         }
@@ -7006,7 +7105,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (!this.dom.hudCardDetail) return;
       this.isDetailOpen = true;
       this.activeDetailCard = cardType;
-      this.lastDetailTrigger = triggerEl;
+      this.lastDetailTrigger = triggerEl || document.activeElement;
 
       this.renderCardDetailContent(cardType);
 
@@ -7729,9 +7828,13 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
               if ((!staleSnap.news || staleSnap.news.length === 0) &&
                   global.ApiService && typeof global.ApiService.getCachedNews === 'function') {
                 var bootNews = global.ApiService.getCachedNews();
-                if (bootNews && Array.isArray(bootNews.data) && bootNews.data.length > 0) {
+                var expectedQuery = (staleSnap.location && staleSnap.location.city)
+                  ? (staleSnap.location.city.toLowerCase() + '_' + ((staleSnap.location.countryCode || '').toLowerCase()))
+                  : null;
+                if (bootNews && Array.isArray(bootNews.data) && bootNews.data.length > 0 &&
+                    (!expectedQuery || bootNews.query === expectedQuery)) {
                   staleSnap.news = bootNews.data.map(function(a) {
-                    return Object.assign({}, a, { isStale: true });
+                    return Object.assign({}, a, { stale: true, isStale: true });
                   });
                 }
               }
@@ -7754,6 +7857,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
 
       var finishSync = function() {
         self.isSyncing = false;
+        self._isBooting = false;
         if (self.syncPending) {
           var pendingForce = !!self.syncPendingForce;
           self.syncPending = false;
@@ -7845,10 +7949,11 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
           // Empty network result: never blank a card that has a persisted
           // story snapshot - render the last-known stories as marked-stale
           // (v0.8.15) instead of letting an empty array wipe the card.
+          var queryKey = city.toLowerCase() + '_' + country.toLowerCase();
           var cached = (typeof global.ApiService.getCachedNews === 'function') ? global.ApiService.getCachedNews() : null;
-          if (cached && Array.isArray(cached.data) && cached.data.length > 0) {
+          if (cached && Array.isArray(cached.data) && cached.data.length > 0 && cached.query === queryKey) {
             var stale = cached.data.map(function(a) {
-              return Object.assign({}, a, { isStale: true });
+              return Object.assign({}, a, { stale: true, isStale: true });
             });
             self.newsItems = stale;
             if (self.state) {
@@ -8045,17 +8150,36 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         }
       }
 
-      // Animated Meteocon Icon Rendering
+      // Animated / Static Meteocon Icon Rendering (LW09)
       var isDay = (w.isDay != null)
         ? (typeof w.isDay === 'number' ? w.isDay === 1 : !!w.isDay)
         : ((this.celestialData && this.celestialData.isDay != null) ? this.celestialData.isDay : true);
       var iconFile = this.getMeteocon(w.category, isDay, w.wmoCode);
       if (this.dom.hudWeatherIcon) {
-        if (this._currentWeatherIcon !== iconFile) {
+        var iconFolder = this.isReducedMotion ? 'assets/icons/weather/static/' : 'assets/icons/weather/';
+        var iconKey = iconFolder + iconFile;
+        if (this._currentWeatherIconKey !== iconKey) {
+          this._currentWeatherIconKey = iconKey;
           this._currentWeatherIcon = iconFile;
           var safeIcon = App.escapeHtml(iconFile);
           var safeAlt = App.escapeHtml(w.conditionText || 'Weather');
-          this.dom.hudWeatherIcon.innerHTML = '<img class="meteocon-svg-anim" src="assets/icons/weather/' + safeIcon + '" alt="' + safeAlt + '" width="52" height="52" loading="eager" draggable="false" />';
+          this.dom.hudWeatherIcon.innerHTML = '<img class="meteocon-svg-anim' + (this.isReducedMotion ? ' is-reduced-motion' : '') + '" src="' + iconFolder + safeIcon + '" alt="' + safeAlt + '" width="52" height="52" loading="eager" draggable="false" />';
+        }
+      }
+
+      if (this._lastReducedMotion !== this.isReducedMotion) {
+        this._lastReducedMotion = this.isReducedMotion;
+        if (typeof document !== 'undefined' && document.querySelectorAll) {
+          var metricImgs = document.querySelectorAll('.metric-meteocon');
+          for (var mi = 0; mi < metricImgs.length; mi++) {
+            var mImg = metricImgs[mi];
+            var curSrc = mImg.getAttribute('src') || '';
+            if (this.isReducedMotion && curSrc.indexOf('/static/') === -1) {
+              mImg.setAttribute('src', curSrc.replace('assets/icons/weather/', 'assets/icons/weather/static/'));
+            } else if (!this.isReducedMotion && curSrc.indexOf('/static/') !== -1) {
+              mImg.setAttribute('src', curSrc.replace('assets/icons/weather/static/', 'assets/icons/weather/'));
+            }
+          }
         }
       }
 
@@ -8195,7 +8319,7 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
      */
     formatNewsAge: function(item, nowMs) {
       if (!item) return '';
-      if (item.stale) return 'Cached';
+      if (item.stale || item.isStale) return 'Cached';
       if (typeof item.publishedMs !== 'number' || !Number.isFinite(item.publishedMs)) {
         return item.timeAgo || '';
       }
@@ -8852,7 +8976,8 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         var list = JSON.parse(raw);
         if (!Array.isArray(list)) return null;
         if (!this._newsImageMemoryCache) this._newsImageMemoryCache = {};
-        for (var i = 0; i < list.length; i++) {
+        var startIdx = Math.max(0, list.length - 80);
+        for (var i = startIdx; i < list.length; i++) {
           if (list[i] && list[i].k && typeof list[i].v === 'string' && /^https:\/\//i.test(list[i].v)) {
             this._newsImageMemoryCache[list[i].k] = list[i].v;
           }
@@ -8914,6 +9039,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
         if (!key || !/^https:\/\//i.test(url)) return;
         if (!this._newsImageMemoryCache) this._newsImageMemoryCache = {};
         this._newsImageMemoryCache[key] = url;
+        var memKeys = Object.keys(this._newsImageMemoryCache);
+        if (memKeys.length > 80) {
+          delete this._newsImageMemoryCache[memKeys[0]];
+        }
         if (!global.localStorage) return;
         var raw = global.localStorage.getItem('LIVELY_HUD_NEWS_IMG_CACHE');
         var list = [];
@@ -9407,6 +9536,19 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (this.pomodoro && this.showPomodoro) {
         this.pomodoro.resumeTicker();
       }
+      if (!this._artifactPurgeTimer) {
+        var purgeSelf = this;
+        this._artifactPurgeTimer = setInterval(function() {
+          if (!purgeSelf.isPlaybackPaused) purgeSelf.purgeStaleArtifacts();
+        }, 24 * 60 * 60 * 1000);
+      }
+      if (!this._onedrivePollTimer && this.dom.onedriveStatusLabel) {
+        var selfSync = this;
+        this._onedrivePollTimer = setInterval(function() {
+          if (!selfSync.isPlaybackPaused) selfSync.updateOneDriveUI();
+        }, 3000);
+        this.updateOneDriveUI();
+      }
       if (this.pendingSnapshot) {
         var snap = this.pendingSnapshot;
         this.pendingSnapshot = null;
@@ -9479,6 +9621,10 @@ MediaVisualizerEngine.prototype.hasActiveAnimation = function() {
       if (this._artifactPurgeTimer) {
         clearInterval(this._artifactPurgeTimer);
         this._artifactPurgeTimer = null;
+      }
+      if (this._onedrivePollTimer) {
+        clearInterval(this._onedrivePollTimer);
+        this._onedrivePollTimer = null;
       }
       if (this.pomodoro) {
         this.pomodoro.sleepTicker();

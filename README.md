@@ -96,7 +96,7 @@ When previewing in a browser or clicking the wallpaper on your desktop:
 | <kbd>Click</kbd> / <kbd>Enter</kbd> | **Open Card Detail Drawer** | Slides open the detailed contextual telemetry drawer for any card. |
 | <kbd>Esc</kbd> | **Dismiss Drawer or Popover** | Closes any open detail drawer, hover popover, or location search dropdown. |
 
-*Note: Local Wally synchronizes weather and wallpaper data on its configured cadence (default 15 minutes). Regional news adheres to an independent 15-minute quota firewall per provider to protect rate limits.*
+*Note: Local Wally synchronizes weather and wallpaper data on its configured cadence (default 15 minutes). Regional news adheres to an independent quota firewall (15 minutes for keyed providers NewsAPI and Currents, 5 minutes for keyless Google News) to protect rate limits.*
 
 ---
 
@@ -117,7 +117,7 @@ If you run into an issue, check the troubleshooting table below or submit an iss
 | **Wrong city detected** | IP geolocation resolved your ISP gateway city | Press <kbd>D</kbd> on your desktop, enter your desired city name or coordinates, and select it. |
 | **Weather or AQI shows "--"** | Network connectivity issue or provider error | Check network access. Local Wally will retry automatically on the next 15-minute refresh cycle. |
 | **WeatherAPI / OpenWeatherMap fails** | Key missing, invalid, or expired | Check your API key in Lively Settings. Local Wally automatically falls back to Open-Meteo. |
-| **News headlines not updating** | 15-minute rate limit quota firewall is active | News providers enforce a 15-minute rate-limit window per provider. Wait for the window to elapse. |
+| **News headlines not updating** | News rate limit quota firewall is active | News providers enforce a rate-limit window (15 minutes for keyed providers, 5 minutes for Google News). Wait for the window to elapse. |
 | **Clock frozen after PC sleep** | System resumed from S0 Modern Standby | Update to the latest release. The clock resynchronizes immediately upon wake and reconnect. |
 | **Visualizer runs during games** | Lively Wallpaper window pause setting disabled | Verify that Lively Wallpaper is configured to pause when fullscreen applications are running. |
 
@@ -131,7 +131,7 @@ If you run into an issue, check the troubleshooting table below or submit an iss
 - **Wallpaper Host**: [Lively Wallpaper](https://rocksdanister.github.io/lively/) v2.0 or newer.
 - **Runtime**: Microsoft Edge WebView2 (pre-installed on Windows 11).
 - **Hardware**: Integrated graphics (Intel Iris Xe / Arc, AMD Radeon) or dedicated GPUs (NVIDIA GeForce, AMD Radeon RX).
-- **Memory Footprint**: Extremely light (< 60 MB RAM).
+- **Memory Footprint**: Typically under 60-90 MB resident memory for the wallpaper renderer on standard 1080p-1440p displays; total memory depends on screen resolution, device pixel ratio, and host WebView2 runtime state.
 
 ---
 

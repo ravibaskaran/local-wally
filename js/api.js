@@ -1331,13 +1331,25 @@
 
     WeatherAdapter: {
       normalizeOpenMeteo: function(data, options) {
-        var current = data.current || {};
+        if (!data || typeof data !== 'object') {
+          throw new Error('Malformed Open-Meteo payload: data is null or non-object');
+        }
+        var current = data.current;
+        if (!current || typeof current !== 'object') {
+          throw new Error('Malformed Open-Meteo payload: missing current object');
+        }
+        if (typeof current.temperature_2m !== 'number' || !Number.isFinite(current.temperature_2m)) {
+          throw new Error('Malformed Open-Meteo payload: missing or invalid temperature_2m');
+        }
+        if (current.weather_code == null || typeof current.weather_code !== 'number') {
+          throw new Error('Malformed Open-Meteo payload: missing or invalid weather_code');
+        }
         var daily = data.daily || {};
         var hourly = data.hourly || {};
         var wmo = current.weather_code != null ? current.weather_code : 0;
         var wmoMeta = ApiService.interpretWmoCode(wmo);
 
-        var tempC = current.temperature_2m != null ? current.temperature_2m : 20.0;
+        var tempC = current.temperature_2m;
         var apparentC = current.apparent_temperature != null ? current.apparent_temperature : tempC;
         var tempMaxC = (daily.temperature_2m_max && daily.temperature_2m_max[0] != null) ? daily.temperature_2m_max[0] : (tempC + 3);
         var tempMinC = (daily.temperature_2m_min && daily.temperature_2m_min[0] != null) ? daily.temperature_2m_min[0] : (tempC - 4);
@@ -1644,15 +1656,27 @@
       },
 
       normalizeOpenWeatherMap: function(data, options) {
+        if (!data || typeof data !== 'object') {
+          throw new Error('Malformed OpenWeatherMap payload: data is null or non-object');
+        }
         var isOneCall = !!(data && data.current);
-        var cur = isOneCall ? data.current : ((data.list && data.list[0]) || {});
+        var cur = isOneCall ? data.current : ((data.list && data.list[0]) || null);
+        if (!cur || typeof cur !== 'object') {
+          throw new Error('Malformed OpenWeatherMap payload: missing current or list[0] object');
+        }
         var main = cur.main || cur;
         var wind = cur.wind || cur;
-        var weather0 = (cur.weather && cur.weather[0]) || {};
-        var wmo = ApiService.owmToWmo(weather0.id || 800);
+        var weather0 = (cur.weather && cur.weather[0]) || null;
+        if (!weather0 || typeof weather0 !== 'object' || typeof weather0.id !== 'number') {
+          throw new Error('Malformed OpenWeatherMap payload: missing or invalid weather condition id');
+        }
+        if (main.temp == null || typeof main.temp !== 'number' || !Number.isFinite(main.temp)) {
+          throw new Error('Malformed OpenWeatherMap payload: missing or invalid temp');
+        }
+        var wmo = ApiService.owmToWmo(weather0.id);
         var wmoMeta = ApiService.interpretWmoCode(wmo);
 
-        var tempC = (main.temp != null) ? main.temp : 20.0;
+        var tempC = main.temp;
         var apparentC = (main.feels_like != null) ? main.feels_like : tempC;
         var rawWind = (wind.speed != null) ? wind.speed : ((wind.wind_speed != null) ? wind.wind_speed : ((cur.wind_speed != null) ? cur.wind_speed : 2.8));
         var rawDeg = (wind.deg != null) ? wind.deg : ((cur.wind_deg != null) ? cur.wind_deg : null);
@@ -1683,9 +1707,16 @@
 
         var rawTz = (data.timezone != null) ? data.timezone : ((data.city && data.city.timezone != null) ? data.city.timezone : null);
         var normTz = null;
+        var locOffsetMs = null;
         if (typeof rawTz === 'string' && rawTz.length > 0) {
           normTz = rawTz;
+          var matchOffset = /^([+-])(\d{1,2}):(\d{2})$/.exec(rawTz);
+          if (matchOffset) {
+            var sign = matchOffset[1] === '+' ? 1 : -1;
+            locOffsetMs = sign * (parseInt(matchOffset[2], 10) * 3600 + parseInt(matchOffset[3], 10) * 60) * 1000;
+          }
         } else if (typeof rawTz === 'number' && Number.isFinite(rawTz)) {
+          locOffsetMs = rawTz * 1000;
           var tzSign = rawTz >= 0 ? '+' : '-';
           var absSec = Math.abs(rawTz);
           var tzH = Math.floor(absSec / 3600);
@@ -1749,7 +1780,17 @@
           var iW = (item.weather && item.weather[0]) || {};
           var iWmo = ApiService.owmToWmo(iW.id || 800);
           var dt = item.dt ? new Date(item.dt * 1000) : new Date(Date.now() + i * 3 * 3600000);
-          var h = dt.getHours();
+          var epochMs = item.dt ? (item.dt * 1000) : dt.getTime();
+          var h = null;
+          if (typeof rawTz === 'string' && /[a-z]/i.test(rawTz)) {
+            h = ApiService.formatTzHour(rawTz, epochMs);
+          }
+          if (h == null && locOffsetMs != null) {
+            h = new Date(epochMs + locOffsetMs).getUTCHours();
+          }
+          if (h == null) {
+            h = dt.getHours();
+          }
           var lbl = (isFirst) ? 'Now' : ((h % 12 || 12) + (h >= 12 ? ' PM' : ' AM'));
           var ptT = (iMain.temp != null && Number.isFinite(iMain.temp)) ? iMain.temp : null;
           var ptApp = (iMain.feels_like != null && Number.isFinite(iMain.feels_like)) ? iMain.feels_like : null;
@@ -2450,7 +2491,9 @@
             if (parsed && typeof parsed === 'object') {
               loaded = {
                 favorites: Array.isArray(parsed.favorites) ? parsed.favorites.slice(0, 100) : [],
-                avoided: Array.isArray(parsed.avoided) ? parsed.avoided.slice(0, 200) : []
+                avoided: Array.isArray(parsed.avoided) ? parsed.avoided.slice(0, 200) : [],
+                deletedFavorites: Array.isArray(parsed.deletedFavorites) ? parsed.deletedFavorites.slice(0, 100) : [],
+                deletedAvoided: Array.isArray(parsed.deletedAvoided) ? parsed.deletedAvoided.slice(0, 200) : []
               };
             }
           }
@@ -2463,7 +2506,7 @@
       if (this._wallpaperFeedback && typeof this._wallpaperFeedback === 'object') {
         return this._wallpaperFeedback;
       }
-      this._wallpaperFeedback = { favorites: [], avoided: [] };
+      this._wallpaperFeedback = { favorites: [], avoided: [], deletedFavorites: [], deletedAvoided: [] };
       return this._wallpaperFeedback;
     },
 
@@ -2471,6 +2514,8 @@
       var fb = feedback || {};
       var favs = Array.isArray(fb.favorites) ? fb.favorites : [];
       var avs = Array.isArray(fb.avoided) ? fb.avoided : [];
+      var delFavs = Array.isArray(fb.deletedFavorites) ? fb.deletedFavorites.slice(0, 100) : [];
+      var delAvoids = Array.isArray(fb.deletedAvoided) ? fb.deletedAvoided.slice(0, 200) : [];
 
       var dedupFavs = [];
       var seenFavKeys = Object.create(null);
@@ -2502,7 +2547,9 @@
 
       var payload = {
         favorites: dedupFavs,
-        avoided: dedupAvoided
+        avoided: dedupAvoided,
+        deletedFavorites: delFavs,
+        deletedAvoided: delAvoids
       };
       this._wallpaperFeedback = payload;
       try {
@@ -2525,9 +2572,13 @@
           favs.splice(i, 1);
         }
       }
-      var assetToStore = Object.assign({}, asset, { assetKey: key, savedAt: Date.now() });
+      var assetToStore = Object.assign({}, asset, { assetKey: key, savedAt: Date.now(), updatedAtUtc: Date.now() });
       favs.unshift(assetToStore);
       fb.favorites = favs;
+      // Remove any prior deletion tombstone when re-adding
+      if (fb.deletedFavorites) {
+        fb.deletedFavorites = fb.deletedFavorites.filter(function(d) { return d.assetKey !== key; });
+      }
       return this.saveWallpaperFeedback(fb);
     },
 
@@ -2538,6 +2589,11 @@
         var k = f.assetKey || (f.provider && f.id ? (f.provider + ':' + f.id) : (f.id || f.url));
         return k !== assetKey;
       });
+      // Explicit deletion marker (LW04)
+      fb.deletedFavorites = fb.deletedFavorites || [];
+      fb.deletedFavorites = fb.deletedFavorites.filter(function(d) { return d.assetKey !== assetKey; });
+      fb.deletedFavorites.unshift({ assetKey: assetKey, isDeleted: true, deletedAtUtc: Date.now() });
+      if (fb.deletedFavorites.length > 100) fb.deletedFavorites = fb.deletedFavorites.slice(0, 100);
       return this.saveWallpaperFeedback(fb);
     },
 
@@ -2551,13 +2607,17 @@
         var k = typeof a === 'string' ? a : (a.assetKey || (a.provider && a.id ? (a.provider + ':' + a.id) : (a.id || a.url)));
         return k !== key;
       });
-      var itemToStore = (typeof asset === 'string') ? { assetKey: key, avoidedAt: Date.now() } : Object.assign({}, asset, { assetKey: key, avoidedAt: Date.now() });
+      var now = Date.now();
+      var itemToStore = (typeof asset === 'string') ? { assetKey: key, avoidedAt: now, updatedAtUtc: now } : Object.assign({}, asset, { assetKey: key, avoidedAt: now, updatedAtUtc: now });
       avoided.unshift(itemToStore);
       fb.avoided = avoided;
       fb.favorites = fb.favorites.filter(function(f) {
         var fk = f.assetKey || (f.provider && f.id ? (f.provider + ':' + f.id) : (f.id || f.url));
         return fk !== key;
       });
+      if (fb.deletedAvoided) {
+        fb.deletedAvoided = fb.deletedAvoided.filter(function(d) { return d.assetKey !== key; });
+      }
       return this.saveWallpaperFeedback(fb);
     },
 
@@ -2568,6 +2628,11 @@
         var k = typeof a === 'string' ? a : (a.assetKey || (a.provider && a.id ? (a.provider + ':' + a.id) : (a.id || a.url)));
         return k !== assetKey;
       });
+      // Explicit deletion marker for avoided list (LW04)
+      fb.deletedAvoided = fb.deletedAvoided || [];
+      fb.deletedAvoided = fb.deletedAvoided.filter(function(d) { return d.assetKey !== assetKey; });
+      fb.deletedAvoided.unshift({ assetKey: assetKey, isDeleted: true, deletedAtUtc: Date.now() });
+      if (fb.deletedAvoided.length > 200) fb.deletedAvoided = fb.deletedAvoided.slice(0, 200);
       return this.saveWallpaperFeedback(fb);
     },
 
@@ -4124,11 +4189,14 @@
         // Fetch news asynchronously in the background so it never blocks ready weather updates.
         // News network eligibility is decided by its own quota firewall - an
         // atmosphere/wallpaper force refresh can no longer bypass it (LW06).
-        var newsPromise = self.fetchNews(loc.city, loc.countryCode || loc.country)
+        var appInst = global.App || global.app;
+        var shouldFetchNews = !appInst || (appInst.showNewsFeed !== false);
+        var newsPromise = shouldFetchNews
+          ? self.fetchNews(loc.city, loc.countryCode || loc.country)
           .catch(function(err) {
             console.warn('[ApiService] Regional news fetch error (non-fatal):', err.message);
             return [];
-          });
+          }) : Promise.resolve([]);
 
         return Promise.all([
           self.fetchWeather(loc.latitude, loc.longitude, wProv),
@@ -4193,7 +4261,7 @@
                     } else {
                       appInstance.pendingNews = articles;
                     }
-                  } else if (typeof appInstance.renderNews === 'function') {
+                  } else if (typeof appInstance.renderNews === 'function' && appInstance.showNewsFeed !== false) {
                     appInstance.renderNews(articles);
                   }
                 }

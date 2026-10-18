@@ -21,3 +21,8 @@ scratch/
 # Distribution archives
 *.zip
 dist_staging/
+
+# Secrets and OAuth tokens
+onedrive_tokens.json
+tools/onedrive_tokens.json
+*token*.json

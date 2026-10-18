@@ -96,10 +96,7 @@
         this.state = 'up_to_date';
         var meta = this.getStoredSyncMeta();
         this.lastSyncTime = meta ? (meta.lastSyncTime || 0) : 0;
-        // Check remote metadata in background
-        this.checkRemoteMetadata().catch(function(err) {
-          console.warn('[OneDriveSync] Initial metadata check:', err && err.message);
-        });
+        // Boot metadata is checked during scheduled sync to avoid duplicate requests (LW16)
       } else {
         this.state = 'not_connected';
         var self = this;
@@ -691,6 +688,47 @@
         }
       }
 
+      // Nested validation for wallpaper preferences (LW02)
+      var wp = profile.wallpaperPreferences || profile.wallpaperFeedback;
+      if (wp && typeof wp === 'object') {
+        var validateWpList = function(list, name) {
+          if (list == null) return null;
+          if (!Array.isArray(list)) return name + ' must be an array';
+          for (var idx = 0; idx < list.length; idx++) {
+            var item = list[idx];
+            if (!item) continue;
+            if (typeof item === 'string') {
+              if (item.length > 250 || /<[a-z!/]/i.test(item)) {
+                return 'Invalid string entry in ' + name;
+              }
+            } else if (typeof item === 'object') {
+              if (item.title && (typeof item.title !== 'string' || item.title.length > 250 || /<[a-z!/]/i.test(item.title))) {
+                return 'Invalid title in ' + name;
+              }
+              if (item.author && (typeof item.author !== 'string' || item.author.length > 200 || /<[a-z!/]/i.test(item.author))) {
+                return 'Invalid author in ' + name;
+              }
+              if (item.url && (typeof item.url !== 'string' || !/^https:\/\/[^"'\s<>]+$/i.test(item.url) || item.url.length > 2000)) {
+                return 'Invalid or non-HTTPS URL in ' + name;
+              }
+              if (item.photographer && (typeof item.photographer !== 'string' || item.photographer.length > 200 || /<[a-z!/]/i.test(item.photographer))) {
+                return 'Invalid photographer in ' + name;
+              }
+              if (item.assetKey && (typeof item.assetKey !== 'string' || item.assetKey.length > 250 || /<[a-z!/]/i.test(item.assetKey))) {
+                return 'Invalid assetKey in ' + name;
+              }
+            } else {
+              return 'Invalid item type in ' + name;
+            }
+          }
+          return null;
+        };
+        var errFav = validateWpList(wp.favorites, 'favorites');
+        if (errFav) return { ok: false, valid: false, error: errFav };
+        var errAvoid = validateWpList(wp.avoided, 'avoided');
+        if (errAvoid) return { ok: false, valid: false, error: errAvoid };
+      }
+
       return { ok: true, valid: true };
     },
 
@@ -741,21 +779,103 @@
       };
     },
 
+    threeWayMergeSettings: function(baseSettings, localSettings, remoteSettings) {
+      baseSettings = baseSettings || {};
+      localSettings = localSettings || {};
+      remoteSettings = remoteSettings || {};
+
+      var merged = {};
+      var conflicts = {};
+      var allKeys = {};
+      var k;
+
+      for (k in baseSettings) { if (Object.prototype.hasOwnProperty.call(baseSettings, k)) allKeys[k] = true; }
+      for (k in localSettings) { if (Object.prototype.hasOwnProperty.call(localSettings, k)) allKeys[k] = true; }
+      for (k in remoteSettings) { if (Object.prototype.hasOwnProperty.call(remoteSettings, k)) allKeys[k] = true; }
+
+      for (k in allKeys) {
+        var baseVal = baseSettings[k];
+        var localVal = localSettings[k];
+        var remoteVal = remoteSettings[k];
+
+        var localChanged = (localVal !== baseVal);
+        var remoteChanged = (remoteVal !== baseVal);
+
+        if (localChanged && !remoteChanged) {
+          // Local modified only - preserve local edit
+          merged[k] = localVal;
+        } else if (!localChanged && remoteChanged) {
+          // Remote modified only - apply remote update
+          merged[k] = remoteVal;
+        } else if (!localChanged && !remoteChanged) {
+          // Neither modified
+          merged[k] = (localVal !== undefined) ? localVal : baseVal;
+        } else {
+          // Both modified!
+          if (localVal === remoteVal) {
+            merged[k] = localVal;
+          } else {
+            // Divergent edit on same key
+            conflicts[k] = { local: localVal, remote: remoteVal, base: baseVal };
+            // Conservative resolution: keep local value so local user does not lose unsaved work
+            merged[k] = localVal;
+          }
+        }
+      }
+
+      return {
+        merged: merged,
+        conflicts: conflicts,
+        hasConflicts: Object.keys(conflicts).length > 0
+      };
+    },
+
     mergeWallpaperPreferences: function(localList, remoteList) {
+      if (localList && typeof localList === 'object' && !Array.isArray(localList)) {
+        var localFavs = (localList.favorites || []).concat(localList.deletedFavorites || []);
+        var remoteFavs = ((remoteList && remoteList.favorites) || []).concat((remoteList && remoteList.deletedFavorites) || []);
+        var localAvoid = (localList.avoided || []).concat(localList.deletedAvoided || []);
+        var remoteAvoid = ((remoteList && remoteList.avoided) || []).concat((remoteList && remoteList.deletedAvoided) || []);
+
+        return {
+          favorites: this.mergeWallpaperPreferences(localFavs, remoteFavs),
+          avoided: this.mergeWallpaperPreferences(localAvoid, remoteAvoid)
+        };
+      }
       var map = Object.create(null);
       var combined = (localList || []).concat(remoteList || []);
       for (var i = 0; i < combined.length; i++) {
         var item = combined[i];
         if (!item) continue;
-        var key = item.assetKey || (item.provider && item.id ? (item.provider + ':' + item.id) : (item.id || item.url));
+        var key = typeof item === 'string' ? item : (item.assetKey || (item.provider && item.id ? (item.provider + ':' + item.id) : (item.id || item.url)));
         if (!key) continue;
-        if (!map[key] || (item.updatedAtUtc && (!map[key].updatedAtUtc || item.updatedAtUtc > map[key].updatedAtUtc))) {
-          map[key] = item;
+
+        var isDel = !!(item.isDeleted || item.deletedAtUtc);
+        var itemTime = (typeof item.deletedAtUtc === 'number') ? item.deletedAtUtc : ((typeof item.updatedAtUtc === 'number') ? item.updatedAtUtc : (item.savedAt || 0));
+
+        if (!map[key]) {
+          map[key] = {
+            item: item,
+            isDeleted: isDel,
+            time: itemTime
+          };
+        } else {
+          var existing = map[key];
+          if (itemTime >= existing.time) {
+            map[key] = {
+              item: item,
+              isDeleted: isDel,
+              time: itemTime
+            };
+          }
         }
       }
+
       var result = [];
       for (var k in map) {
-        result.push(map[k]);
+        if (!map[k].isDeleted) {
+          result.push(map[k].item);
+        }
       }
       return result;
     },
@@ -796,7 +916,8 @@
                 cTag: upRes.cTag,
                 eTag: upRes.eTag,
                 lastSyncTime: self.lastSyncTime,
-                profileRevision: payload.profileRevision
+                profileRevision: payload.profileRevision,
+                lastSyncedSettings: payload.settings
               });
               return { ok: true, state: 'up_to_date', action: 'uploaded' };
             }
@@ -817,7 +938,8 @@
                   cTag: upRes.cTag,
                   eTag: upRes.eTag,
                   lastSyncTime: self.lastSyncTime,
-                  profileRevision: payloadToPush.profileRevision
+                  profileRevision: payloadToPush.profileRevision,
+                  lastSyncedSettings: payloadToPush.settings
                 });
                 return { ok: true, state: 'up_to_date', action: 'uploaded' };
               }
@@ -845,10 +967,22 @@
             });
           }
 
-          // Apply remote settings locally
+          // 3-way settings merge: base vs local vs remote (LW03)
+          var baseSettings = storedMeta.lastSyncedSettings || null;
+          var settingsToApply;
+          var mergeResult = null;
+          if (baseSettings) {
+            mergeResult = self.threeWayMergeSettings(baseSettings, currentSettings, remoteProfile.settings);
+            settingsToApply = mergeResult.merged;
+          } else {
+            // First connect or no stored base: preserve disjoint edits, remote wins for identical keys
+            settingsToApply = Object.assign({}, currentSettings || {}, remoteProfile.settings || {});
+          }
+
+          // Apply merged settings locally
           var applyFn = app && (app.applySettingsPayload || app._applySettingsPayload);
           if (app && typeof applyFn === 'function') {
-            applyFn.call(app, { livelyProperties: remoteProfile.settings }, true);
+            applyFn.call(app, { livelyProperties: settingsToApply }, true);
           }
 
           self.state = 'up_to_date';
@@ -857,10 +991,16 @@
             cTag: meta.cTag,
             eTag: meta.eTag,
             lastSyncTime: self.lastSyncTime,
-            profileRevision: remoteProfile.profileRevision || 1
+            profileRevision: remoteProfile.profileRevision || 1,
+            lastSyncedSettings: settingsToApply
           });
 
-          return { ok: true, state: 'up_to_date', action: 'downloaded' };
+          return {
+            ok: true,
+            state: 'up_to_date',
+            action: 'downloaded',
+            conflicts: mergeResult ? mergeResult.conflicts : null
+          };
         });
       }).catch(function(err) {
         console.warn('[OneDriveSync] Sync error:', err && err.message);

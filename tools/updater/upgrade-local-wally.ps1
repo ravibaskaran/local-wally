@@ -115,12 +115,25 @@ try {
     $updated = 0
     foreach ($t in $targets) {
         Write-Step ("Updating: " + $t)
+        $wpId = Split-Path $t -Leaf
+        $backupDir = Join-Path $tmpRoot ("backup-" + $wpId + "-" + [Guid]::NewGuid().ToString("N").Substring(0, 8))
         try {
+            # Transactional staging: snapshot target before mutation (LW10)
+            New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
+            Copy-Item -Path (Join-Path $t '*') -Destination $backupDir -Recurse -Force
+
             Copy-Item -Path (Join-Path $extract '*') -Destination $t -Recurse -Force
+
+            # Post-copy integrity check: verify critical runtime files exist
+            foreach ($req in @('index.html', 'js\app.js', 'js\api.js', 'css\style.css', 'LivelyInfo.json')) {
+                if (-not (Test-Path (Join-Path $t $req))) {
+                    throw "Integrity check failed: missing '$req' after copy."
+                }
+            }
+
             $updated++
 
             # Reconcile Lively's cached properties in SaveData so new settings appear in Customise
-            $wpId = Split-Path $t -Leaf
             $newPropsFile = Join-Path $t 'LivelyProperties.json'
             if (Test-Path $newPropsFile) {
                 $saveDataRoots = @()
@@ -173,7 +186,16 @@ try {
                     }
                 }
             }
+
+            # Transaction committed successfully: purge backup
+            Remove-Item -Path $backupDir -Recurse -Force -ErrorAction SilentlyContinue
         } catch {
+            # Transactional rollback to snapshot on failure (LW10)
+            if (Test-Path $backupDir) {
+                Write-Warn2 ("  Error encountered during update. Rolling back " + $t + " to backup snapshot...")
+                Copy-Item -Path (Join-Path $backupDir '*') -Destination $t -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item -Path $backupDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
             Write-Warn2 ("  Could not update this copy: " + $_.Exception.Message)
             Write-Warn2 '  Tip: switch Lively to another wallpaper (or exit Lively), then run again.'
         }

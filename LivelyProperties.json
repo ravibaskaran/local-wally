@@ -288,7 +288,7 @@
   },
   "settingsExport": {
     "type": "button",
-    "value": "Export Settings (incl. API keys)",
+    "value": "Export Settings (Excludes API Keys by default)",
     "text": "Local Wally - Backup & Restore"
   },
   "settingsImport": {
@@ -318,6 +318,6 @@
   },
   "settingsHelp": {
     "type": "label",
-    "value": "Custom Location at the top sets your city manually (blank = automatic). Buttons below export/import your full setup (keys included). City autocomplete, backup status and diagnostics live in the HUD panel: press D over the desktop."
+    "value": "Custom Location at the top sets your city manually (blank = automatic). Buttons below export/import your setup (API keys excluded by default for safety). City autocomplete, backup status and diagnostics live in the HUD panel: press D over the desktop."
   }
 }

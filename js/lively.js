@@ -179,6 +179,12 @@
       }
     },
 
+    emitSystemInformation: function(data) {
+      if (global.livelySystemInformation) {
+        global.livelySystemInformation(data);
+      }
+    },
+
     initialized: false,
 
     init: function() {
@@ -198,6 +204,7 @@
 
       // 3. Lively Host Native System Information Listener
       global.livelySystemInformation = function(data) {
+        if (self.isPaused) return;
         try {
           var info = typeof data === 'string' ? JSON.parse(data) : data;
           if (info) {
